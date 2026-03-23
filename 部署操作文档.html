@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>铭晟管理系统 部署与执行白皮书</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            font-size: 14px;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20mm;
+            background: #fff;
+        }
+        
+        h1 {
+            font-size: 28px;
+            color: #1a365d;
+            text-align: center;
+            border-bottom: 3px solid #2b6cb0;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+            page-break-after: avoid;
+        }
+        
+        h2 {
+            font-size: 20px;
+            color: #2c5282;
+            border-left: 4px solid #3182ce;
+            padding-left: 12px;
+            margin-top: 35px;
+            margin-bottom: 18px;
+            page-break-after: avoid;
+        }
+        
+        h3 {
+            font-size: 16px;
+            color: #2d3748;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            page-break-after: avoid;
+        }
+        
+        h4 {
+            font-size: 14px;
+            color: #4a5568;
+            margin-top: 18px;
+            margin-bottom: 10px;
+        }
+        
+        p {
+            margin-bottom: 12px;
+            text-align: justify;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 13px;
+            page-break-inside: avoid;
+        }
+        
+        th {
+            background: #e2e8f0;
+            color: #2d3748;
+            font-weight: 600;
+            padding: 10px 12px;
+            text-align: left;
+            border: 1px solid #cbd5e0;
+        }
+        
+        td {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            vertical-align: top;
+        }
+        
+        tr:nth-child(even) {
+            background: #f7fafc;
+        }
+        
+        ul, ol {
+            margin: 12px 0;
+            padding-left: 25px;
+        }
+        
+        li {
+            margin-bottom: 6px;
+        }
+        
+        code {
+            background: #edf2f7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", monospace;
+            font-size: 13px;
+            color: #e53e3e;
+        }
+        
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-size: 12px;
+            page-break-inside: avoid;
+        }
+        
+        pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid #e2e8f0;
+            margin: 30px 0;
+        }
+        
+        strong {
+            color: #1a202c;
+        }
+        
+        blockquote {
+            border-left: 4px solid #3182ce;
+            padding: 10px 15px;
+            margin: 15px 0;
+            color: #4a5568;
+            background: #f7fafc;
+            border-radius: 0 5px 5px 0;
+        }
+
+        /* 版本标签 */
+        .version-tag {
+            display: inline-block;
+            background: #ebf8ff;
+            color: #2b6cb0;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        /* 打印样式 */
+        @media print {
+            body {
+                padding: 0;
+            }
+            
+            h1, h2, h3, h4 {
+                page-break-after: avoid;
+            }
+            
+            table, pre, blockquote {
+                page-break-inside: avoid;
+            }
+            
+            h2 {
+                page-break-before: auto;
+            }
+        }
+        
+        /* 封面样式 */
+        .cover {
+            text-align: center;
+            padding-top: 150px;
+            page-break-after: always;
+        }
+        
+        .cover h1 {
+            font-size: 36px;
+            border: none;
+            margin-bottom: 50px;
+        }
+        
+        .cover .subtitle {
+            font-size: 20px;
+            color: #4a5568;
+            margin-bottom: 100px;
+        }
+        
+        .cover .info {
+            font-size: 14px;
+            color: #718096;
+            margin-top: 50px;
+        }
+        
+        /* 目录样式 */
+        .toc {
+            page-break-after: always;
+        }
+        
+        .toc h2 {
+            text-align: center;
+            border: none;
+            margin-bottom: 30px;
+        }
+        
+        .toc ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .toc > ul > li {
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        
+        .toc ul ul {
+            padding-left: 20px;
+            margin-top: 8px;
+        }
+        
+        .toc ul ul li {
+            font-weight: normal;
+            color: #4a5568;
+        }
+
+        /* 页脚 */
+        .footer {
+            margin-top: 60px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 12px;
+            color: #a0aec0;
+        }
+    </style>
+</head>
+<body>
+<h1>铭晟管理系统 - 部署与执行白皮书</h1>
+<blockquote>
+<p><strong>系统版本:</strong> v1.4.0<br><strong>更新要点:</strong> v1.4.0 新增工序物料绑定与首道工序自动扣减库存功能；修复入库审核致命崩溃、委外/成品检验重复入库等 6 项全链路 BUG；成品出库后自动将订单标记为已发货。前序版本已完成智能预警卡片、全局二维码流转、底层数据库精确批次追踪、可视化原生 APS 甘特图等功能。</p>
+</blockquote>
+<p>如果您需要将本旗舰版系统纯离线或在其他局域网服务器/开发机上全新部署，请严格遵循以下执行流：</p>
+<hr>
+<h2>1. 基础节点环境准备 (Node.js)</h2>
+<p>新电脑或服务器必须具备基础的 JavaScript 运行引擎：</p>
+<ul>
+<li>访问 Node 官方下载站并安装 <a href="https://nodejs.org/zh-cn/">Node.js</a>（推荐下载 v18.x 或 v20.x 的 LTS 长期支持版）。</li>
+<li>安装过程中请一直点击“下一步”，<strong>切勿更改</strong>默认环境变量的注入配置。</li>
+</ul>
+<p><img src="https://via.placeholder.com/600x120.png?text=Verify+Installation:+node+-v" alt="示意图: Node环境检查">
+✅ 验证步骤：按下 <code>Win + R</code> 键，输入 <code>cmd</code> 打开终端终端，敲入如下指令：</p>
+<pre><code class="language-bash">node -v
+# 若输出版本号如 v18.17.0 等字样则环境绿灯放行。
+</code></pre>
+<h2>2. 工程文件迁移与装载</h2>
+<ul>
+<li>将您本机的整个 <code>erp-mes-system</code> 工程文件夹通过 U 盘、坚果云、FTP 或网络传输等手段完整拷贝到目标电脑中。</li>
+<li>⚡ <strong>性能向提示</strong>：为了极速地完成传输，可以在拷贝前<strong>先删去</strong>原有项目后端 <code>backend/node_modules</code> 与前端 <code>frontend/node_modules</code> 这两大依赖黑洞文件夹，体积可直降 90% 以上。</li>
+</ul>
+<hr>
+<h2>3. 全局总装与初始化（核心）</h2>
+<p>在目标机存好的项目根目录（例如 <code>D:\项目\erp-mes-system</code>）下：</p>
+<p><img src="https://via.placeholder.com/600x250.png?text=One-Click+Installation:+install.bat" alt="示意图: 一键执行安装卡片"></p>
+<ul>
+<li>找到并双击运行 <strong><code>install.bat</code></strong> 引导器文件。</li>
+<li>该装配脚本将如同自动驾驶般完成以下工作，并伴有进度反馈：<ol>
+<li>拦截并检测本机 Node 环境。</li>
+<li>潜入 <code>backend</code> 目录，通过 <code>npm install</code> 为 Sqlite3 等本地持久层以及加解密引擎重新拉取编译对应的 Windows 二进制依赖。</li>
+<li>潜入 <code>frontend</code> 目录拉取依赖，并无情触发 Vite 的树摇压缩编译流水线（<code>npm run build</code>）。</li>
+</ol>
+</li>
+<li>静待黑色命令窗提示绿色的 <strong>“[√] 安装完成！”</strong> 字样，即可按任意键全身而退。</li>
+</ul>
+<hr>
+<h2>4. 点火运行服务端</h2>
+<ul>
+<li>双击运行 <strong><code>start.bat</code></strong> 启动文件。</li>
+<li>随即会唤醒一个常驻的黑色网关控制台进程，并在 3 秒内自动为您从默认浏览器弹开系统首页工作台。</li>
+<li>🔗 默认路由为：<code>http://localhost:3198</code></li>
+</ul>
+<blockquote>
+<p>⚠️ <strong>警告</strong>：该控制台承载了所有 Node.js 业务接口、扫码监听、与轻量级 SQLite 数据落盘的线程，<strong>请绝对不要关闭该黑窗口！如果将其叉掉，前台网页立刻宕机变“板砖”。</strong></p>
+</blockquote>
+<p><img src="https://via.placeholder.com/600x300.png?text=Sever+Running...+%5B%E5%8B%BF%E5%85%B3%E9%97%AD%E6%AD%A4%E7%AA%97%E5%8F%A3%5D" alt="示意图: 成功运行截图"></p>
+<hr>
+<h2>5. 优雅熄火与清理</h2>
+<ul>
+<li>当全天产能工作结束，或您想要关机、打扫环境时，请勿粗暴拔电。</li>
+<li>双击项目目录下的 <strong><code>stop.bat</code></strong>。</li>
+<li>它就像一把安全锁，能一键平滑寻址并终止相关 Node 监听端口，防止底层轻型数据库处于热更正被意外锁表，从而安稳地停止所有进程。</li>
+</ul>
+
+<div class="footer">铭晟管理系统 v1.4.0 &mdash; 本文件由 generate.bat 自动生成</div>
+</body>
+</html>

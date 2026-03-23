@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "autoBackup": true,
+  "interval": "daily",
+  "intervalHours": 6,
+  "backupPath": "D:\\项目\\erp-mes-system\\backups",
+  "maxBackups": 15,
+  "lastBackup": "2026-03-23T06:42:08.212Z",
+  "nextBackup": "2026-03-23T12:42:08.212Z"
+}

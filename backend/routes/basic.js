@@ -1,0 +1,355 @@
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const router = express.Router();
+const { createCRUDRouter } = require('./crud-factory');
+const { JWT_SECRET, JWT_REFRESH_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN, JWT_REFRESH_MAX_AGE } = require('../config/jwt');
+const { BCRYPT_ROUNDS } = require('../config/security');
+const { validate } = require('../middleware/validate');
+const { userLogin, userCreate } = require('../validators/schemas');
+const { clearPermissionCache, requirePermission } = require('../middleware/permission');
+const adminOnly = requirePermission('system_admin');
+
+// ==================== 部门管理（使用 CRUD 工厂）====================
+const departmentRouter = createCRUDRouter({
+  table: 'departments',
+  fields: ['name', 'description'],
+  orderBy: 'id',
+  permissionPrefix: 'basic_data',
+  checkRelations: [
+    { table: 'users', foreignKey: 'department_id', message: '该部门下有关联用户，无法删除' }
+  ]
+});
+router.use('/departments', departmentRouter);
+
+// ==================== 客户管理（使用 CRUD 工厂）====================
+const customerRouter = createCRUDRouter({
+  table: 'customers',
+  fields: ['name', 'code', 'contact_person', 'phone', 'email', 'address', 'credit_level', 'status'],
+  orderBy: 'id DESC',
+  permissionPrefix: 'basic_data',
+  checkRelations: [
+    { table: 'orders', foreignKey: 'customer_id', message: '该客户有关联订单，无法删除' }
+  ]
+});
+router.use('/customers', customerRouter);
+
+// ==================== 供应商管理（使用 CRUD 工厂）====================
+const supplierRouter = createCRUDRouter({
+  table: 'suppliers',
+  fields: ['name', 'code', 'contact_person', 'phone', 'email', 'address', 'status'],
+  orderBy: 'id DESC',
+  permissionPrefix: 'basic_data',
+  checkRelations: [
+    { table: 'purchase_orders', foreignKey: 'supplier_id', message: '该供应商有关联采购单，无法删除' },
+    { table: 'outsourcing_orders', foreignKey: 'supplier_id', message: '该供应商有关联委外单，无法删除' }
+  ]
+});
+router.use('/suppliers', supplierRouter);
+
+// ==================== 角色管理 ====================
+router.get('/roles', (req, res) => {
+  try {
+    const roles = req.db.all('SELECT * FROM roles ORDER BY id');
+    res.json({ success: true, data: roles });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/roles', adminOnly, (req, res) => {
+  try {
+    const { name, code, description } = req.body;
+    req.db.run('INSERT INTO roles (name, code, description) VALUES (?, ?, ?)', [name, code, description]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.put('/roles/:id', adminOnly, (req, res) => {
+  try {
+    const { name, code, description } = req.body;
+    req.db.run('UPDATE roles SET name = ?, code = ?, description = ? WHERE id = ?', [name, code, description, req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.delete('/roles/:id', adminOnly, (req, res) => {
+  try {
+    // 检查是否有用户关联该角色
+    const count = req.db.get('SELECT COUNT(*) as count FROM users WHERE role_id = ?', [req.params.id]);
+    if (count && count.count > 0) {
+      return res.status(400).json({ success: false, message: '该角色下有关联用户，无法删除' });
+    }
+    req.db.run('DELETE FROM role_permissions WHERE role_id = ?', [req.params.id]);
+    req.db.run('DELETE FROM roles WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ==================== 权限管理 ====================
+router.get('/permissions', (req, res) => {
+  try {
+    const permissions = req.db.all('SELECT * FROM permissions ORDER BY id');
+    res.json({ success: true, data: permissions });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/permissions', adminOnly, (req, res) => {
+  try {
+    const { name, code, module, description } = req.body;
+    if (!name || !code || !module) {
+      return res.status(400).json({ success: false, message: '名称、编码和模块不能为空' });
+    }
+    const result = req.db.run(
+      'INSERT INTO permissions (name, code, module, description) VALUES (?, ?, ?, ?)',
+      [name, code, module, description || name + '权限']
+    );
+    res.json({ success: true, data: { id: result.lastInsertRowid } });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    if (error.message && error.message.includes('UNIQUE')) {
+      return res.status(400).json({ success: false, message: '权限编码已存在' });
+    }
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.put('/permissions/:id', adminOnly, (req, res) => {
+  try {
+    const { name, code, module, description } = req.body;
+    if (!name || !code || !module) {
+      return res.status(400).json({ success: false, message: '名称、编码和模块不能为空' });
+    }
+    req.db.run(
+      'UPDATE permissions SET name = ?, code = ?, module = ?, description = ? WHERE id = ?',
+      [name, code, module, description, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    if (error.message && error.message.includes('UNIQUE')) {
+      return res.status(400).json({ success: false, message: '权限编码已存在' });
+    }
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.delete('/permissions/:id', adminOnly, (req, res) => {
+  try {
+    const relations = req.db.all('SELECT * FROM role_permissions WHERE permission_id = ?', [req.params.id]);
+    if (relations.length > 0) {
+      return res.status(400).json({ success: false, message: '该权限已被角色使用，无法删除' });
+    }
+    req.db.run('DELETE FROM permissions WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.get('/roles/:id/permissions', (req, res) => {
+  try {
+    const permissions = req.db.all(`
+      SELECT p.* FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      WHERE rp.role_id = ?
+    `, [req.params.id]);
+    res.json({ success: true, data: permissions });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.put('/roles/:id/permissions', adminOnly, (req, res) => {
+  try {
+    const { permissionIds } = req.body;
+    // 使用事务批量操作
+    req.db.transaction(() => {
+      req.db.run('DELETE FROM role_permissions WHERE role_id = ?', [req.params.id]);
+      permissionIds.forEach(pid => {
+        req.db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', [req.params.id, pid]);
+      });
+    });
+    // 【F5】权限修改后立即清除缓存
+    clearPermissionCache(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ==================== 用户管理 ====================
+router.get('/users', (req, res) => {
+  try {
+    const { user_type } = req.query;
+    let sql = `
+      SELECT u.*, d.name as department_name, r.name as role_name, s.name as supplier_name, c.name as customer_name
+      FROM users u
+      LEFT JOIN departments d ON u.department_id = d.id
+      LEFT JOIN roles r ON u.role_id = r.id
+      LEFT JOIN suppliers s ON u.supplier_id = s.id
+      LEFT JOIN customers c ON u.customer_id = c.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (user_type) {
+      sql += ' AND u.user_type = ?';
+      params.push(user_type);
+    }
+    sql += ' ORDER BY u.id';
+    const users = req.db.all(sql, params);
+    users.forEach(u => delete u.password);
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/users/login', validate(userLogin), async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = req.db.get(`
+      SELECT u.*, d.name as department_name, r.name as role_name, r.code as role_code
+      FROM users u
+      LEFT JOIN departments d ON u.department_id = d.id
+      LEFT JOIN roles r ON u.role_id = r.id
+      WHERE u.username = ? AND u.status = 1
+    `, [username]);
+    if (!user) {
+      return res.status(401).json({ success: false, message: '用户名或密码错误' });
+    }
+    
+    // 密码验证：支持 bcrypt 哈希和明文密码（兼容旧数据）
+    let passwordValid = false;
+    if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
+      // bcrypt 哈希密码
+      passwordValid = await bcrypt.compare(password, user.password);
+    } else {
+      // 明文密码（兼容旧数据），验证后自动升级为哈希
+      passwordValid = (user.password === password);
+      if (passwordValid) {
+        const hashed = await bcrypt.hash(password, BCRYPT_ROUNDS);
+        req.db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, user.id]);
+      }
+    }
+    
+    if (!passwordValid) {
+      return res.status(401).json({ success: false, message: '用户名或密码错误' });
+    }
+    
+    delete user.password;
+    
+    // 获取用户权限
+    let permissions = [];
+    if (user.role_id) {
+      permissions = req.db.all(`
+        SELECT p.code FROM permissions p
+        JOIN role_permissions rp ON p.id = rp.permission_id
+        WHERE rp.role_id = ?
+      `, [user.role_id]).map(p => p.code);
+    }
+    
+    const tokenPayload = { id: user.id, username: user.username, role_id: user.role_id, role_code: user.role_code, user_type: user.user_type };
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    const refreshToken = jwt.sign(tokenPayload, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES_IN });
+    
+    res.json({ success: true, data: { ...user, permissions, token, refreshToken } });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/users', adminOnly, validate(userCreate), async (req, res) => {
+  try {
+    const { username, password, real_name, user_type, department_id, role_id, supplier_id, customer_id, status } = req.body;
+    // 密码加密
+    const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    req.db.run(`
+      INSERT INTO users (username, password, real_name, user_type, department_id, role_id, supplier_id, customer_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [username, hashedPassword, real_name, user_type || 'internal', department_id, role_id, supplier_id, customer_id, status ?? 1]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.put('/users/:id', adminOnly, async (req, res) => {
+  try {
+    const { username, real_name, user_type, department_id, role_id, supplier_id, customer_id, status, password } = req.body;
+    let sql = 'UPDATE users SET username = ?, real_name = ?, user_type = ?, department_id = ?, role_id = ?, supplier_id = ?, customer_id = ?, status = ?';
+    const params = [username, real_name, user_type, department_id, role_id, supplier_id, customer_id, status];
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      sql += ', password = ?';
+      params.push(hashedPassword);
+    }
+    sql += ', updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+    params.push(req.params.id);
+    req.db.run(sql, params);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.delete('/users/:id', adminOnly, (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    // 【S3】保护 admin 用户不可被删除
+    const user = req.db.get('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+    if (user.role_id === 1) return res.status(400).json({ success: false, message: '系统管理员不允许删除' });
+    // 不能删除自己
+    if (req.user && req.user.id === userId) return res.status(400).json({ success: false, message: '不能删除自己的账号' });
+    // 【B4】检查关联数据
+    const relatedOrders = req.db.get("SELECT COUNT(*) as count FROM production_orders WHERE operator = ?", [user.real_name]);
+    if (relatedOrders && relatedOrders.count > 0) {
+      return res.status(400).json({ success: false, message: `该用户有 ${relatedOrders.count} 条关联生产记录，无法删除` });
+    }
+    req.db.run('DELETE FROM users WHERE id = ?', [userId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[basic.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// JWT 令牌静默刷新端点（无需鉴权中间件，由 server.js 白名单控制）
+router.post('/users/refresh', (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(400).json({ success: false, message: '缺少 refreshToken' });
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+    const newToken = jwt.sign(
+      { id: decoded.id, username: decoded.username, role_id: decoded.role_id, role_code: decoded.role_code, user_type: decoded.user_type },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+    res.json({ success: true, data: { token: newToken } });
+  } catch (e) {
+    res.status(401).json({ success: false, message: '刷新令牌无效或已过期，请重新登录' });
+  }
+});
+
+module.exports = router;

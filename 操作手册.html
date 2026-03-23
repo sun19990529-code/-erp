@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>铭晟管理系统 操作手册</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            font-size: 14px;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20mm;
+            background: #fff;
+        }
+        
+        h1 {
+            font-size: 28px;
+            color: #1a365d;
+            text-align: center;
+            border-bottom: 3px solid #2b6cb0;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+            page-break-after: avoid;
+        }
+        
+        h2 {
+            font-size: 20px;
+            color: #2c5282;
+            border-left: 4px solid #3182ce;
+            padding-left: 12px;
+            margin-top: 35px;
+            margin-bottom: 18px;
+            page-break-after: avoid;
+        }
+        
+        h3 {
+            font-size: 16px;
+            color: #2d3748;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            page-break-after: avoid;
+        }
+        
+        h4 {
+            font-size: 14px;
+            color: #4a5568;
+            margin-top: 18px;
+            margin-bottom: 10px;
+        }
+        
+        p {
+            margin-bottom: 12px;
+            text-align: justify;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 13px;
+            page-break-inside: avoid;
+        }
+        
+        th {
+            background: #e2e8f0;
+            color: #2d3748;
+            font-weight: 600;
+            padding: 10px 12px;
+            text-align: left;
+            border: 1px solid #cbd5e0;
+        }
+        
+        td {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            vertical-align: top;
+        }
+        
+        tr:nth-child(even) {
+            background: #f7fafc;
+        }
+        
+        ul, ol {
+            margin: 12px 0;
+            padding-left: 25px;
+        }
+        
+        li {
+            margin-bottom: 6px;
+        }
+        
+        code {
+            background: #edf2f7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", monospace;
+            font-size: 13px;
+            color: #e53e3e;
+        }
+        
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-size: 12px;
+            page-break-inside: avoid;
+        }
+        
+        pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid #e2e8f0;
+            margin: 30px 0;
+        }
+        
+        strong {
+            color: #1a202c;
+        }
+        
+        blockquote {
+            border-left: 4px solid #3182ce;
+            padding: 10px 15px;
+            margin: 15px 0;
+            color: #4a5568;
+            background: #f7fafc;
+            border-radius: 0 5px 5px 0;
+        }
+
+        /* 版本标签 */
+        .version-tag {
+            display: inline-block;
+            background: #ebf8ff;
+            color: #2b6cb0;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        /* 打印样式 */
+        @media print {
+            body {
+                padding: 0;
+            }
+            
+            h1, h2, h3, h4 {
+                page-break-after: avoid;
+            }
+            
+            table, pre, blockquote {
+                page-break-inside: avoid;
+            }
+            
+            h2 {
+                page-break-before: auto;
+            }
+        }
+        
+        /* 封面样式 */
+        .cover {
+            text-align: center;
+            padding-top: 150px;
+            page-break-after: always;
+        }
+        
+        .cover h1 {
+            font-size: 36px;
+            border: none;
+            margin-bottom: 50px;
+        }
+        
+        .cover .subtitle {
+            font-size: 20px;
+            color: #4a5568;
+            margin-bottom: 100px;
+        }
+        
+        .cover .info {
+            font-size: 14px;
+            color: #718096;
+            margin-top: 50px;
+        }
+        
+        /* 目录样式 */
+        .toc {
+            page-break-after: always;
+        }
+        
+        .toc h2 {
+            text-align: center;
+            border: none;
+            margin-bottom: 30px;
+        }
+        
+        .toc ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .toc > ul > li {
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        
+        .toc ul ul {
+            padding-left: 20px;
+            margin-top: 8px;
+        }
+        
+        .toc ul ul li {
+            font-weight: normal;
+            color: #4a5568;
+        }
+
+        /* 页脚 */
+        .footer {
+            margin-top: 60px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 12px;
+            color: #a0aec0;
+        }
+    </style>
+</head>
+<body>
+<h1>铭晟管理系统 操作手册</h1>
+<hr>
+<h2>目录</h2>
+<ol>
+<li><a href="#1-%E7%B3%BB%E7%BB%9F%E6%A6%82%E8%BF%B0">系统概述</a></li>
+<li><a href="#2-%E7%99%BB%E5%BD%95%E4%B8%8E%E6%9D%83%E9%99%90">登录与权限</a></li>
+<li><a href="#3-%E5%A4%A7%E7%9B%98%E4%B8%8E%E5%85%A8%E6%99%AF%E7%89%B9%E6%80%A7V12">大盘与全景特性(v1.2)</a></li>
+<li><a href="#4-%E5%9F%BA%E7%A1%80%E6%95%B0%E6%8D%AE%E7%AE%A1%E7%90%86">基础数据管理</a></li>
+<li><a href="#5-%E6%89%AB%E7%A0%81%E5%B7%A5%E4%BD%9C%E5%8F%B0">扫码工作台(v1.2新)</a></li>
+<li><a href="#6-%E4%BB%93%E5%BA%93%E4%B8%8E%E6%89%B9%E6%AC%A1%E6%BA%AF%E6%BA%90%E7%AE%A1%E7%90%86">仓库与批次溯源管理</a></li>
+<li><a href="#7-%E8%AE%A2%E5%8D%95%E7%AE%A1%E7%90%86">订单管理</a></li>
+<li><a href="#8-%E7%94%9F%E4%BA%A7%E4%B8%8EAPS%E6%8E%92%E7%A8%8B">生产与APS排程(v1.2新)</a></li>
+<li><a href="#9-%E8%B4%A8%E9%87%8F%E6%A3%80%E9%AA%8C">质量检验</a></li>
+<li><a href="#10-%E9%87%87%E8%B4%AD%E7%AE%A1%E7%90%86">采购管理</a></li>
+<li><a href="#11-%E5%A7%94%E5%A4%96%E5%8A%A0%E5%B7%A5">委外加工</a></li>
+<li><a href="#12-%E7%B3%BB%E7%BB%9F%E8%81%94%E5%8A%A8%E8%AF%B4%E6%98%8E">系统联动说明</a></li>
+<li><a href="#13-%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98">常见问题</a></li>
+<li><a href="#14-v140-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.4.0 更新日志</a></li>
+</ol>
+<hr>
+<h2>1. 系统概述</h2>
+<h3>1.1 系统简介</h3>
+<p>铭晟管理系统是一套集成ERP与MES功能的企业管理系统，主要功能包括：</p>
+<ul>
+<li><strong>仓库管理</strong>：原材料、半成品、成品的出入库及库存管理</li>
+<li><strong>订单管理</strong>：销售订单的录入、跟踪与完成</li>
+<li><strong>生产管理</strong>：生产工单、工序流转、领料管理</li>
+<li><strong>质量检验</strong>：入库检验、巡检、委外检验、成品检验</li>
+<li><strong>采购管理</strong>：采购单据的录入与跟踪</li>
+<li><strong>委外加工</strong>：外协加工单据管理</li>
+</ul>
+<h3>1.2 系统访问</h3>
+<ul>
+<li><strong>访问地址</strong>：<a href="http://localhost:3198">http://localhost:3198</a></li>
+<li><strong>默认管理员账号</strong>：请联系系统管理员获取</li>
+</ul>
+<blockquote>
+<p><strong>安全说明</strong>：v1.0.2 起，系统采用 bcrypt 加密存储密码。首次登录时旧密码会自动升级为加密存储，无需手动操作。</p>
+</blockquote>
+<h3>1.3 界面布局</h3>
+<pre><code>┌─────────────────────────────────────────────────┐
+│                    顶部导航栏                     │
+├──────────┬──────────────────────────────────────┤
+│          │                                      │
+│  侧边栏   │           主内容区域                  │
+│  菜单     │                                      │
+│          │                                      │
+└──────────┴──────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2>2. 登录与权限</h2>
+<h3>2.1 用户登录</h3>
+<ol>
+<li>打开浏览器，访问系统地址</li>
+<li>输入用户名和密码</li>
+<li>点击【登录】按钮</li>
+<li>登录成功后跳转至系统概览页面</li>
+</ol>
+<h3>2.2 权限说明</h3>
+<p>系统采用角色权限控制，不同角色可访问的功能模块不同：</p>
+<table>
+<thead>
+<tr>
+<th>角色类型</th>
+<th>权限范围</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>系统管理员</td>
+<td>全部功能，包括用户管理、权限配置</td>
+</tr>
+<tr>
+<td>生产管理员</td>
+<td>生产管理、质量检验</td>
+</tr>
+<tr>
+<td>仓库管理员</td>
+<td>仓库管理、库存查询</td>
+</tr>
+<tr>
+<td>销售人员</td>
+<td>订单管理、客户管理</td>
+</tr>
+<tr>
+<td>采购人员</td>
+<td>采购管理、供应商管理</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. 大盘与全景特性(v1.2)</h2>
+<p>首页登录后即为系统大盘看板，您可以在此处纵深掌控全局业务流：</p>
+<ul>
+<li><strong>安全库存动态预警</strong>：当任何物资库存量跌破您设置的底水位时，系统除基础发黄灯外，还在看板底部生成了红色血条预警区。（原 <code>v1.0</code> 无此功能）。</li>
+<li><strong>产能宏观时序走势</strong>：通过中部双色连绵的波浪图表（近 7 日），主管可清晰看到进单量与下发加工流的匹配比率。</li>
+</ul>
+<hr>
+<h2>4. 基础数据管理</h2>
+<h3>3.1 产品管理</h3>
+<h4>3.1.1 原材料管理</h4>
+<p><strong>操作路径</strong>：基础数据 → 原材料管理</p>
+<p><strong>功能说明</strong>：管理原材料的基础信息，包括编码、名称、规格、单位等。</p>
+<p><strong>操作步骤</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>步骤</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>新增</td>
+<td>1. 点击【新增】按钮<br>2. 填写产品编码、名称、规格、单位<br>3. 选择类别为&quot;原材料&quot;<br>4. 设置单价、库存预警阈值<br>5. 点击【保存】</td>
+</tr>
+<tr>
+<td>编辑</td>
+<td>1. 在列表中找到目标产品<br>2. 点击操作列的【编辑】按钮<br>3. 修改信息后点击【保存】</td>
+</tr>
+<tr>
+<td>删除</td>
+<td>1. 点击操作列的【删除】按钮<br>2. 确认删除操作</td>
+</tr>
+</tbody></table>
+<p><strong>字段说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+<th>是否必填</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>产品编码</td>
+<td>唯一标识</td>
+<td>是</td>
+</tr>
+<tr>
+<td>产品名称</td>
+<td>产品名称</td>
+<td>是</td>
+</tr>
+<tr>
+<td>规格</td>
+<td>产品规格型号</td>
+<td>否</td>
+</tr>
+<tr>
+<td>单位</td>
+<td>计量单位（kg、件、支等）</td>
+<td>是</td>
+</tr>
+<tr>
+<td>类别</td>
+<td>原材料</td>
+<td>是</td>
+</tr>
+<tr>
+<td>单价</td>
+<td>单位价格</td>
+<td>否</td>
+</tr>
+<tr>
+<td>库存预警</td>
+<td>最低库存阈值</td>
+<td>否</td>
+</tr>
+</tbody></table>
+<h4>3.1.2 半成品管理</h4>
+<p><strong>操作路径</strong>：基础数据 → 半成品管理</p>
+<p>操作方式与原材料管理相同，类别选择&quot;半成品&quot;。</p>
+<h4>3.1.3 成品管理</h4>
+<p><strong>操作路径</strong>：基础数据 → 成品管理</p>
+<p><strong>特别说明</strong>：成品新增时需要配置工序流程。</p>
+<p><strong>新增成品步骤</strong>：</p>
+<ol>
+<li>点击【新增】按钮</li>
+<li>填写基本信息（编码、名称、规格、单位等）</li>
+<li>选择类别为&quot;成品&quot;</li>
+<li><strong>配置工序流程</strong>：<ul>
+<li>点击【添加工序】</li>
+<li>选择工序类型（轧机、校直、抛光等）</li>
+<li>设置工序顺序</li>
+<li>勾选是否委外</li>
+<li>对于顺序为1的工序，可配置领料清单</li>
+</ul>
+</li>
+<li>点击【保存】</li>
+</ol>
+<p><strong>工序配置说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>工序</th>
+<th>编码</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>轧机</td>
+<td>ROLLING</td>
+<td>轧机加工，可配置领料</td>
+</tr>
+<tr>
+<td>校直</td>
+<td>STRAIGHTENING</td>
+<td>校直处理</td>
+</tr>
+<tr>
+<td>抛光</td>
+<td>POLISHING</td>
+<td>表面抛光</td>
+</tr>
+<tr>
+<td>矫直</td>
+<td>CORRECTING</td>
+<td>矫直处理</td>
+</tr>
+<tr>
+<td>切割</td>
+<td>CUTTING</td>
+<td>切割加工</td>
+</tr>
+<tr>
+<td>拉拔</td>
+<td>DRAWING</td>
+<td>拉拔加工</td>
+</tr>
+<tr>
+<td>清洗</td>
+<td>CLEANING</td>
+<td>清洗处理</td>
+</tr>
+<tr>
+<td>线切割</td>
+<td>WIRE_CUTTING</td>
+<td>线切割加工</td>
+</tr>
+<tr>
+<td>激光切割</td>
+<td>LASER_CUTTING</td>
+<td>激光切割</td>
+</tr>
+<tr>
+<td>热处理</td>
+<td>HEAT_TREATMENT</td>
+<td>热处理加工</td>
+</tr>
+</tbody></table>
+<h3>3.2 供应商管理</h3>
+<p><strong>操作路径</strong>：基础数据 → 供应商管理</p>
+<p><strong>操作步骤</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>步骤</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>新增</td>
+<td>1. 点击【新增】<br>2. 填写供应商编码、名称<br>3. 填写联系人、电话、邮箱、地址<br>4. 点击【保存】</td>
+</tr>
+<tr>
+<td>编辑</td>
+<td>找到供应商 → 点击【编辑】→ 修改 → 保存</td>
+</tr>
+<tr>
+<td>删除</td>
+<td>点击【删除】→ 确认</td>
+</tr>
+</tbody></table>
+<h3>3.3 客户管理</h3>
+<p><strong>操作路径</strong>：基础数据 → 客户管理</p>
+<p><strong>字段说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>客户编码</td>
+<td>唯一标识</td>
+</tr>
+<tr>
+<td>客户名称</td>
+<td>客户全称</td>
+</tr>
+<tr>
+<td>联系人</td>
+<td>主要联系人</td>
+</tr>
+<tr>
+<td>电话</td>
+<td>联系电话</td>
+</tr>
+<tr>
+<td>地址</td>
+<td>收货地址</td>
+</tr>
+<tr>
+<td>信用等级</td>
+<td>A/B/C等级</td>
+</tr>
+</tbody></table>
+<h3>3.4 用户管理</h3>
+<h4>3.4.1 内部用户</h4>
+<p><strong>操作路径</strong>：基础数据 → 内部用户</p>
+<p><strong>新增步骤</strong>：</p>
+<ol>
+<li>点击【新增】按钮</li>
+<li>填写用户名、密码、真实姓名</li>
+<li>选择所属部门</li>
+<li>选择角色（决定权限范围）</li>
+<li>设置状态（启用/禁用）</li>
+<li>点击【保存】</li>
+</ol>
+<h4>3.4.2 外部用户</h4>
+<p>外部用户适用于供应商或合作伙伴，操作方式与内部用户相同，用户类型选择&quot;外部&quot;。</p>
+<h3>3.5 部门与角色管理</h3>
+<p><strong>操作路径</strong>：基础数据 → 部门管理 / 角色管理</p>
+<ul>
+<li><strong>部门管理</strong>：创建组织架构，为用户分配部门</li>
+<li><strong>角色管理</strong>：创建角色并分配权限</li>
+<li><strong>权限管理</strong>：配置各角色的功能权限</li>
+</ul>
+<hr>
+<h2>5. 扫码工作台(v1.2新)</h2>
+<p>为迎合一线工人的快速操作，系统现已全面接入外部 USB 扫码枪设备。</p>
+<ul>
+<li>导航进入 <strong>「扫码工作台」</strong>，您无需动用鼠标。</li>
+<li>只需要拿着扫描枪对准随件打印的 <code>QR 码</code> 扣动扳机。系统利用事件探头即刻拦截您的编码。</li>
+<li><strong>自动分转引擎</strong>：如果您扫入的是入库单码（如 RK-..），系统瞬间切换注入入库办理业务板；如果您扫入生产流转卡（如 PRD-..），系统飞速空降至对应工序进行报工界面。</li>
+</ul>
+<hr>
+<h2>6. 仓库与批次溯源管理</h2>
+<h3>6.1 库存查询 (含批号追踪)</h3>
+<p><strong>操作路径</strong>：仓库管理 → 原材料库存 / 半成品库存 / 成品库存</p>
+<p><strong>功能说明</strong>：查看当前库存数量、库存状态以及最核心的<strong>来源批号</strong>。</p>
+<blockquote>
+<p><strong>v1.2.0革命性升级：</strong> 系统彻底废除过去所有同种货物糊涂加在一起的设计。如今，一笔货物每一次入库（如 <code>RK-XXX</code>）都将有唯一的批次标签。同一种产品现在支持在多条不同的批次线中独立存活。</p>
+</blockquote>
+<p><strong>操作要点</strong>：</p>
+<ul>
+<li>支持按产品名称、编码以及特定 <strong>批次号</strong> 搜索。</li>
+<li>库存低于预警值（红线水位）时系统强制标记高亮警报。</li>
+</ul>
+<h3>4.2 入库管理</h3>
+<h4>4.2.1 原材料入库</h4>
+<p><strong>操作路径</strong>：仓库管理 → 原材料入库</p>
+<p><strong>新增入库单步骤</strong>：</p>
+<ol>
+<li>点击【新增】按钮</li>
+<li>选择仓库（原材料仓库）</li>
+<li>选择供应商（可选）</li>
+<li>添加入库明细：<ul>
+<li>点击【添加产品】</li>
+<li>选择产品</li>
+<li>输入库数量</li>
+<li>输入公斤数（如需要）</li>
+</ul>
+</li>
+<li>填写经办人、备注</li>
+<li>点击【保存】</li>
+<li>提交检验（如有检验要求）</li>
+</ol>
+<p><strong>入库单状态流转</strong>：</p>
+<pre><code>待检验 → 检验中 → 检验通过 → 已入库
+                 → 检验不合格 → 退回
+</code></pre>
+<h4>4.2.2 半成品入库</h4>
+<p><strong>操作路径</strong>：仓库管理 → 半成品入库</p>
+<p>操作方式与原材料入库相同，选择半成品仓库。</p>
+<h4>4.2.3 成品入库</h4>
+<p><strong>操作路径</strong>：仓库管理 → 成品入库</p>
+<p><strong>特别说明</strong>：成品入库可由生产完工自动生成。</p>
+<p><strong>手动入库步骤</strong>：</p>
+<ol>
+<li>选择成品仓库</li>
+<li>添加成品明细</li>
+<li>关联生产工单（可选）</li>
+<li>保存入库单</li>
+</ol>
+<h3>4.3 出库管理</h3>
+<h4>4.3.1 原材料出库</h4>
+<p><strong>操作路径</strong>：仓库管理 → 原材料出库</p>
+<p><strong>出库步骤（精确扣指批次版）</strong>：</p>
+<ol>
+<li>点击【新增】</li>
+<li>选择仓库与出单类型（生产领料/其他出库）</li>
+<li>添加出库明细</li>
+<li><strong>【核心步骤：指定批次】</strong> 您可以选择从现有库存中下拉圈定特定的一笔入账批次来扣减。如果你未圈定批次，请勿担心：后台将采用智能引擎（按最老的物资，采取 FIFO 先进先出法自动层级扣取！）。</li>
+<li>点击【保存】</li>
+</ol>
+<h4>4.3.2 成品出库</h4>
+<p><strong>操作路径</strong>：仓库管理 → 成品出库</p>
+<p><strong>特别说明</strong>：成品出库可由销售订单完成自动生成。</p>
+<p><strong>手动出库步骤</strong>：</p>
+<ol>
+<li>选择成品仓库</li>
+<li>添加出库产品明细</li>
+<li>关联销售订单（可选）</li>
+<li>保存出库单</li>
+</ol>
+<hr>
+<h2>5. 订单管理</h2>
+<h3>5.1 订单录入</h3>
+<p><strong>操作路径</strong>：订单管理 → 订单录入</p>
+<p><strong>新增订单步骤</strong>：</p>
+<ol>
+<li>点击【新增】按钮</li>
+<li>填写订单基本信息：<ul>
+<li>选择客户（或输入客户名称）</li>
+<li>填写客户电话、地址</li>
+<li>选择交货日期</li>
+<li>设置优先级</li>
+</ul>
+</li>
+<li>添加订单明细：<ul>
+<li>点击【添加产品】</li>
+<li>选择产品</li>
+<li>输入数量、单价</li>
+</ul>
+</li>
+<li>填写备注</li>
+<li>点击【保存】</li>
+</ol>
+<h3>5.2 订单状态</h3>
+<p><strong>操作路径</strong>：订单管理 → 订单状态</p>
+<p><strong>状态说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>待确认</td>
+<td>订单刚创建，等待确认</td>
+</tr>
+<tr>
+<td>已确认</td>
+<td>订单已确认，可安排生产</td>
+</tr>
+<tr>
+<td>生产中</td>
+<td>已生成生产工单，正在生产</td>
+</tr>
+<tr>
+<td>已完成</td>
+<td>订单已交付完成</td>
+</tr>
+<tr>
+<td>已取消</td>
+<td>订单已取消</td>
+</tr>
+</tbody></table>
+<p><strong>操作要点</strong>：</p>
+<ul>
+<li>可手动修改订单状态</li>
+<li>订单完成时自动生成成品出库单</li>
+<li>可查看关联的生产工单和出库单</li>
+</ul>
+<h3>5.3 订单查询</h3>
+<p><strong>操作路径</strong>：订单管理 → 订单查询</p>
+<p><strong>查询方式</strong>：</p>
+<ul>
+<li>按订单号搜索</li>
+<li>按客户名称搜索</li>
+<li>按状态筛选</li>
+<li>按日期范围筛选</li>
+</ul>
+<h3>5.4 生成生产工单</h3>
+<p><strong>操作步骤</strong>：</p>
+<ol>
+<li>在订单详情页面，点击【生成生产工单】</li>
+<li>系统自动为订单中的每个产品创建生产工单</li>
+<li>已存在的生产工单会自动跳过</li>
+<li>创建成功后可在订单详情中查看关联的生产工单</li>
+</ol>
+<hr>
+<h2>8. 生产与APS排程(v1.2新)</h2>
+<h3>8.1 APS 生产排程面板 (重大革新)</h3>
+<p>传统的单据堆叠极度抽象，现在您可以直接进入「APS 生产排程面板」以“上帝视角”推演您的产线！</p>
+<ul>
+<li><strong>流时间线调度</strong>：看板呈左右分页粘连——左侧是尚未终结的生产工单号与物料键；右面是一望无垠的日历刻度轴。系统自动抓取了你的“期望开工”和“期望收尾”生成彩色时间带。</li>
+<li><strong>色彩辨识</strong>：灰带代表挂起未启动，渐变碧蓝色代指车间正如火如荼进行的战斗单。</li>
+<li><strong>快接映射</strong>：在甘特板上随意点选任意一条流带，即刻弹回该单身前并允许即时修改它的状态。</li>
+</ul>
+<h3>8.2 生产工单管理</h3>
+<p><strong>操作路径</strong>：生产管理 → 生产工单管理</p>
+<p><strong>新增工单步骤</strong>：</p>
+<ol>
+<li>点击【新增】按钮</li>
+<li>选择产品（仅限成品）</li>
+<li>【可选】指派「计划开始日期」与「计划结束日期」（强烈建议设置，它将在 APS 排程控制台具象化生效！）。</li>
+<li>输入生产数量、办理流转人等元素。</li>
+<li>点击【保存】</li>
+</ol>
+<blockquote>
+<p><strong>v1.2新增功能</strong>：单据支持一键【生成并唤醒二维码标识打印】。您可以贴在实物托盘上全厂流转跟踪。</p>
+</blockquote>
+<p><strong>从订单创建工单</strong>：</p>
+<ol>
+<li>在订单详情页面点击【生成生产工单】</li>
+<li>系统自动创建关联的生产工单</li>
+<li>已存在的生产工单会自动跳过</li>
+</ol>
+<p><strong>工单状态流转</strong>：</p>
+<pre><code>待生产 → 生产中 → 已完成
+</code></pre>
+<p><strong>完成生产</strong>：</p>
+<ol>
+<li>找到目标工单</li>
+<li>点击【完成】按钮</li>
+<li>系统自动生成成品入库单</li>
+<li>库存自动增加</li>
+</ol>
+<h3>6.2 领料管理</h3>
+<p><strong>操作路径</strong>：生产管理 → 领料管理</p>
+<p><strong>领料步骤</strong>：</p>
+<ol>
+<li>点击【新增】</li>
+<li>选择生产工单</li>
+<li>选择领料仓库</li>
+<li>添加领料明细</li>
+<li>保存领料单</li>
+</ol>
+<p><strong>自动领料</strong>：</p>
+<p>当成品配置了工序领料清单，在生产工序流转时自动生成领料单。</p>
+<h3>6.3 工序管理</h3>
+<h4>6.3.1 工序流转</h4>
+<p><strong>操作路径</strong>：生产管理 → 对应工序（如轧机、校直等）</p>
+<p><strong>操作步骤</strong>：</p>
+<ol>
+<li>选择待处理的生产工单</li>
+<li>录入本工序的生产数据</li>
+<li>选择是否委外</li>
+<li>点击【完成本工序】</li>
+<li>流转至下一工序</li>
+</ol>
+<h4>6.3.2 委外工序</h4>
+<p>当工序勾选&quot;委外&quot;时：</p>
+<ol>
+<li>系统自动创建委外加工单</li>
+<li>工序状态变为&quot;委外中&quot;</li>
+<li>委外完成后，需要进行委外检验</li>
+<li>检验通过后工序流转至下一工序</li>
+</ol>
+<h3>6.4 成品工序配置</h3>
+<p><strong>操作路径</strong>：生产管理 → 成品工序配置</p>
+<p><strong>功能说明</strong>：为成品配置标准工序流程和物料绑定。</p>
+<p><strong>配置步骤</strong>：</p>
+<ol>
+<li>在成品列表中找到目标产品，点击【配置工序】</li>
+<li>在弹窗中添加工序：<ul>
+<li>选择工序类型（轧机、校直、抛光等 10 种）</li>
+<li>设置工序顺序</li>
+<li>勾选是否委外</li>
+</ul>
+</li>
+<li><strong>配置工序物料绑定（v1.4.0 新增）</strong>：<ul>
+<li>点击工序行右侧的【物料】按钮，展开物料子面板</li>
+<li>点击【添加物料】，选择原材料或半成品</li>
+<li>填入<strong>单位用量</strong>（生产1件成品所需的原材料量）和计量单位</li>
+<li>已绑定物料的工序，按钮显示物料数量标记</li>
+</ul>
+</li>
+<li>保存配置</li>
+</ol>
+<blockquote>
+<p><strong>v1.4.0 核心变更</strong>：首道工序（如轧机）绑定原材料后，报工时系统会<strong>自动从原材料仓库按 FIFO 扣减库存</strong>。如果库存不足，将阻止报工并提示缺料。</p>
+</blockquote>
+<hr>
+<h2>7. 质量检验</h2>
+<h3>7.1 入库检验</h3>
+<p><strong>操作路径</strong>：质量检验 → 入库检验</p>
+<p><strong>检验步骤</strong>：</p>
+<ol>
+<li>选择待检验的入库单</li>
+<li>录入检验数据</li>
+<li>填写检验结果：<ul>
+<li>合格：入库单状态变更为&quot;已入库&quot;，库存增加</li>
+<li>不合格：入库单状态变更为&quot;退回&quot;，需要退货处理</li>
+</ul>
+</li>
+<li>填写检验备注</li>
+<li>提交检验结果</li>
+</ol>
+<h3>7.2 巡检</h3>
+<p><strong>操作路径</strong>：质量检验 → 巡检</p>
+<p><strong>功能说明</strong>：生产过程中的质量巡检记录。</p>
+<p><strong>巡检步骤</strong>：</p>
+<ol>
+<li>选择生产工单</li>
+<li>选择巡检工序</li>
+<li>录入巡检数据</li>
+<li>记录巡检结果</li>
+<li>提交巡检记录</li>
+</ol>
+<h3>7.3 委外加工检验</h3>
+<p><strong>操作路径</strong>：质量检验 → 委外加工检验</p>
+<p><strong>检验步骤</strong>：</p>
+<ol>
+<li>选择待检验的委外加工单</li>
+<li>录入检验数据</li>
+<li>填写检验结果</li>
+<li>提交后：<ul>
+<li>合格：工序流转至下一工序</li>
+<li>不合格：需要返工或退货</li>
+</ul>
+</li>
+</ol>
+<h3>7.4 成品检验</h3>
+<p><strong>操作路径</strong>：质量检验 → 成品检验</p>
+<p><strong>检验步骤</strong>：</p>
+<ol>
+<li>选择待检验的生产工单</li>
+<li>录入成品检验数据</li>
+<li>填写检验结果</li>
+<li>提交检验：<ul>
+<li>合格：可进行成品入库</li>
+<li>不合格：需要返工处理</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2>8. 采购管理</h2>
+<h3>8.1 采购录入</h3>
+<p><strong>操作路径</strong>：采购管理 → 采购录入</p>
+<p><strong>新增采购单步骤</strong>：</p>
+<ol>
+<li>点击【新增】</li>
+<li>选择供应商</li>
+<li>添加采购明细：<ul>
+<li>选择产品</li>
+<li>输入数量、单价</li>
+</ul>
+</li>
+<li>填写交货日期、备注</li>
+<li>点击【保存】</li>
+</ol>
+<h3>8.2 采购状态</h3>
+<p><strong>操作路径</strong>：采购管理 → 采购状态</p>
+<p><strong>状态说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>待确认</td>
+<td>采购单刚创建</td>
+</tr>
+<tr>
+<td>已确认</td>
+<td>采购单已确认</td>
+</tr>
+<tr>
+<td>部分入库</td>
+<td>部分货物已入库</td>
+</tr>
+<tr>
+<td>已完成</td>
+<td>全部货物已入库</td>
+</tr>
+<tr>
+<td>已取消</td>
+<td>采购单已取消</td>
+</tr>
+</tbody></table>
+<h3>8.3 采购查询</h3>
+<p><strong>操作路径</strong>：采购管理 → 采购查询</p>
+<p>支持按供应商、状态、日期范围等条件查询。</p>
+<hr>
+<h2>9. 委外加工</h2>
+<h3>9.1 委外加工录入</h3>
+<p><strong>操作路径</strong>：委外加工 → 委外加工录入</p>
+<p><strong>新增委外单步骤</strong>：</p>
+<ol>
+<li>点击【新增】</li>
+<li>选择供应商</li>
+<li>添加委外明细：<ul>
+<li>选择产品</li>
+<li>输入数量</li>
+<li>填写加工要求</li>
+</ul>
+</li>
+<li>填写交货日期、备注</li>
+<li>点击【保存】</li>
+</ol>
+<h3>9.2 自动创建委外单</h3>
+<p>当生产工单的工序勾选&quot;委外&quot;时，系统自动创建委外加工单：</p>
+<ol>
+<li>工序流转时检测到委外标记</li>
+<li>自动创建委外加工单</li>
+<li>工序状态变更为&quot;委外中&quot;</li>
+<li>可在订单详情查看关联的委外单</li>
+</ol>
+<h3>9.3 委外加工状态</h3>
+<p><strong>操作路径</strong>：委外加工 → 委外加工状态</p>
+<p><strong>状态说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>待发料</td>
+<td>等待发料给供应商</td>
+</tr>
+<tr>
+<td>已发料</td>
+<td>已发料，等待加工</td>
+</tr>
+<tr>
+<td>已完成</td>
+<td>加工完成，等待检验</td>
+</tr>
+<tr>
+<td>已入库</td>
+<td>检验合格并入库</td>
+</tr>
+<tr>
+<td>已取消</td>
+<td>委外单已取消</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>10. 系统联动说明</h2>
+<h3>10.1 订单-生产联动</h3>
+<pre><code>销售订单 → 生成生产工单 → 生产完成 → 自动入库 → 订单完成 → 自动出库 → 订单标记已发货
+</code></pre>
+<p><strong>操作流程</strong>：</p>
+<ol>
+<li>创建销售订单</li>
+<li>在订单详情点击【生成生产工单】</li>
+<li>生产工单开始生产</li>
+<li>生产完成后自动生成入库单</li>
+<li>订单标记完成时自动生成出库单</li>
+<li>成品出库完成后，订单自动变更为&quot;已发货&quot;（v1.4.0 新增）</li>
+</ol>
+<blockquote>
+<p><strong>v1.0.2</strong>：删除待处理订单时，关联的待处理生产工单会自动清理。有进行中工单的订单禁止删除。
+<strong>v1.4.0</strong>：删除订单时同时清理关联的待处理领料单，杜绝孤儿数据。</p>
+</blockquote>
+<h3>10.2 生产-仓库联动</h3>
+<pre><code>首道工序报工 → 自动消耗原材料库存（v1.4.0 新增）
+生产领料 → 原材料出库
+生产完成 → 成品入库（含完工数量同步）
+</code></pre>
+<blockquote>
+<p><strong>v1.4.0 核心功能</strong>：首道工序（如轧机）报工时，系统自动按工序绑定的物料清单，乘以产出数量计算实际消耗量，并从原材料仓库按 FIFO 批次扣减。库存不足时阻止报工。</p>
+<p><strong>v1.0.2</strong>：领料完成后自动检查原材料是否全部领齐，全部领齐则标记工单&quot;材料就绪&quot;。</p>
+</blockquote>
+<h3>10.3 生产-委外联动</h3>
+<pre><code>工序勾选委外 → 自动创建委外单 → 委外完成 → 自动推进工序 → 下一工序或生产完成
+</code></pre>
+<blockquote>
+<p><strong>v1.0.2 关键改进</strong>：委外完成时自动推进生产工序，无需手动操作。如为最后一道工序，自动触发完整的生产完成链（成品入库→订单进度更新→成品出库）。</p>
+</blockquote>
+<h3>10.4 采购-入库联动</h3>
+<pre><code>采购单完成 → 自动创建入库单（含批次号、关联采购单ID）→ 入库检验 → 库存增加
+</code></pre>
+<blockquote>
+<p><strong>v1.4.0</strong>：采购自动生成的入库单现在携带完整的批次号（<code>IN-XXX-1, IN-XXX-2</code>），不再遗漏。
+<strong>v1.0.2</strong>：入库单关联采购单ID，可从入库记录追溯到源采购单。</p>
+</blockquote>
+<h3>10.5 采购建议（v1.0.2 新增）</h3>
+<p>系统根据未完成订单的材料需求缺口，结合当前库存，自动计算需采购量。</p>
+<p><strong>查看方式</strong>：仪表盘 → 采购建议</p>
+<h3>10.6 防重入库机制（v1.0.2 新增，v1.4.0 修复）</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>策略</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>入库检验通过</td>
+<td>只更新入库单状态，不直接改库存</td>
+</tr>
+<tr>
+<td>入库单审批</td>
+<td>统一增加库存，已处理的不重复增加</td>
+</tr>
+<tr>
+<td>成品检验通过</td>
+<td>只做通过/不通过记录，不修改完工数量（v1.4.0 修正）</td>
+</tr>
+<tr>
+<td>委外检验通过</td>
+<td>只更新委外单状态，库存由委外完成回调统一处理（v1.4.0 修正）</td>
+</tr>
+<tr>
+<td>生产完成</td>
+<td>由报工完成链统一设定完工数量并创建成品入库单</td>
+</tr>
+</tbody></table>
+<h3>10.7 质检暂停（v1.0.2 新增）</h3>
+<p>巡检不合格时，生产工单自动标记为&quot;质检暂停&quot;，仪表盘显示告警数。</p>
+<h3>10.8 关联记录跳转</h3>
+<ul>
+<li><strong>订单详情</strong>：显示关联的生产工单、出库单（可点击跳转）</li>
+<li><strong>生产工单详情</strong>：显示关联的委外单、入库单（可点击跳转）</li>
+</ul>
+<hr>
+<h2>11. 常见问题</h2>
+<h3>Q1: 忘记密码怎么办？</h3>
+<p>请联系系统管理员重置密码。v1.0.2 起密码使用 bcrypt 加密存储，管理员需为用户设置新密码。</p>
+<h3>Q2: 为什么无法删除某些数据？</h3>
+<ul>
+<li>已被其他单据引用的数据无法直接删除（级联保护）</li>
+<li>有进行中生产工单的订单禁止删除</li>
+<li>系统管理员可使用强制删除功能（会同时删除关联数据）</li>
+</ul>
+<h3>Q3: 库存数量不正确怎么办？</h3>
+<ol>
+<li>检查入库、出库记录是否正确</li>
+<li>确认所有入库单是否已通过检验并审批</li>
+<li>v1.0.2 已修复双重入库问题，如仍有异常请联系管理员</li>
+</ol>
+<h3>Q4: 生产工单无法完成？</h3>
+<p>请确认：</p>
+<ul>
+<li>所有工序是否已完成流转</li>
+<li>委外工序是否已检验通过（v1.0.2 起委外完成自动推进工序）</li>
+<li>成品检验是否已完成</li>
+<li>工单是否处于&quot;质检暂停&quot;状态（巡检不合格会触发）</li>
+</ul>
+<h3>Q5: 生产工单显示&quot;质检暂停&quot;？</h3>
+<p>巡检不合格时系统自动暂停生产。处理方式：</p>
+<ol>
+<li>查看巡检记录，了解不合格原因</li>
+<li>处理质量问题后，手动将工单状态改回&quot;生产中&quot;</li>
+</ol>
+<h3>Q6: 如何判断是否可以开始生产？</h3>
+<p>查看生产工单的&quot;材料就绪&quot;标记。当该订单所需的全部原材料领料完成后，系统自动标记为就绪。</p>
+<h3>Q7: 如何查看操作历史？</h3>
+<p>当前版本暂不支持操作日志查询，后续版本会添加此功能。</p>
+<hr>
+<h2>附录：快捷键说明</h2>
+<table>
+<thead>
+<tr>
+<th>快捷键</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Esc</td>
+<td>关闭弹窗</td>
+</tr>
+<tr>
+<td>Enter</td>
+<td>表单提交</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>14. v1.4.0 更新日志</h2>
+<p><strong>发布日期</strong>：2026年3月23日</p>
+<h3>新增功能</h3>
+<ul>
+<li><strong>工序物料绑定</strong>：成品工序配置页面新增物料绑定子面板，可为每道工序配置所需原材料及单位用量</li>
+<li><strong>首道工序自动扣减库存</strong>：首道工序报工时自动消耗原材料（FIFO 批次扣减），库存不足则阻断报工</li>
+<li><strong>报工物料信息展示</strong>：报工弹窗蓝色高亮显示即将消耗的原材料清单，提交后 toast 通知消耗明细</li>
+<li><strong>完工数量同步</strong>：最终工序完成时自动更新生产工单的完成数量</li>
+<li><strong>出库-订单发货联动</strong>：成品出库完成后自动将关联订单标记为&quot;已发货&quot;</li>
+</ul>
+<h3>BUG 修复</h3>
+<ul>
+<li>🔴 修复入库单审核时 items 变量未查询导致的致命崩溃</li>
+<li>🟠 修复委外检验通过时重复入库（检验和委外完成回调各加一次）</li>
+<li>🟠 修复成品检验与报工完成对 completed_quantity 的重复写入</li>
+<li>🟡 修复采购自动入库时批次号缺失的问题</li>
+<li>🟡 修复删除订单时遗漏清理关联领料单的问题</li>
+</ul>
+<hr>
+<p><strong>文档版本</strong>：v1.4.0
+<strong>更新日期</strong>：2026年3月23日
+<strong>编写人</strong>：系统架构师与实施工程师</p>
+
+<div class="footer">铭晟管理系统 v1.4.0 &mdash; 本文件由 generate.bat 自动生成</div>
+</body>
+</html>

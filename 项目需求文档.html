@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>铭晟管理系统 项目需求文档 (PRD)</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            font-size: 14px;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20mm;
+            background: #fff;
+        }
+        
+        h1 {
+            font-size: 28px;
+            color: #1a365d;
+            text-align: center;
+            border-bottom: 3px solid #2b6cb0;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+            page-break-after: avoid;
+        }
+        
+        h2 {
+            font-size: 20px;
+            color: #2c5282;
+            border-left: 4px solid #3182ce;
+            padding-left: 12px;
+            margin-top: 35px;
+            margin-bottom: 18px;
+            page-break-after: avoid;
+        }
+        
+        h3 {
+            font-size: 16px;
+            color: #2d3748;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            page-break-after: avoid;
+        }
+        
+        h4 {
+            font-size: 14px;
+            color: #4a5568;
+            margin-top: 18px;
+            margin-bottom: 10px;
+        }
+        
+        p {
+            margin-bottom: 12px;
+            text-align: justify;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 13px;
+            page-break-inside: avoid;
+        }
+        
+        th {
+            background: #e2e8f0;
+            color: #2d3748;
+            font-weight: 600;
+            padding: 10px 12px;
+            text-align: left;
+            border: 1px solid #cbd5e0;
+        }
+        
+        td {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            vertical-align: top;
+        }
+        
+        tr:nth-child(even) {
+            background: #f7fafc;
+        }
+        
+        ul, ol {
+            margin: 12px 0;
+            padding-left: 25px;
+        }
+        
+        li {
+            margin-bottom: 6px;
+        }
+        
+        code {
+            background: #edf2f7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", monospace;
+            font-size: 13px;
+            color: #e53e3e;
+        }
+        
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-size: 12px;
+            page-break-inside: avoid;
+        }
+        
+        pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid #e2e8f0;
+            margin: 30px 0;
+        }
+        
+        strong {
+            color: #1a202c;
+        }
+        
+        blockquote {
+            border-left: 4px solid #3182ce;
+            padding: 10px 15px;
+            margin: 15px 0;
+            color: #4a5568;
+            background: #f7fafc;
+            border-radius: 0 5px 5px 0;
+        }
+
+        /* 版本标签 */
+        .version-tag {
+            display: inline-block;
+            background: #ebf8ff;
+            color: #2b6cb0;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        /* 打印样式 */
+        @media print {
+            body {
+                padding: 0;
+            }
+            
+            h1, h2, h3, h4 {
+                page-break-after: avoid;
+            }
+            
+            table, pre, blockquote {
+                page-break-inside: avoid;
+            }
+            
+            h2 {
+                page-break-before: auto;
+            }
+        }
+        
+        /* 封面样式 */
+        .cover {
+            text-align: center;
+            padding-top: 150px;
+            page-break-after: always;
+        }
+        
+        .cover h1 {
+            font-size: 36px;
+            border: none;
+            margin-bottom: 50px;
+        }
+        
+        .cover .subtitle {
+            font-size: 20px;
+            color: #4a5568;
+            margin-bottom: 100px;
+        }
+        
+        .cover .info {
+            font-size: 14px;
+            color: #718096;
+            margin-top: 50px;
+        }
+        
+        /* 目录样式 */
+        .toc {
+            page-break-after: always;
+        }
+        
+        .toc h2 {
+            text-align: center;
+            border: none;
+            margin-bottom: 30px;
+        }
+        
+        .toc ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .toc > ul > li {
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        
+        .toc ul ul {
+            padding-left: 20px;
+            margin-top: 8px;
+        }
+        
+        .toc ul ul li {
+            font-weight: normal;
+            color: #4a5568;
+        }
+
+        /* 页脚 */
+        .footer {
+            margin-top: 60px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 12px;
+            color: #a0aec0;
+        }
+    </style>
+</head>
+<body>
+<h1>铭晟管理系统 (ERP-MES) - 项目需求文档 (PRD)</h1>
+<p><strong>文档版本</strong>：v1.4.0<br><strong>更新日期</strong>：2026年3月23日  </p>
+<h2>一、 项目背景与业务目标</h2>
+<p>为了解决生产制造与进销存管理中数据割裂的问题，打破接单、采购、排产、品控与仓储各环节的信息孤岛，本机组建了「<strong>铭晟管理系统</strong>」。该系统是一套深度融合 **ERP（企业资源计划）**与 **MES（制造执行系统）**核心功能的轻量级、智能化的业务闭环软件。</p>
+<p><strong>核心业务目标</strong>：</p>
+<ol>
+<li><strong>订单驱动打通</strong>：实现“销售订单 ➔ 自动下发生产排产 ➔ 工序流转与委外 ➔ 入库及发货”的全局联动，减少人工数据搬运。</li>
+<li><strong>闭环防重与底线警戒预警</strong>：防止双重入库、质检不合格阻断生产、库存低水位自动缺料报警并建议采购。具备物料低线预警熔断逻辑。</li>
+<li><strong>高可视化大盘与追溯</strong>：利用现代前端架构及数据图表工具，透视全厂业务健康度与时间流维度的排程走势（APS）；同时拥有从物料直至成品的严格入批出批的底层追溯矩阵。</li>
+</ol>
+<hr>
+<h2>二、 核心业务生命周期（业务蓝图）</h2>
+<h3>2.1 销售到出货流转（Order-to-Cash）</h3>
+<ul>
+<li>接到客户【销售订单】 ➔ 【生成生产工单】 ➔ 车间按工序【领料出库】 ➔ [生产流转及可能发生外协委外] ➔ 生产完毕转入【成品检验】 ➔ 合格后【自动/手动成品入库】 ➔ 【销售订单完成】驱动【自动成品出库】。</li>
+</ul>
+<h3>2.2 采购到入库流转（Procure-to-Pay）</h3>
+<ul>
+<li>系统侦测缺料库存报警 ➔ 采购员编制【采购订单】 ➔ 供应商发货到厂 ➔ 【采购入库】（联动采购单号） ➔ 物料执行【入库检验】 ➔ 检验合格后，自动增加全局可用库存。</li>
+</ul>
+<hr>
+<h2>三、 功能模块需求池</h2>
+<h3>1. 系统全景看板 (Dashboard)</h3>
+<ul>
+<li><strong>核心数据抛跳</strong>：常年悬挂当前系统的“待处理订单”、“生产中单据”、“待处理质检”和“报警异常事件”基础统计。</li>
+<li><strong>业务时序看板</strong>：利用双色渐变折线分布图监控厂区“近 7 天销售接单量与车间排产量”的对比走势。</li>
+<li><strong>全局管态健康与安全阀检测</strong>：具备动态环块截面图与底水位越界警示。只要有物资被划破底线阈值，就会在数据中心面板激起红色预警模块，允许管理层超快查阅亏空清单。</li>
+<li><strong>APS 制程推演系统(Gantt)</strong>：将车间作业转化为了以时间作为物理横轴的可视化甘特图控件，允许直接框定任务周期；以“进度、延期、挂起”的多色条带宏观调控所有的运作中心并带有一键报工映射。</li>
+</ul>
+<h3>2. 基础数据中台 (MDM)</h3>
+<p>这是支持业务开展的根基静态数据。</p>
+<ul>
+<li><strong>产品池管理</strong>：分为“原材料”、“半成品”、“成品”。其中成品<strong>必须支持工序级 BOM 配置</strong>与指定流转卡绑定。</li>
+<li><strong>往来单位库</strong>：沉淀“供应商（支持资质和等级）”、“客户（信用评级管理）”。</li>
+<li><strong>组织结构设置</strong>：按部门划分，按角色定义原子权限，并支持内部子业务人员与对接外部供应商的人员隔离。</li>
+</ul>
+<h3>3. 智能仓储与溯源防伪 (WMS)</h3>
+<ul>
+<li><strong>库存雷达与水位器</strong>：支持原材料、半成品与成品按条形码/产品大区即时跟踪状态，设立安全库存下限值并触发熔断警告。</li>
+<li><strong>深度批次控制流 (Batch Traceability)</strong>：彻底放弃粗颗粒度的简单累加；现在所有仓配操作强制具备批次附魔——每一次采购入库、自动完工入库都将被贴上类似 <code>RK-XXX</code> 或 <code>PRD-XXX</code> 的唯一身世码；而每一次调配、出库也要求精密选取消耗批次。若未人工接管，则系统将按照底层默认约束的 <strong>先入先出 (FIFO)</strong> 原则无情核销老化库存。</li>
+<li><strong>扫码枪数字孪生站</strong>：全局配备唯一的 <code>扫码收银台</code> 中枢，只要监听外接的 USB 扫描设备射入单号，直接光速分摊对应的工作流拦截器（例如自动跳转某笔采购单审批界面，或工单流转界面），提升10倍人效。</li>
+</ul>
+<h3>4. 销售订单中心 (OMS)</h3>
+<ul>
+<li>支持业务员新建包含不同 SKU 子层级的销售合同订单，具备状态监控功能（待确认 -&gt; 生产中 -&gt; 已完成）。</li>
+<li>支持基于当前订单的交期测算与一键“下达排产工单指令”。</li>
+</ul>
+<h3>5. 车间执行系统 (MES)</h3>
+<ul>
+<li><p><strong>工单生成与追踪</strong>：继承销售单明细转化为车间制造指令。</p>
+</li>
+<li><p><strong>工序级报工</strong>：支持车间多达近十种专属工序（如轧机、校直、抛光、激光等）分段管控，完成一步流转下一步。</p>
+</li>
+<li><p><strong>工序物料绑定与自动消耗（v1.4.0）</strong>：支持为每道工序配置所需原材料及单位用量；首道工序报工时自动按产出量乘以单位用量计算消耗量，从原材料仓库按 FIFO 批次扣减。库存不足时阻断报工并弹出缺料提示。</p>
+</li>
+<li><p><strong>领料与物料就绪</strong>：监控前置齐套率。若原材料库已出齐，则工单自亮起“材料就绪”绿灯。</p>
+</li>
+<li><p><strong>一键外协</strong>：车间指定工序遇产能瓶颈，勾选“委外”自动派生委外加工单，转入委外质检闭环。</p>
+</li>
+<li><p><strong>完工数量同步（v1.4.0）</strong>：最终工序完成时自动将产出数量回写生产工单的完工数量字段。</p>
+</li>
+</ul>
+<h3>6. 质量检验保障 (QMS)</h3>
+<p>所有物料节点的强制拦截器。</p>
+<ul>
+<li><strong>多维度检验面</strong>：提供“采购买入检验”、“生产过程巡检”、“委外回厂检验”以及“最终成品出厂检验”。</li>
+<li><strong>不合格熔断</strong>：巡检遇异常，自动挂起当笔工单并将状态冻结为“质检暂停”，直到管理层处理复查合格。</li>
+</ul>
+<h3>7. 采购与委外跟踪</h3>
+<ul>
+<li><strong>动态采购建议</strong>：根据未完成的未投料销售订单所需物料减去现有静置库存，自动输出包含缺口的采购建议量。</li>
+<li><strong>发退料跟踪</strong>：监控委外供应商是否已经领料，加工品是否全数回厂质检。</li>
+</ul>
+<hr>
+<h2>四、 非功能性与技术需求</h2>
+<h3>4.1 技术架构与选型</h3>
+<ul>
+<li><strong>前端体系</strong>：基于 <code>Vite</code> 构建工具重度工程化。使用现代化的单页应用标准 <code>React 19</code>。UI 层以 <code>Tailwind CSS 3/4</code> 原子类构建玻璃流体质感的极简企业级界面；看板监控池集成轻量级图表引擎 <code>Recharts</code>。</li>
+<li><strong>后端体系</strong>：由 <code>Node.js</code> + <code>Express</code> 运行轻量的 RESTful API 路由容器层；利用内存/文件跨平台双解兼容的 <code>sqlite3</code> 提供业务关系解耦和数据落盘保障。</li>
+<li><strong>通信与交付</strong>：前后端解耦部署但融合发布。提供 <code>.bat</code> CLI 自动探针化脚本（检测环境、拉依赖包、动态编译构建 Vite 的 dist 包并用 Node 服务挂载同源输出）。</li>
+</ul>
+<h3>4.2 性能与安全标准</h3>
+<ol>
+<li><strong>加载速率</strong>：得益于前端模块剥离和生产级 Vite 构建，网页载入从几秒白屏延迟级提升至毫秒级无感渲染。</li>
+<li><strong>加密存储设计</strong>：管理员重置或新增用户凭证时利用强制 <code>bcryptjs</code> 执行带盐强哈希非明文下沉数据库。</li>
+<li><strong>查询防抖与检索优化</strong>：前端表单应用了防抖钩子拦截无意义的连续击键搜索；SQLite 后端创建了关键业务订单的多列索引，确保存量几十万单时的响应在 500ms 即刻内。</li>
+<li><strong>数据一致性保障（v1.4.0）</strong>：通过事务封装确保库存扣减与报工记录的原子性；消除多点写入同一字段的重复风险；消除多路径触发重复入库的逻辑缺陷。</li>
+</ol>
+<hr>
+<h2>五、 版本历史</h2>
+<table>
+<thead>
+<tr>
+<th>版本</th>
+<th>日期</th>
+<th>主要变更</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>v1.0.0</td>
+<td>2026-03</td>
+<td>基础功能上线：订单、生产、仓库、采购、委外、质检</td>
+</tr>
+<tr>
+<td>v1.0.2</td>
+<td>2026-03</td>
+<td>联动修复：防重入库、委外自动推进工序、质检暂停、bcrypt加密</td>
+</tr>
+<tr>
+<td>v1.2.0</td>
+<td>2026-03-22</td>
+<td>大盘看板、APS甘特图、批次追溯、扫码工作台</td>
+</tr>
+<tr>
+<td>v1.4.0</td>
+<td>2026-03-23</td>
+<td>工序物料绑定、首工序自动扣减库存、完工数量同步、发货联动、全链路6项BUG修复</td>
+</tr>
+</tbody></table>
+
+<div class="footer">铭晟管理系统 v1.4.0 &mdash; 本文件由 generate.bat 自动生成</div>
+</body>
+</html>

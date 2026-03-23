@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ==================================================== */
+    /* Theme A: 现代青翠 (Modern Teal) - 全局默认主题       */
+    /* ==================================================== */
+    --color-primary-50: #f0fdfa;
+    --color-primary-100: #ccfbf1;
+    --color-primary-200: #99f6e4;
+    --color-primary-500: #14b8a6;
+    --color-primary-600: #0d9488;
+    
+    /* 界面层级面性颜色 (Surface) */
+    --color-bg-base: #ffffff;      /* 取代原先的 white */
+    --color-surface-50: #f8fafc;   /* 取代 gray-50 */
+    --color-surface-100: #f1f5f9;  /* 取代 gray-100 */
+    --color-surface-200: #e2e8f0;
+    --color-surface-300: #cbd5e1;
+    --color-surface-400: #94a3b8;
+    --color-surface-500: #64748b;
+    --color-surface-600: #475569;
+    --color-surface-700: #334155;
+    --color-surface-800: #1e293b;
+    --color-surface-900: #0f172a;
+
+    --base-radius: 0.75rem; /* 大圆角 12px */
+  }
+
+  .theme-dark {
+    /* ==================================================== */
+    /* Theme B: 工业深邃 (Industrial Dark) - 车间大屏沙箱域 */
+    /* ==================================================== */
+    --color-primary-50: #1e3a8a;   /* 幽光蓝背景 */
+    --color-primary-100: #172554; 
+    --color-primary-200: #1e40af;
+    --color-primary-500: #3b82f6;  /* 电光蓝主色 */
+    --color-primary-600: #60a5fa;  /* 浅蓝悬停色 */
+
+    /* 暗黑模式界面反转 */
+    --color-bg-base: #020617;      /* 极黑背景 (原本的 bg-white) */
+    --color-surface-50: #0f172a;   /* 卡片背景 (原本的 bg-gray-50) */
+    --color-surface-100: #1e293b;  /* 边框及次要卡片 (原本的 bg-gray-100) */
+    --color-surface-200: #334155;
+    --color-surface-300: #475569;
+    --color-surface-400: #64748b;
+    --color-surface-500: #94a3b8;  /* 文字及图标反转 */
+    --color-surface-600: #cbd5e1;
+    --color-surface-700: #e2e8f0;
+    --color-surface-800: #f1f5f9;
+    --color-surface-900: #f8fafc;  /* 最亮文字 (原本的 text-gray-900) */
+
+    --base-radius: 0.25rem; /* 小圆角硬朗 4px */
+  }
+}
+
+body {
+  @apply bg-gray-100 text-gray-800; /* 全局底层使用代理过的灰色体系 */
+}
+
+/* ================== 下方保留原有自定义类 ================== */
+
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .sidebar-item:hover { background: rgba(255,255,255,0.1); }
+    .sidebar-item.active { background: rgba(255,255,255,0.2); border-left: 3px solid #fff; }
+    .submenu-item:hover { background: rgba(255,255,255,0.05); }
+    .submenu-item.active { background: rgba(255,255,255,0.1); color: #fff; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+    .fade-in { animation: fadeIn 0.3s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    /* 响应式设计 */
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+    .sidebar-overlay.active { display: block; }
+    @media (max-width: 768px) {
+      .mobile-sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; }
+      .mobile-sidebar.open { transform: translateX(0); }
+      .mobile-topbar { display: flex !important; }
+      .table-responsive { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .table-responsive table { min-width: 640px; }
+    }
+    @media (min-width: 769px) {
+      .mobile-topbar { display: none !important; }
+      .mobile-sidebar { transform: translateX(0) !important; position: relative !important; z-index: auto !important; }
+      .sidebar-overlay { display: none !important; }
+    }
+  
