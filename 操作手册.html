@@ -264,6 +264,7 @@
 <li><a href="#12-%E7%B3%BB%E7%BB%9F%E8%81%94%E5%8A%A8%E8%AF%B4%E6%98%8E">系统联动说明</a></li>
 <li><a href="#13-%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98">常见问题</a></li>
 <li><a href="#14-v140-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.4.0 更新日志</a></li>
+<li><a href="#15-v141-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.4.1 更新日志</a></li>
 </ol>
 <hr>
 <h2>1. 系统概述</h2>
@@ -1131,10 +1132,34 @@
 <li>🟡 修复删除订单时遗漏清理关联领料单的问题</li>
 </ul>
 <hr>
-<p><strong>文档版本</strong>：v1.4.0
-<strong>更新日期</strong>：2026年3月23日
-<strong>编写人</strong>：系统架构师与实施工程师</p>
+<h2>15. v1.4.1 更新日志</h2>
+<p><strong>发布日期</strong>：2026年3月23日<br><strong>版本类型</strong>：安全加固修订版</p>
+<h3>安全加固（关键）</h3>
+<ul>
+<li>🔴 <strong>API 权限全面加固</strong>：为角色、权限、用户管理的所有写操作接口（11 条路由）添加 <code>system_admin</code> 权限校验，防止普通账号通过 API 绕过前端控制操作后台权限体系</li>
+<li>🟠 <strong>操作日志接口保护</strong>：<code>GET /api/logs</code> 限制为仅管理员可访问</li>
+<li>🟡 <strong>CORS 正则加固</strong>：进一步收紧跨域来源白名单校验</li>
+</ul>
+<h3>BUG 修复</h3>
+<ul>
+<li>🟠 修复 <code>purchase.js</code>（采购单创建）、<code>warehouse.js</code>（入库/出库创建）、<code>outsourcing.js</code>（委外单创建）共 4 处 <code>res.json</code> 在数据库事务内部调用的问题，消除事务回滚后仍返回成功响应的数据一致性隐患</li>
+<li>🟡 修复 <code>orders.js</code> 和 <code>production.js</code> 创建接口同类问题（已在 v1.4.1 前的热修复中先行修复）</li>
+<li>🟡 补充 <code>orders/:id/materials</code>、<code>outsourcing/pending</code> 等路由的缺失权限中间件</li>
+</ul>
+<h3>UI 优化</h3>
+<ul>
+<li>🎨 重新设计登录页为<strong>左右分栏高质感布局</strong>（Split Layout），风格与系统主界面完全统一</li>
+<li>✨ 登录页新增品牌展示区、系统愿景标语、微交互动效</li>
+</ul>
+<h3>代码质量</h3>
+<ul>
+<li>采购单创建接口补充 <code>items</code> 后端空值防护校验</li>
+<li><code>server.js</code> 注释笔误修正</li>
+<li>所有创建类接口统一在事务外调用 <code>writeLog</code>，完善操作日志记录</li>
+</ul>
+<hr>
+<p><strong>文档版本</strong>：v1.4.1<br><strong>更新日期</strong>：2026年3月23日<br><strong>编写人</strong>：系统架构师与实施工程师</p>
 
-<div class="footer">铭晟管理系统 v1.4.0 &mdash; 本文件由 generate.bat 自动生成</div>
+<div class="footer">铭晟管理系统 v1.5.1 &mdash; 本文件由 generate.bat 自动生成</div>
 </body>
 </html>

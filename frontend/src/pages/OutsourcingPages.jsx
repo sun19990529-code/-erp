@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
@@ -310,7 +311,7 @@ const OutsourcingManager = () => {
                 </select>
               </div>
               <div><label className="block text-sm font-medium mb-1">预计完成日期</label><input name="expected_date" type="date" className="w-full border rounded-lg px-3 py-2" /></div>
-              <div><label className="block text-sm font-medium mb-1">操作员</label><input name="operator" className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect /></div>
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">加工明细</label>

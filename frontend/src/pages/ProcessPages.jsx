@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
@@ -390,7 +391,7 @@ const ProcessManager = ({ processCode }) => {
           )}
           <form onSubmit={saveProcess} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium mb-1">操作员</label><input name="operator" className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect /></div>
               <div><label className="block text-sm font-medium mb-1">投入数量 ({unit})</label><input name="input_quantity" type="number" className="w-full border rounded-lg px-3 py-2" /></div>
               <div><label className="block text-sm font-medium mb-1">产出数量 ({unit}) <span className="text-gray-400 text-xs">最大: {modal.item?.quantity} {unit}</span></label><input name="output_quantity" type="number" max={modal.item?.quantity} className="w-full border rounded-lg px-3 py-2" /></div>
               <div><label className="block text-sm font-medium mb-1">不良数量 ({unit})</label><input name="defect_quantity" type="number" className="w-full border rounded-lg px-3 py-2" /></div>

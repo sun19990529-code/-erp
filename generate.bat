@@ -1,20 +1,18 @@
 @echo off
 chcp 65001 >nul
-title 铭晟管理系统 - 文档生成器 v1.4.0
+title ERP-MES v1.5.1 - Document Generator
 
 echo ============================================
-echo   铭晟管理系统 - HTML 文档生成器
-echo   版本: v1.4.0
+echo   ERP-MES Management System
+echo   HTML Document Generator v1.5.1
 echo ============================================
 echo.
-echo 正在生成以下文档的 HTML 版本：
-echo   - 操作手册.md
+echo Generating HTML documents from:
 echo   - 项目需求文档.md
-echo   - 部署操作文档.md
 echo.
 node generate-pdf.js
 echo.
 echo ============================================
-echo 生成完毕！用浏览器打开 .html 文件即可查阅或打印为 PDF。
+echo Done! Open the .html files in browser.
 echo ============================================
 pause

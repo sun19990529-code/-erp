@@ -23,7 +23,11 @@ router.get('/inbound', requirePermission('inspection_view'), (req, res) => {
 
 router.post('/inbound', requirePermission('inspection_create'), (req, res) => {
   try {
-    const { inbound_order_id, product_id, quantity, result: inspResult, inspector, remark, defect_quantity, defect_type, pass_quantity, fail_quantity } = req.body;
+    const {
+      inbound_order_id, product_id, quantity, result: inspResult,
+      inspector, remark, defect_quantity, defect_type,
+      pass_quantity, fail_quantity
+    } = req.body;
     const inspNo = generateOrderNo('IBI');
     
     req.db.transaction(() => {
@@ -35,9 +39,14 @@ router.post('/inbound', requirePermission('inspection_create'), (req, res) => {
       
       if (inspResult === 'pass') {
         // 【联动#2修复】检验通过只更新入库单状态，不直接修改库存
-        const allItems = req.db.all('SELECT * FROM inbound_items WHERE inbound_id = ?', [inbound_order_id]);
+        const allItems = req.db.all(
+          'SELECT * FROM inbound_items WHERE inbound_id = ?', [inbound_order_id]
+        );
         const allInspected = allItems.every(item => {
-          const insp = req.db.get('SELECT * FROM inbound_inspections WHERE inbound_id = ? AND product_id = ? AND result = ?', [inbound_order_id, item.product_id, 'pass']);
+          const insp = req.db.get(
+            'SELECT * FROM inbound_inspections WHERE inbound_id = ? AND product_id = ? AND result = ?',
+            [inbound_order_id, item.product_id, 'pass']
+          );
           return !!insp;
         });
         if (allInspected) {
@@ -48,11 +57,20 @@ router.post('/inbound', requirePermission('inspection_create'), (req, res) => {
             // 同步执行库存增加（与 warehouse.js PUT /inbound/:id/status 逻辑一致）
             allItems.forEach(item => {
               const batch = item.batch_no || 'DEFAULT_BATCH';
-              const existing = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
+              const existing = req.db.get(
+                'SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+                [order.warehouse_id, item.product_id, batch]
+              );
               if (existing) {
-                req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, existing.id]);
+                req.db.run(
+                  'UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                  [item.quantity, existing.id]
+                );
               } else {
-                req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity]);
+                req.db.run(
+                  'INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
+                  [order.warehouse_id, item.product_id, batch, item.quantity]
+                );
               }
             });
           }

@@ -1,25 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './context/ToastContext';
 import { AuthContext } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import Sidebar from './pages/Sidebar';
-import Dashboard from './pages/Dashboard';
-import { InventoryView, WarehouseOrderManager } from './pages/WarehousePages';
-import { OrderManager } from './pages/OrderPages';
-import { PickMaterialManager, ProductionOrderManager, ProductionScheduleGantt } from './pages/ProductionPages';
-import { ProcessConfigManager, ProcessExecutionHub } from './pages/ProcessPages';
-import { InboundInspection, PatrolInspection, OutsourcingInspection, FinalInspection } from './pages/InspectionPages';
-import { PurchaseManager } from './pages/PurchasePages';
-import { OutsourcingManager } from './pages/OutsourcingPages';
-import { SupplierManager, CustomerManager, DepartmentManager, ProductManager } from './pages/BasicDataPages';
-import { RoleManager, PermissionManager, UserManager } from './pages/UserPages';
-import { BackupSettings, AboutSystem } from './pages/SettingsPages';
-import ScanStation from './components/ScanStation';
-import WorkshopMonitor from './pages/WorkshopMonitor';
 
-// v1.4.2 - React Router 升级
+// React.lazy 路由级懒加载 — 减少首屏包体积
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const InventoryView = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.InventoryView })));
+const WarehouseOrderManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.WarehouseOrderManager })));
+const OrderManager = React.lazy(() => import('./pages/OrderPages').then(m => ({ default: m.OrderManager })));
+const ProductionScheduleGantt = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionScheduleGantt })));
+const ProductionOrderManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionOrderManager })));
+const PickMaterialManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.PickMaterialManager })));
+const ProcessConfigManager = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessConfigManager })));
+const ProcessExecutionHub = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessExecutionHub })));
+const InboundInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.InboundInspection })));
+const PatrolInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.PatrolInspection })));
+const OutsourcingInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.OutsourcingInspection })));
+const FinalInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.FinalInspection })));
+const PurchaseManager = React.lazy(() => import('./pages/PurchasePages').then(m => ({ default: m.PurchaseManager })));
+const OutsourcingManager = React.lazy(() => import('./pages/OutsourcingPages').then(m => ({ default: m.OutsourcingManager })));
+const ProductManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.ProductManager })));
+const SupplierManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.SupplierManager })));
+const CustomerManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.CustomerManager })));
+const DepartmentManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.DepartmentManager })));
+const RoleManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.RoleManager })));
+const PermissionManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.PermissionManager })));
+const UserManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.UserManager })));
+const BackupSettings = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.BackupSettings })));
+const AboutSystem = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.AboutSystem })));
+const ScanStation = React.lazy(() => import('./components/ScanStation'));
+const WorkshopMonitor = React.lazy(() => import('./pages/WorkshopMonitor'));
 const AUTH_KEY = 'erp_user_auth';
 
 // 路由 ↔ 菜单 映射表
@@ -102,6 +115,11 @@ const AppContent = ({ user, permissions, handleLogout }) => {
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden overflow-y-auto w-full relative">
           <div className="max-w-[1600px] mx-auto">
             <ErrorBoundary>
+              <Suspense fallback={
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+              }>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/scan" element={<ScanStation onActiveMenuChange={setActiveMenu} />} />
@@ -135,6 +153,7 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/monitor" element={<WorkshopMonitor onExit={() => setActiveMenu('dashboard')} />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
+              </Suspense>
             </ErrorBoundary>
           </div>
         </main>

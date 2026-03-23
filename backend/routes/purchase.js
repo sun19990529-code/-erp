@@ -25,8 +25,18 @@ router.get('/', requirePermission('purchase_view'), (req, res) => {
 
 router.get('/:id', requirePermission('purchase_view'), (req, res) => {
   try {
-    const order = req.db.get(`SELECT po.*, s.name as supplier_name FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.id WHERE po.id = ?`, [req.params.id]);
-    const items = req.db.all(`SELECT pi.*, p.code, p.name, p.specification, p.unit FROM purchase_items pi JOIN products p ON pi.product_id = p.id WHERE pi.purchase_order_id = ?`, [req.params.id]);
+    const order = req.db.get(`
+      SELECT po.*, s.name as supplier_name
+      FROM purchase_orders po
+      JOIN suppliers s ON po.supplier_id = s.id
+      WHERE po.id = ?
+    `, [req.params.id]);
+    const items = req.db.all(`
+      SELECT pi.*, p.code, p.name, p.specification, p.unit
+      FROM purchase_items pi
+      JOIN products p ON pi.product_id = p.id
+      WHERE pi.purchase_order_id = ?
+    `, [req.params.id]);
     res.json({ success: true, data: { ...order, items } });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);

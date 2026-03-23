@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
@@ -417,7 +418,7 @@ const PickMaterialManager = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">领料人</label>
-                <input name="operator" className="w-full border rounded-lg px-3 py-2" />
+                <OperatorSelect />
               </div>
               <input type="hidden" name="order_id" value={modal.item?.order_id || ''} />
             </div>
@@ -752,7 +753,7 @@ const ProductionOrderManager = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">操作员</label>
-                <input name="operator" className="w-full border rounded-lg px-3 py-2" defaultValue={modal.item?.operator || ''} />
+                <OperatorSelect defaultValue={modal.item?.operator || ''} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

@@ -247,12 +247,12 @@
 </head>
 <body>
 <h1>铭晟管理系统 (ERP-MES) - 项目需求文档 (PRD)</h1>
-<p><strong>文档版本</strong>：v1.4.0<br><strong>更新日期</strong>：2026年3月23日  </p>
+<p><strong>文档版本</strong>：v1.5.1<br><strong>更新日期</strong>：2026年3月23日  </p>
 <h2>一、 项目背景与业务目标</h2>
 <p>为了解决生产制造与进销存管理中数据割裂的问题，打破接单、采购、排产、品控与仓储各环节的信息孤岛，本机组建了「<strong>铭晟管理系统</strong>」。该系统是一套深度融合 **ERP（企业资源计划）**与 **MES（制造执行系统）**核心功能的轻量级、智能化的业务闭环软件。</p>
 <p><strong>核心业务目标</strong>：</p>
 <ol>
-<li><strong>订单驱动打通</strong>：实现“销售订单 ➔ 自动下发生产排产 ➔ 工序流转与委外 ➔ 入库及发货”的全局联动，减少人工数据搬运。</li>
+<li><strong>订单驱动打通</strong>：实现&quot;销售订单 ➔ 自动下发生产排产 ➔ 工序流转与委外 ➔ 入库及发货&quot;的全局联动，减少人工数据搬运。</li>
 <li><strong>闭环防重与底线警戒预警</strong>：防止双重入库、质检不合格阻断生产、库存低水位自动缺料报警并建议采购。具备物料低线预警熔断逻辑。</li>
 <li><strong>高可视化大盘与追溯</strong>：利用现代前端架构及数据图表工具，透视全厂业务健康度与时间流维度的排程走势（APS）；同时拥有从物料直至成品的严格入批出批的底层追溯矩阵。</li>
 </ol>
@@ -270,16 +270,16 @@
 <h2>三、 功能模块需求池</h2>
 <h3>1. 系统全景看板 (Dashboard)</h3>
 <ul>
-<li><strong>核心数据抛跳</strong>：常年悬挂当前系统的“待处理订单”、“生产中单据”、“待处理质检”和“报警异常事件”基础统计。</li>
-<li><strong>业务时序看板</strong>：利用双色渐变折线分布图监控厂区“近 7 天销售接单量与车间排产量”的对比走势。</li>
+<li><strong>核心数据抛跳</strong>：常年悬挂当前系统的&quot;待处理订单&quot;、&quot;生产中单据&quot;、&quot;待处理质检&quot;和&quot;报警异常事件&quot;基础统计。</li>
+<li><strong>业务时序看板</strong>：利用双色渐变折线分布图监控厂区&quot;近 7 天销售接单量与车间排产量&quot;的对比走势。</li>
 <li><strong>全局管态健康与安全阀检测</strong>：具备动态环块截面图与底水位越界警示。只要有物资被划破底线阈值，就会在数据中心面板激起红色预警模块，允许管理层超快查阅亏空清单。</li>
-<li><strong>APS 制程推演系统(Gantt)</strong>：将车间作业转化为了以时间作为物理横轴的可视化甘特图控件，允许直接框定任务周期；以“进度、延期、挂起”的多色条带宏观调控所有的运作中心并带有一键报工映射。</li>
+<li><strong>APS 制程推演系统(Gantt)</strong>：将车间作业转化为了以时间作为物理横轴的可视化甘特图控件，允许直接框定任务周期；以&quot;进度、延期、挂起&quot;的多色条带宏观调控所有的运作中心并带有一键报工映射。</li>
 </ul>
 <h3>2. 基础数据中台 (MDM)</h3>
 <p>这是支持业务开展的根基静态数据。</p>
 <ul>
-<li><strong>产品池管理</strong>：分为“原材料”、“半成品”、“成品”。其中成品<strong>必须支持工序级 BOM 配置</strong>与指定流转卡绑定。</li>
-<li><strong>往来单位库</strong>：沉淀“供应商（支持资质和等级）”、“客户（信用评级管理）”。</li>
+<li><strong>产品池管理</strong>：分为&quot;原材料&quot;、&quot;半成品&quot;、&quot;成品&quot;。其中成品<strong>必须支持工序级 BOM 配置</strong>与指定流转卡绑定。</li>
+<li><strong>往来单位库</strong>：沉淀&quot;供应商（支持资质和等级）&quot;、&quot;客户（信用评级管理）&quot;。</li>
 <li><strong>组织结构设置</strong>：按部门划分，按角色定义原子权限，并支持内部子业务人员与对接外部供应商的人员隔离。</li>
 </ul>
 <h3>3. 智能仓储与溯源防伪 (WMS)</h3>
@@ -291,28 +291,23 @@
 <h3>4. 销售订单中心 (OMS)</h3>
 <ul>
 <li>支持业务员新建包含不同 SKU 子层级的销售合同订单，具备状态监控功能（待确认 -&gt; 生产中 -&gt; 已完成）。</li>
-<li>支持基于当前订单的交期测算与一键“下达排产工单指令”。</li>
+<li>支持基于当前订单的交期测算与一键&quot;下达排产工单指令&quot;。</li>
 </ul>
 <h3>5. 车间执行系统 (MES)</h3>
 <ul>
-<li><p><strong>工单生成与追踪</strong>：继承销售单明细转化为车间制造指令。</p>
-</li>
-<li><p><strong>工序级报工</strong>：支持车间多达近十种专属工序（如轧机、校直、抛光、激光等）分段管控，完成一步流转下一步。</p>
-</li>
-<li><p><strong>工序物料绑定与自动消耗（v1.4.0）</strong>：支持为每道工序配置所需原材料及单位用量；首道工序报工时自动按产出量乘以单位用量计算消耗量，从原材料仓库按 FIFO 批次扣减。库存不足时阻断报工并弹出缺料提示。</p>
-</li>
-<li><p><strong>领料与物料就绪</strong>：监控前置齐套率。若原材料库已出齐，则工单自亮起“材料就绪”绿灯。</p>
-</li>
-<li><p><strong>一键外协</strong>：车间指定工序遇产能瓶颈，勾选“委外”自动派生委外加工单，转入委外质检闭环。</p>
-</li>
-<li><p><strong>完工数量同步（v1.4.0）</strong>：最终工序完成时自动将产出数量回写生产工单的完工数量字段。</p>
-</li>
+<li><strong>工单生成与追踪</strong>：继承销售单明细转化为车间制造指令。</li>
+<li><strong>工序级报工</strong>：支持车间多达近十种专属工序（如轧机、校直、抛光、激光等）分段管控，完成一步流转下一步。</li>
+<li><strong>工序物料绑定与自动消耗（v1.4.0）</strong>：支持为每道工序配置所需原材料及单位用量；首道工序报工时自动按产出量乘以单位用量计算消耗量，从原材料仓库按 FIFO 批次扣减。库存不足时阻断报工并弹出缺料提示。</li>
+<li><strong>领料与物料就绪</strong>：监控前置齐套率。若原材料库已出齐，则工单自亮起&quot;材料就绪&quot;绿灯。</li>
+<li><strong>一键外协</strong>：车间指定工序遇产能瓶颈，勾选&quot;委外&quot;自动派生委外加工单，转入委外质检闭环。</li>
+<li><strong>完工数量同步（v1.4.0）</strong>：最终工序完成时自动将产出数量回写生产工单的完工数量字段。</li>
+<li><strong>状态白名单防护（v1.5.0）</strong>：全部 6 个模块的状态更新接口均实施白名单校验，防止非法状态转换。</li>
 </ul>
 <h3>6. 质量检验保障 (QMS)</h3>
 <p>所有物料节点的强制拦截器。</p>
 <ul>
-<li><strong>多维度检验面</strong>：提供“采购买入检验”、“生产过程巡检”、“委外回厂检验”以及“最终成品出厂检验”。</li>
-<li><strong>不合格熔断</strong>：巡检遇异常，自动挂起当笔工单并将状态冻结为“质检暂停”，直到管理层处理复查合格。</li>
+<li><strong>多维度检验面</strong>：提供&quot;采购买入检验&quot;、&quot;生产过程巡检&quot;、&quot;委外回厂检验&quot;以及&quot;最终成品出厂检验&quot;。</li>
+<li><strong>不合格熔断</strong>：巡检遇异常，自动挂起当笔工单并将状态冻结为&quot;质检暂停&quot;，直到管理层处理复查合格。</li>
 </ul>
 <h3>7. 采购与委外跟踪</h3>
 <ul>
@@ -324,15 +319,21 @@
 <h3>4.1 技术架构与选型</h3>
 <ul>
 <li><strong>前端体系</strong>：基于 <code>Vite</code> 构建工具重度工程化。使用现代化的单页应用标准 <code>React 19</code>。UI 层以 <code>Tailwind CSS 3/4</code> 原子类构建玻璃流体质感的极简企业级界面；看板监控池集成轻量级图表引擎 <code>Recharts</code>。</li>
-<li><strong>后端体系</strong>：由 <code>Node.js</code> + <code>Express</code> 运行轻量的 RESTful API 路由容器层；利用内存/文件跨平台双解兼容的 <code>sqlite3</code> 提供业务关系解耦和数据落盘保障。</li>
+<li><strong>后端体系</strong>：由 <code>Node.js</code> + <code>Express</code> 运行轻量的 RESTful API 路由容器层；利用内存/文件跨平台双解兼容的 <code>better-sqlite3</code> 提供业务关系解耦和数据落盘保障（WAL 模式）。</li>
 <li><strong>通信与交付</strong>：前后端解耦部署但融合发布。提供 <code>.bat</code> CLI 自动探针化脚本（检测环境、拉依赖包、动态编译构建 Vite 的 dist 包并用 Node 服务挂载同源输出）。</li>
 </ul>
 <h3>4.2 性能与安全标准</h3>
 <ol>
 <li><strong>加载速率</strong>：得益于前端模块剥离和生产级 Vite 构建，网页载入从几秒白屏延迟级提升至毫秒级无感渲染。</li>
-<li><strong>加密存储设计</strong>：管理员重置或新增用户凭证时利用强制 <code>bcryptjs</code> 执行带盐强哈希非明文下沉数据库。</li>
+<li><strong>加密存储设计</strong>：管理员重置或新增用户凭证时利用强制 <code>bcryptjs</code> 执行带盐强哈希非明文下沉数据库；登录时自动识别旧明文密码并升级。</li>
 <li><strong>查询防抖与检索优化</strong>：前端表单应用了防抖钩子拦截无意义的连续击键搜索；SQLite 后端创建了关键业务订单的多列索引，确保存量几十万单时的响应在 500ms 即刻内。</li>
-<li><strong>数据一致性保障（v1.4.0）</strong>：通过事务封装确保库存扣减与报工记录的原子性；消除多点写入同一字段的重复风险；消除多路径触发重复入库的逻辑缺陷。</li>
+<li><strong>数据一致性保障（v1.4.0+）</strong>：通过事务封装确保库存扣减与报工记录的原子性；<code>res.json</code> 统一在事务外部调用，消除事务回滚后仍返回成功的数据一致性隐患。</li>
+<li><strong>API 权限体系（v1.4.1）</strong>：实现接口级 RBAC 权限中间件覆盖全部 51+ 路由端点，角色/权限/用户管理写操作限制为 <code>system_admin</code> 专属，防止越权操作。</li>
+<li><strong>访问控制（v1.4.1）</strong>：CORS 限制局域网来源、Express Rate Limiting IP 限流（300次/分钟）、JWT 令牌鉴权 + 静默刷新机制。</li>
+<li><strong>操作审计（v1.4.1）</strong>：全部关键写操作（创建订单/生产工单/采购单/委外单/入库单）均记录操作日志，日志查询接口限管理员访问。</li>
+<li><strong>双 Token 认证体系（v1.5.0）</strong>：access token 短效 2h + refresh token 长效 30d，采用独立密钥签发，降低令牌泄露风险。</li>
+<li><strong>Helmet 安全响应头（v1.5.0）</strong>：防 XSS、点击劫持、MIME 噗探等常见 Web 攻击。</li>
+<li><strong>Zod Schema 输入校验（v1.5.0）</strong>：8 个 Schema 覆盖全部创建接口，拒绝非法请求体。</li>
 </ol>
 <hr>
 <h2>五、 版本历史</h2>
@@ -364,8 +365,23 @@
 <td>2026-03-23</td>
 <td>工序物料绑定、首工序自动扣减库存、完工数量同步、发货联动、全链路6项BUG修复</td>
 </tr>
+<tr>
+<td>v1.4.1</td>
+<td>2026-03-23</td>
+<td>安全加固：API 权限全面覆盖（51+路由）、事务一致性修复、操作日志保护、登录UI重设计</td>
+</tr>
+<tr>
+<td><strong>v1.5.0</strong></td>
+<td><strong>2026-03-23</strong></td>
+<td><strong>质量升级：双 Token认证、Helmet安全头、Zod Schema校验、React Router、Table虚拟滚动、请求缓存、Swagger API文档、GitHub Actions CI、48个测试用例</strong></td>
+</tr>
+<tr>
+<td><strong>v1.5.1</strong></td>
+<td><strong>2026-03-24</strong></td>
+<td><strong>体验优化：操作员按部门选择器、React.lazy路由懒加载、SPA Fallback路由、SQL格式化、HTML文档生成器</strong></td>
+</tr>
 </tbody></table>
 
-<div class="footer">铭晟管理系统 v1.4.0 &mdash; 本文件由 generate.bat 自动生成</div>
+<div class="footer">铭晟管理系统 v1.5.1 &mdash; 本文件由 generate.bat 自动生成</div>
 </body>
 </html>

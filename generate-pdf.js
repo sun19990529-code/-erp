@@ -259,7 +259,7 @@ function buildHtml(title, bodyHtml) {
 </head>
 <body>
 ${bodyHtml}
-<div class="footer">铭晟管理系统 v1.4.0 &mdash; 本文件由 generate.bat 自动生成</div>
+<div class="footer">铭晟管理系统 v1.5.1 &mdash; 本文件由 generate.bat 自动生成</div>
 </body>
 </html>`;
 }

@@ -194,6 +194,11 @@ async function startServer() {
   // 挂载 Swagger API 文档
   setupSwagger(app);
 
+  // SPA fallback：非 API 路由全部返回 index.html，由 React Router 处理
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  });
+
   app.listen(PORT, () => {
     console.log(`服务器运行在 http://localhost:${PORT}`);
   });

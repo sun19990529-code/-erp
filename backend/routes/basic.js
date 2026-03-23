@@ -47,6 +47,31 @@ const supplierRouter = createCRUDRouter({
 });
 router.use('/suppliers', supplierRouter);
 
+// ==================== 操作员列表（按部门分组）====================
+router.get('/operators', (req, res) => {
+  try {
+    const users = req.db.all(`
+      SELECT u.id, u.real_name, u.username, d.name as department_name
+      FROM users u
+      LEFT JOIN departments d ON u.department_id = d.id
+      WHERE u.status != 'disabled'
+      ORDER BY d.name, u.real_name
+    `);
+    // 按部门分组
+    const grouped = {};
+    users.forEach(u => {
+      const dept = u.department_name || '未分配部门';
+      if (!grouped[dept]) grouped[dept] = [];
+      grouped[dept].push({ id: u.id, name: u.real_name || u.username });
+    });
+    const data = Object.entries(grouped).map(([department, members]) => ({ department, members }));
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[basic.js]', error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
 // ==================== 角色管理 ====================
 router.get('/roles', (req, res) => {
   try {

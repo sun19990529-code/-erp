@@ -31,8 +31,18 @@ router.get('/', requirePermission('basic_data_view'), (req, res) => {
     const products = req.db.all(sql, params);
     // 附带每个产品的供应商和客户列表
     products.forEach(p => {
-      p.suppliers = req.db.all('SELECT ps.*, s.name as supplier_name, s.code as supplier_code FROM product_suppliers ps JOIN suppliers s ON ps.supplier_id = s.id WHERE ps.product_id = ?', [p.id]);
-      p.customers = req.db.all('SELECT pc.*, c.name as customer_name, c.code as customer_code FROM product_customers pc JOIN customers c ON pc.customer_id = c.id WHERE pc.product_id = ?', [p.id]);
+      p.suppliers = req.db.all(`
+        SELECT ps.*, s.name as supplier_name, s.code as supplier_code
+        FROM product_suppliers ps
+        JOIN suppliers s ON ps.supplier_id = s.id
+        WHERE ps.product_id = ?
+      `, [p.id]);
+      p.customers = req.db.all(`
+        SELECT pc.*, c.name as customer_name, c.code as customer_code
+        FROM product_customers pc
+        JOIN customers c ON pc.customer_id = c.id
+        WHERE pc.product_id = ?
+      `, [p.id]);
     });
     res.json({ success: true, data: products });
   } catch (error) {
@@ -43,9 +53,23 @@ router.get('/', requirePermission('basic_data_view'), (req, res) => {
 
 router.post('/', requirePermission('basic_data_create'), (req, res) => {
   try {
-    const { code, name, specification, unit, category, unit_price, min_stock, max_stock, outer_diameter, inner_diameter, wall_thickness, length, supplier_id } = req.body;
-    const result = req.db.run('INSERT INTO products (code, name, specification, unit, category, unit_price, min_stock, max_stock, outer_diameter, inner_diameter, wall_thickness, length, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [code, name, specification, unit, category, unit_price, min_stock || 0, max_stock || 0, outer_diameter || null, inner_diameter || null, wall_thickness || null, length || null, supplier_id || null]);
+    const {
+      code, name, specification, unit, category, unit_price,
+      min_stock, max_stock, outer_diameter, inner_diameter,
+      wall_thickness, length, supplier_id
+    } = req.body;
+    const result = req.db.run(`
+      INSERT INTO products
+        (code, name, specification, unit, category, unit_price,
+         min_stock, max_stock, outer_diameter, inner_diameter,
+         wall_thickness, length, supplier_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      code, name, specification, unit, category, unit_price,
+      min_stock || 0, max_stock || 0, outer_diameter || null,
+      inner_diameter || null, wall_thickness || null,
+      length || null, supplier_id || null
+    ]);
     res.json({ success: true, data: { id: result.lastInsertRowid } });
   } catch (error) {
     console.error(`[products.js]`, error.message);
@@ -55,14 +79,27 @@ router.post('/', requirePermission('basic_data_create'), (req, res) => {
 
 router.put('/:id', requirePermission('basic_data_edit'), (req, res) => {
   try {
-    const { code, name, specification, unit, category, unit_price, status, min_stock, max_stock, outer_diameter, inner_diameter, wall_thickness, length, supplier_id } = req.body;
+    const {
+      code, name, specification, unit, category, unit_price, status,
+      min_stock, max_stock, outer_diameter, inner_diameter,
+      wall_thickness, length, supplier_id
+    } = req.body;
     
     const existing = req.db.get('SELECT * FROM products WHERE id = ?', [req.params.id]);
     if (!existing) {
       return res.status(404).json({ success: false, message: '产品不存在' });
     }
     
-    req.db.run('UPDATE products SET code = ?, name = ?, specification = ?, unit = ?, category = ?, unit_price = ?, status = ?, min_stock = ?, max_stock = ?, outer_diameter = ?, inner_diameter = ?, wall_thickness = ?, length = ?, supplier_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    req.db.run(`
+      UPDATE products
+      SET code = ?, name = ?, specification = ?, unit = ?,
+          category = ?, unit_price = ?, status = ?,
+          min_stock = ?, max_stock = ?,
+          outer_diameter = ?, inner_diameter = ?,
+          wall_thickness = ?, length = ?, supplier_id = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `,
       [
         code || existing.code,
         name || existing.name,
@@ -181,7 +218,10 @@ router.get('/product-processes/:productProcessId/materials', requirePermission('
 router.get('/:id/process-materials', requirePermission('basic_data_view'), (req, res) => {
   try {
     const materials = req.db.all(`
-      SELECT pm.*, pp.sequence as process_sequence, pp.process_id, p.name as material_name, p.code as material_code, p.unit as material_unit, p.category as material_category, pr.name as process_name
+      SELECT pm.*, pp.sequence as process_sequence, pp.process_id,
+        p.name as material_name, p.code as material_code,
+        p.unit as material_unit, p.category as material_category,
+        pr.name as process_name
       FROM process_materials pm
       JOIN product_processes pp ON pm.product_process_id = pp.id
       JOIN products p ON pm.material_id = p.id
@@ -225,7 +265,12 @@ router.delete('/:id/processes/:processId', requirePermission('basic_data_delete'
 // 获取产品关联的供应商
 router.get('/:id/suppliers', requirePermission('basic_data_view'), (req, res) => {
   try {
-    const suppliers = req.db.all('SELECT ps.*, s.name as supplier_name, s.code as supplier_code FROM product_suppliers ps JOIN suppliers s ON ps.supplier_id = s.id WHERE ps.product_id = ?', [req.params.id]);
+    const suppliers = req.db.all(`
+      SELECT ps.*, s.name as supplier_name, s.code as supplier_code
+      FROM product_suppliers ps
+      JOIN suppliers s ON ps.supplier_id = s.id
+      WHERE ps.product_id = ?
+    `, [req.params.id]);
     res.json({ success: true, data: suppliers });
   } catch (error) {
     console.error('[products.js]', error.message);
@@ -253,7 +298,12 @@ router.put('/:id/suppliers', requirePermission('basic_data_edit'), (req, res) =>
 // ==================== 产品-客户 多对多管理 ====================
 router.get('/:id/customers', requirePermission('basic_data_view'), (req, res) => {
   try {
-    const customers = req.db.all('SELECT pc.*, c.name as customer_name, c.code as customer_code FROM product_customers pc JOIN customers c ON pc.customer_id = c.id WHERE pc.product_id = ?', [req.params.id]);
+    const customers = req.db.all(`
+      SELECT pc.*, c.name as customer_name, c.code as customer_code
+      FROM product_customers pc
+      JOIN customers c ON pc.customer_id = c.id
+      WHERE pc.product_id = ?
+    `, [req.params.id]);
     res.json({ success: true, data: customers });
   } catch (error) {
     console.error('[products.js]', error.message);
