@@ -1,36 +1,30 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import ProcessConfigPanel from '../components/ProcessConfigPanel';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
-import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
-import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
 const ProcessConfigManager = () => {
   const [products, setProducts] = useState([]);
   const [processes, setProcesses] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]);
   const [modal, setModal] = useState({ open: false, product: null, productProcesses: [] });
-  const [expandedMaterial, setExpandedMaterial] = useState({}); // 跟踪哪些工序行展开了物料配置
   
-  const load = () => {
+  const load = async () => {
     api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
     api.get('/production/processes').then(res => res.success && setProcesses(res.data));
-    // 加载原材料和半成品作为可选物料
-    api.get('/products?category=原材料').then(res => res.success && setRawMaterials(prev => {
-      const semiRes = prev.filter(p => p.category === '半成品');
-      return [...(res.data || []), ...semiRes];
-    }));
-    api.get('/products?category=半成品').then(res => res.success && setRawMaterials(prev => {
-      const rawRes = prev.filter(p => p.category === '原材料');
-      return [...rawRes, ...(res.data || [])];
-    }));
+    // 并行加载原材料和半成品，避免竞态
+    const [rawRes, semiRes] = await Promise.all([
+      api.get('/products?category=原材料'),
+      api.get('/products?category=半成品'),
+    ]);
+    setRawMaterials([
+      ...(rawRes.success ? rawRes.data : []),
+      ...(semiRes.success ? semiRes.data : []),
+    ]);
   };
   useEffect(() => { load(); }, []);
   
@@ -45,57 +39,15 @@ const ProcessConfigManager = () => {
       const mats = allMaterials.filter(m => m.process_id === p.process_id);
       return { ...p, materials: mats.length > 0 ? mats.map(m => ({ material_id: m.material_id, quantity: m.quantity, unit: m.unit || '公斤', remark: m.remark || '' })) : [] };
     });
-    setExpandedMaterial({});
     setModal({ open: true, product, productProcesses: enriched });
   };
   
   const closeModal = () => {
     setModal({ open: false, product: null, productProcesses: [] });
-    setExpandedMaterial({});
   };
   
-  const addProcessRow = () => {
-    setModal({ 
-      ...modal, 
-      productProcesses: [...modal.productProcesses, { process_id: '', sequence: modal.productProcesses.length + 1, is_outsourced: 0, remark: '', materials: [] }] 
-    });
-  };
-  
-  const removeProcessRow = (index) => {
-    const newProcesses = modal.productProcesses.filter((_, i) => i !== index);
-    newProcesses.forEach((p, i) => p.sequence = i + 1);
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-  
-  const updateProcessRow = (index, field, value) => {
-    const newProcesses = [...modal.productProcesses];
-    newProcesses[index] = { ...newProcesses[index], [field]: value };
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-
-  // 物料子表操作
-  const toggleMaterialPanel = (index) => {
-    setExpandedMaterial(prev => ({ ...prev, [index]: !prev[index] }));
-  };
-
-  const addMaterialRow = (processIndex) => {
-    const newProcesses = [...modal.productProcesses];
-    const mats = newProcesses[processIndex].materials || [];
-    newProcesses[processIndex] = { ...newProcesses[processIndex], materials: [...mats, { material_id: '', quantity: 1, unit: '公斤', remark: '' }] };
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-
-  const removeMaterialRow = (processIndex, matIndex) => {
-    const newProcesses = [...modal.productProcesses];
-    newProcesses[processIndex].materials = newProcesses[processIndex].materials.filter((_, i) => i !== matIndex);
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-
-  const updateMaterialRow = (processIndex, matIndex, field, value) => {
-    const newProcesses = [...modal.productProcesses];
-    const mats = [...(newProcesses[processIndex].materials || [])];
-    mats[matIndex] = { ...mats[matIndex], [field]: value };
-    newProcesses[processIndex] = { ...newProcesses[processIndex], materials: mats };
+  // 工序配置更新回调
+  const handleProcessChange = (newProcesses) => {
     setModal({ ...modal, productProcesses: newProcesses });
   };
   
@@ -162,74 +114,14 @@ const ProcessConfigManager = () => {
               <span className="text-gray-500">{modal.product?.specification}</span>
             </div>
           </div>
-          <div>
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-sm font-medium">加工工序流程</label>
-              <button onClick={addProcessRow} className="text-teal-600 text-sm"><i className="fas fa-plus mr-1"></i>添加工序</button>
-            </div>
-            <div className="space-y-2">
-              {modal.productProcesses.map((p, i) => {
-                const processName = processes.find(pr => pr.id == p.process_id)?.name || '';
-                const matCount = (p.materials || []).filter(m => m.material_id).length;
-                return (
-                  <div key={i} className="border rounded-lg overflow-hidden">
-                    {/* 工序主行 */}
-                    <div className="flex items-center gap-2 px-3 py-2 bg-white">
-                      <input type="number" value={p.sequence} onChange={e => updateProcessRow(i, 'sequence', parseInt(e.target.value) || 1)} className="w-12 border rounded px-2 py-1 text-center text-sm" />
-                      <select value={p.process_id} onChange={e => updateProcessRow(i, 'process_id', e.target.value)} className="flex-1 border rounded px-2 py-1 text-sm">
-                        <option value="">选择工序</option>
-                        {processes && processes.length > 0 ? processes.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>) : <option disabled>未获取到工序数据</option>}
-                      </select>
-                      <label className="flex items-center gap-1 cursor-pointer text-sm whitespace-nowrap">
-                        <input type="checkbox" checked={p.is_outsourced} onChange={e => updateProcessRow(i, 'is_outsourced', e.target.checked ? 1 : 0)} className="w-4 h-4" />
-                        委外
-                      </label>
-                      <input value={p.remark || ''} onChange={e => updateProcessRow(i, 'remark', e.target.value)} className="w-28 border rounded px-2 py-1 text-sm" placeholder="备注" />
-                      <button onClick={() => toggleMaterialPanel(i)} className={`text-xs px-2 py-1 rounded whitespace-nowrap transition-colors ${matCount > 0 ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-blue-50 hover:text-blue-600'}`} title="配置该工序所需物料">
-                        <i className="fas fa-cubes mr-1"></i>物料{matCount > 0 ? `(${matCount})` : ''}
-                      </button>
-                      <button onClick={() => removeProcessRow(i)} className="text-red-400 hover:text-red-600 px-1"><i className="fas fa-trash text-sm"></i></button>
-                    </div>
-                    {/* 物料绑定子面板 */}
-                    {expandedMaterial[i] && (
-                      <div className="bg-blue-50/40 border-t border-blue-100 px-4 py-3">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs font-medium text-blue-700"><i className="fas fa-cubes mr-1"></i>工序「{processName || '未选择'}」所需物料</span>
-                          <button onClick={() => addMaterialRow(i)} className="text-xs text-blue-600 hover:text-blue-800"><i className="fas fa-plus mr-1"></i>添加物料</button>
-                        </div>
-                        {(p.materials || []).length === 0 ? (
-                          <div className="text-center text-xs text-gray-400 py-2">暂未配置物料，点击"添加物料"以绑定该工序所需的原材料</div>
-                        ) : (
-                          <div className="space-y-1">
-                            {p.materials.map((mat, mi) => (
-                              <div key={mi} className="flex items-center gap-2 bg-white rounded px-2 py-1.5 border border-blue-100">
-                                <select value={mat.material_id} onChange={e => updateMaterialRow(i, mi, 'material_id', e.target.value)} className="flex-1 border rounded px-2 py-1 text-sm">
-                                  <option value="">选择原材料</option>
-                                  {rawMaterials.map(rm => <option key={rm.id} value={rm.id}>[{rm.category}] {rm.name} ({rm.specification || rm.code})</option>)}
-                                </select>
-                                <input type="number" step="0.01" min="0" value={mat.quantity} onChange={e => updateMaterialRow(i, mi, 'quantity', parseFloat(e.target.value) || 0)} className="w-20 border rounded px-2 py-1 text-sm text-center" placeholder="用量" />
-                                <select value={mat.unit || '公斤'} onChange={e => updateMaterialRow(i, mi, 'unit', e.target.value)} className="w-16 border rounded px-2 py-1 text-xs">
-                                  <option value="公斤">公斤</option>
-                                  <option value="吨">吨</option>
-                                  <option value="件">件</option>
-                                  <option value="米">米</option>
-                                  <option value="根">根</option>
-                                </select>
-                                <button onClick={() => removeMaterialRow(i, mi)} className="text-red-400 hover:text-red-600"><i className="fas fa-times"></i></button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {modal.productProcesses.length === 0 && (
-                <div className="text-center text-gray-500 py-8 border rounded-lg">暂无工序配置，点击上方"添加工序"按钮</div>
-              )}
-            </div>
-          </div>
+          <ProcessConfigPanel
+              processes={processes}
+              productProcesses={modal.productProcesses}
+              rawMaterials={rawMaterials}
+              materialCategoryId={modal.product?.material_category_id}
+              materialCategories={[]}
+              onChange={handleProcessChange}
+            />
           <div className="flex justify-end gap-2 pt-4">
             <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
             <button onClick={saveProcesses} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">保存配置</button>
@@ -242,18 +134,22 @@ const ProcessConfigManager = () => {
 
 const ProcessManager = ({ processCode }) => {
   const [data, setData] = useState([]);
+  const [processNames, setProcessNames] = useState({});
   const [processes, setProcesses] = useState([]);
   const [outsourcings, setOutsourcings] = useState([]);
+  const [materialConsumption, setMaterialConsumption] = useState({}); // { material_id: actual_quantity }
   const [modal, setModal] = useState({ open: false, item: null, isOutsourced: false, isFirstProcess: false, processMaterials: [] });
-  
-  const processNames = { 
-    ROLLING: '轧机', STRAIGHTENING: '校直', POLISHING: '抛光', CORRECTING: '矫直', CUTTING: '切割',
-    DRAWING: '拉拔', CLEANING: '清洗', WIRE_CUTTING: '线切割', LASER_CUTTING: '激光切割', HEAT_TREATMENT: '热处理'
-  };
   
   const load = () => {
     api.get(`/production?processCode=${processCode}`).then(res => res.success && setData(res.data));
-    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
+    api.get('/production/processes').then(res => {
+      if (res.success) {
+        setProcesses(res.data || []);
+        const map = {};
+        (res.data || []).forEach(p => { map[p.code] = p.name; });
+        setProcessNames(map);
+      }
+    });
     api.get('/outsourcing?status=pending,processing').then(res => res.success && setOutsourcings(res.data));
   };
   useEffect(() => { load(); }, [processCode]);
@@ -274,6 +170,10 @@ const ProcessManager = ({ processCode }) => {
     }
     
     setModal({ open: true, item: res.data, isOutsourced, isFirstProcess, processMaterials });
+    // 初始化材料消耗状态（默认留空，此时尚无产出数量，待填写产出后计算）
+    const initConsumption = {};
+    processMaterials.forEach(m => { initConsumption[m.material_id] = ''; });
+    setMaterialConsumption(initConsumption);
   };
   
   const saveProcess = async (e) => {
@@ -285,10 +185,11 @@ const ProcessManager = ({ processCode }) => {
     const defectQuantity = parseInt(fd.get('defect_quantity')) || 0;
     const planQuantity = modal.item?.quantity || 0;
     
-    // 验证产出数量不能超过计划数量
-    if (outputQuantity + defectQuantity > planQuantity) {
-      window.__toast?.warning(`产出数量(${outputQuantity}) + 不良数量(${defectQuantity}) 不能超过计划数量(${planQuantity})！`);
-      return;
+    // 验证产出数量合理性（不超过剩余待完成量）
+    const completedQty = modal.item?.completed_quantity || 0;
+    const remainingQty = planQuantity - completedQty;
+    if (outputQuantity + defectQuantity > remainingQty && remainingQty > 0) {
+      if (!confirm(`本次报工数量(${outputQuantity + defectQuantity}) 超过剩余待完成量(${remainingQty})，确定继续吗？`)) return;
     }
     
     const obj = { 
@@ -298,11 +199,29 @@ const ProcessManager = ({ processCode }) => {
       output_quantity: outputQuantity, 
       defect_quantity: defectQuantity, 
       remark: fd.get('remark'),
-      outsourcing_id: fd.get('outsourcing_id') || null
+      outsourcing_id: fd.get('outsourcing_id') || null,
+      materials: modal.isFirstProcess && modal.processMaterials.length > 0
+        ? modal.processMaterials.map(m => ({
+            material_id: m.material_id,
+            actual_quantity: materialConsumption[m.material_id] !== '' 
+              ? parseFloat(materialConsumption[m.material_id]) 
+              : undefined
+          })).filter(m => m.actual_quantity !== undefined)
+        : undefined
     };
     const res = await api.post(`/production/${modal.item.id}/process`, obj);
     if (res.success) {
-      // 如果有物料消耗，先提示
+      // 累计进度提示
+      if (res.processProgress) {
+        const prog = res.processProgress;
+        if (prog.is_completed) {
+          window.__toast?.success(`工序完成！累计产出 ${prog.cumulative_output} / ${prog.target_quantity}`);
+        } else {
+          window.__toast?.info(`报工成功！累计产出 ${prog.cumulative_output} / ${prog.target_quantity}，剩余 ${prog.remaining}`);
+        }
+      }
+      
+      // 如果有物料消耗
       if (res.consumedMaterials && res.consumedMaterials.length > 0) {
         const matMsg = res.consumedMaterials.map(m => `${m.name}: -${m.quantity} ${m.unit}`).join('、');
         window.__toast?.success(`原材料已自动扣减：${matMsg}`);
@@ -334,6 +253,11 @@ const ProcessManager = ({ processCode }) => {
             window.location.reload();
           }
         }, 100);
+      } else if (res.processProgress && !res.processProgress.is_completed) {
+        // 未完成 → 刷新弹窗数据以继续报工
+        const refreshRes = await api.get(`/production/${modal.item.id}`);
+        setModal(prev => ({ ...prev, item: refreshRes.data }));
+        load();
       } else {
         setModal(closeState); 
         load();
@@ -364,25 +288,61 @@ const ProcessManager = ({ processCode }) => {
             <div><strong>产品：</strong>{modal.item?.product_name}</div>
             <div><strong>计划数量：</strong>{modal.item?.quantity} {unit}</div>
           </div>
+          {/* 累计进度条 */}
+          {(() => {
+            const completed = modal.item?.completed_quantity || 0;
+            const target = modal.item?.quantity || 0;
+            const pct = target > 0 ? Math.min(100, (completed / target) * 100) : 0;
+            const remaining = Math.max(0, target - completed);
+            return (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-medium text-blue-700"><i className="fas fa-chart-bar mr-1"></i>生产进度</span>
+                  <span className="text-blue-600">已完成 {completed} / {target} {unit} · 剩余 <strong>{remaining}</strong> {unit}</span>
+                </div>
+                <div className="bg-blue-200 rounded-full h-2.5">
+                  <div className={`h-2.5 rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }}></div>
+                </div>
+              </div>
+            );
+          })()}
           {modal.isOutsourced && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-orange-800">
               <i className="fas fa-exclamation-triangle mr-2"></i>
               <strong>委外工序提示：</strong>此工序已标记为委外加工，请先创建委外加工单并在完成后关联。
             </div>
           )}
-          {/* 首道工序物料消耗提示 */}
+          {/* 首道工序材料消耗区 */}
           {modal.isFirstProcess && (
             <div className={`rounded-lg p-3 border ${modal.processMaterials.length > 0 ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-yellow-50 border-yellow-200 text-yellow-800'}`}>
               <div className="flex items-center gap-2 font-medium mb-1">
                 <i className={`fas ${modal.processMaterials.length > 0 ? 'fa-cubes' : 'fa-exclamation-circle'}`}></i>
-                {modal.processMaterials.length > 0 ? '首道工序 — 提交报工后将自动消耗以下原材料：' : '⚠ 该工序为首道工序，但未配置所需原材料。建议先到「工序流转配置」中绑定物料。'}
+                {modal.processMaterials.length > 0 ? '首道工序 — 材料消耗登记（留空则按计划用量自动计算）' : '⚠ 该工序为首道工序，但未配置所需原材料。建议先到「工序流转配置」中绑定物料。'}
               </div>
               {modal.processMaterials.length > 0 && (
-                <div className="mt-2 space-y-1">
+                <div className="mt-2 space-y-2">
                   {modal.processMaterials.map((m, i) => (
-                    <div key={i} className="flex items-center justify-between bg-white/60 rounded px-3 py-1.5 text-sm">
-                      <span><i className="fas fa-cube mr-1 text-blue-400"></i>{m.material_name} ({m.material_code})</span>
-                      <span className="font-medium">{m.quantity} {m.unit || '公斤'} / {unit}</span>
+                    <div key={i} className="flex items-center gap-3 bg-white/60 rounded-lg px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium">
+                          <i className="fas fa-cube mr-1 text-blue-400"></i>{m.material_name}
+                          <span className="text-gray-400 ml-1">({m.material_code})</span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          单位用量: {m.quantity} {m.unit || '公斤'}/件
+                        </div>
+                      </div>
+                      <div className="shrink-0 w-36">
+                        <label className="block text-xs text-gray-500 mb-0.5">实际用量 ({m.unit || '公斤'})</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={materialConsumption[m.material_id] ?? ''}
+                          onChange={e => setMaterialConsumption(prev => ({ ...prev, [m.material_id]: e.target.value }))}
+                          className="w-full border border-blue-300 rounded px-2 py-1 text-sm focus:ring-1 focus:ring-blue-400"
+                          placeholder="留空=自动"
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import OperatorSelect from './OperatorSelect';
 
 /**
  * 检验数量表单域（通用子组件）
@@ -27,7 +28,7 @@ const InspectionFormFields = ({ quantityLabel, defaultQuantity, resultHint = '�
           <option value="fail">不合格</option>
         </select>
       </div>
-      <div className="sm:col-span-2"><label className="block text-sm font-medium mb-1">检验员</label><input name="inspector" className="w-full border rounded-lg px-3 py-2" /></div>
+      <div className="sm:col-span-2"><label className="block text-sm font-medium mb-1">检验员</label><OperatorSelect name="inspector" /></div>
     </div>
     {infoText && (
       <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800">

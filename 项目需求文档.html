@@ -247,7 +247,7 @@
 </head>
 <body>
 <h1>铭晟管理系统 (ERP-MES) - 项目需求文档 (PRD)</h1>
-<p><strong>文档版本</strong>：v1.5.1<br><strong>更新日期</strong>：2026年3月23日  </p>
+<p><strong>文档版本</strong>：v1.5.2<br><strong>更新日期</strong>：2026年3月25日  </p>
 <h2>一、 项目背景与业务目标</h2>
 <p>为了解决生产制造与进销存管理中数据割裂的问题，打破接单、采购、排产、品控与仓储各环节的信息孤岛，本机组建了「<strong>铭晟管理系统</strong>」。该系统是一套深度融合 **ERP（企业资源计划）**与 **MES（制造执行系统）**核心功能的轻量级、智能化的业务闭环软件。</p>
 <p><strong>核心业务目标</strong>：</p>
@@ -279,6 +279,7 @@
 <p>这是支持业务开展的根基静态数据。</p>
 <ul>
 <li><strong>产品池管理</strong>：分为&quot;原材料&quot;、&quot;半成品&quot;、&quot;成品&quot;。其中成品<strong>必须支持工序级 BOM 配置</strong>与指定流转卡绑定。</li>
+<li><strong>材质分类管理（v1.5.0）</strong>：树形父子级材质分类体系，成品与原材料按材质关联，工序物料配置时<strong>实时过滤</strong>仅显示匹配材质的原材料。</li>
 <li><strong>往来单位库</strong>：沉淀&quot;供应商（支持资质和等级）&quot;、&quot;客户（信用评级管理）&quot;。</li>
 <li><strong>组织结构设置</strong>：按部门划分，按角色定义原子权限，并支持内部子业务人员与对接外部供应商的人员隔离。</li>
 </ul>
@@ -334,6 +335,8 @@
 <li><strong>双 Token 认证体系（v1.5.0）</strong>：access token 短效 2h + refresh token 长效 30d，采用独立密钥签发，降低令牌泄露风险。</li>
 <li><strong>Helmet 安全响应头（v1.5.0）</strong>：防 XSS、点击劫持、MIME 噗探等常见 Web 攻击。</li>
 <li><strong>Zod Schema 输入校验（v1.5.0）</strong>：8 个 Schema 覆盖全部创建接口，拒绝非法请求体。</li>
+<li><strong>CSP 内容安全策略（v1.5.2）</strong>：配置合理的 Content-Security-Policy 指令，限制脚本/样式/连接来源，禁止 iframe 嵌入，替代此前完全关闭 CSP 的方案。</li>
+<li><strong>产品编码唯一性校验（v1.5.2）</strong>：创建产品接口前置检查编码是否重复，返回友好提示而非依赖数据库约束报 500。</li>
 </ol>
 <hr>
 <h2>五、 版本历史</h2>
@@ -372,13 +375,18 @@
 </tr>
 <tr>
 <td><strong>v1.5.0</strong></td>
-<td><strong>2026-03-23</strong></td>
-<td><strong>质量升级：双 Token认证、Helmet安全头、Zod Schema校验、React Router、Table虚拟滚动、请求缓存、Swagger API文档、GitHub Actions CI、48个测试用例</strong></td>
+<td><strong>2026-03-25</strong></td>
+<td><strong>质量升级：双 Token认证、Helmet安全头、Zod Schema校验、材质分类管理、材质匹配过滤、React Router、Table虚拟滚动、请求缓存、Swagger API文档、GitHub Actions CI、48个测试用例</strong></td>
 </tr>
 <tr>
 <td><strong>v1.5.1</strong></td>
-<td><strong>2026-03-24</strong></td>
+<td><strong>2026-03-25</strong></td>
 <td><strong>体验优化：操作员按部门选择器、React.lazy路由懒加载、SPA Fallback路由、SQL格式化、HTML文档生成器</strong></td>
+</tr>
+<tr>
+<td><strong>v1.5.2</strong></td>
+<td><strong>2026-03-25</strong></td>
+<td><strong>代码质量：ProcessConfigPanel组件抽取消除3处重复、CSP安全策略配置、产品编码唯一性校验、buildTree O(n)优化、竞态修复、版本号自动注入</strong></td>
 </tr>
 </tbody></table>
 

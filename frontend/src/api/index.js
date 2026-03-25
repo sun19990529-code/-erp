@@ -1,45 +1,11 @@
 // API 请求缓存层 - 对 GET 请求进行 TTL 缓存，减少重复请求
+import { createCache } from '../utils/cache.js';
+
 const API_BASE = window.location.origin + '/api';
 
 // 缓存配置
-const CACHE_TTL = 30 * 1000; // 30 秒缓存
 const NO_CACHE_PATHS = ['/users/login', '/users/refresh']; // 不缓存的路径
-const _cache = new Map();
-
-function getCacheKey(url) {
-  return url;
-}
-
-function getFromCache(key) {
-  const entry = _cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
-    _cache.delete(key);
-    return null;
-  }
-  return entry.data;
-}
-
-function setCache(key, data) {
-  _cache.set(key, { data, timestamp: Date.now() });
-  // 防止缓存无限增长
-  if (_cache.size > 200) {
-    const oldest = _cache.keys().next().value;
-    _cache.delete(oldest);
-  }
-}
-
-// 清除指定路径前缀的缓存（变更操作后调用）
-function invalidateCache(pathPrefix) {
-  for (const key of _cache.keys()) {
-    if (key.includes(pathPrefix)) _cache.delete(key);
-  }
-}
-
-// 清除所有缓存
-function clearAllCache() {
-  _cache.clear();
-}
+const { getCacheKey, getFromCache, setCache, invalidateCache, clearAllCache } = createCache();
 
 let _isRefreshing = false;
 let _refreshSubscribers = [];
@@ -96,12 +62,12 @@ const apiRequest = async (url, options = {}) => {
           saved.expireAt = Date.now() + 24 * 60 * 60 * 1000;
           localStorage.setItem('erp_user_auth', JSON.stringify(saved));
           onTokenRefreshed(data.token);
-          _isRefreshing = false;
           options.headers = { ...options.headers, 'Authorization': `Bearer ${data.token}` };
           return fetch(API_BASE + url, options).then(r => r.json());
         }
-      } catch { /* 刷新失败 → 强制登出 */ }
-      _isRefreshing = false;
+      } catch { /* 刷新失败 → 强制登出 */ } finally {
+        _isRefreshing = false;
+      }
       localStorage.removeItem('erp_user_auth');
       window.location.reload();
       return { success: false, message: '登录已过期，请重新登录' };

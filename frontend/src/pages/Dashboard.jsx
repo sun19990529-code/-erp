@@ -1,22 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
 import StatusBadge from '../components/StatusBadge';
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [chartData, setChartData] = useState(null);
+  const [purchaseSuggestions, setPurchaseSuggestions] = useState([]);
   
   useEffect(() => { 
     api.get('/dashboard').then(res => res.success && setStats(res.data)); 
     api.get('/dashboard/charts').then(res => res.success && setChartData(res.data)); 
+    api.get('/dashboard/purchase-suggestions').then(res => res.success && setPurchaseSuggestions(res.data));
   }, []);
   
   if (!stats || !chartData) return <div className="flex items-center justify-center h-64"><i className="fas fa-spinner fa-spin text-3xl text-teal-500"></i></div>;
   
   const COLORS = ['#14b8a6', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6'];
-  const RADIAN = Math.PI / 180;
   
   return (
     <div className="fade-in">
@@ -62,6 +62,65 @@ const Dashboard = () => {
         </div>
       </div>
       
+      {/* 第二行：生产进度 + 交期预警 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* 生产进度概览 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h3 className="font-bold text-gray-800 text-lg mb-4"><i className="fas fa-tasks text-teal-500 mr-2"></i>生产进度概览</h3>
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {stats.productionProgress?.length > 0 ? stats.productionProgress.map(po => (
+              <div key={po.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-sm text-gray-800 truncate">{po.order_no}</span>
+                    <span className="text-xs text-gray-500">{po.product_name}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all ${po.progress >= 100 ? 'bg-green-500' : po.progress >= 50 ? 'bg-teal-500' : 'bg-blue-500'}`}
+                      style={{ width: `${Math.min(po.progress, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between mt-1 text-xs text-gray-500">
+                    <span>{po.completed_quantity}/{po.quantity} {po.product_unit}</span>
+                    <span className="font-bold">{po.progress}%</span>
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center text-gray-400 py-8"><i className="fas fa-check-circle text-green-400 text-2xl mb-2"></i><p className="text-sm">暂无进行中的工单</p></div>
+            )}
+          </div>
+        </div>
+
+        {/* 交期预警 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h3 className="font-bold text-gray-800 text-lg mb-4 flex items-center justify-between">
+            <span><i className="fas fa-clock text-orange-500 mr-2"></i>交期预警</span>
+            {stats.deliveryAlerts?.length > 0 && <span className="bg-orange-100 text-orange-600 text-xs px-2 py-0.5 rounded-full">{stats.deliveryAlerts.length}项</span>}
+          </h3>
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {stats.deliveryAlerts?.length > 0 ? stats.deliveryAlerts.map(o => (
+              <div key={o.id} className={`flex items-center justify-between p-3 rounded-xl border ${o.days_left <= 0 ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'}`}>
+                <div>
+                  <div className="font-medium text-sm text-gray-800">{o.order_no}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{o.customer_name}</div>
+                </div>
+                <div className="text-right">
+                  <div className={`font-bold text-sm ${o.days_left <= 0 ? 'text-red-600' : 'text-orange-600'}`}>
+                    {o.days_left <= 0 ? '已逾期' : `剩余 ${o.days_left} 天`}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">{o.delivery_date}</div>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center text-gray-400 py-8"><i className="fas fa-calendar-check text-green-400 text-2xl mb-2"></i><p className="text-sm">近期无交付压力</p></div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 第三行：趋势图 + 饼图 + 缺料 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* 左侧大图区：产能走势全景图 */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -98,46 +157,29 @@ const Dashboard = () => {
         </div>
 
         <div className="flex flex-col gap-6">
-          {/* 右侧上层：大盘全管态监控 */}
+          {/* 订单状态饼图 */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex-1">
             <h3 className="font-bold text-gray-800 text-lg mb-2"><i className="fas fa-chart-pie text-cyan-500 mr-2"></i>订单状态监控池</h3>
             <div className="h-48 w-full mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={chartData.orderStatus}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                  >
+                  <Pie data={chartData.orderStatus} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
                     {chartData.orderStatus.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <RechartsTooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Legend 
-                    layout="vertical" 
-                    verticalAlign="middle" 
-                    align="right"
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: '12px' }}
-                  />
+                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                  <Legend layout="vertical" verticalAlign="middle" align="right" iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* 右侧下层：低水位预警带 */}
+          {/* 低水位预警 */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex-1 overflow-hidden flex flex-col">
             <h3 className="font-bold text-gray-800 text-lg mb-3 flex items-center justify-between">
-              <span><i className="fas fa-bell text-red-500 mr-2"></i>低水位缺料预警带</span>
-              {stats.lowStock?.length > 0 && <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full">{stats.lowStock.length}项告警</span>}
+              <span><i className="fas fa-bell text-red-500 mr-2"></i>低水位缺料预警</span>
+              {stats.lowStock?.length > 0 && <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full">{stats.lowStock.length}项</span>}
             </h3>
             <div className="overflow-y-auto flex-1 pr-1 space-y-3">
               {stats.lowStock?.length > 0 ? (
@@ -145,11 +187,10 @@ const Dashboard = () => {
                   <div key={i} className="flex justify-between items-center p-3 sm:p-2 bg-red-50 border border-red-50 rounded-xl">
                     <div className="flex flex-col">
                       <span className="font-medium text-gray-800 text-sm">{item.name} <span className="text-gray-400 text-xs">{item.code}</span></span>
-                      <span className="text-xs text-gray-500 mt-1"><i className="fas fa-cubes text-gray-400 mr-1"></i>全盘口汇总库存</span>
                     </div>
                     <div className="text-right">
-                      <div className="text-red-500 font-bold text-sm">{item.quantity} kg</div>
-                      <div className="text-xs text-red-400 mt-1">安全基线: {item.alert_threshold} kg</div>
+                      <div className="text-red-500 font-bold text-sm">{item.quantity} {item.unit || 'kg'}</div>
+                      <div className="text-xs text-red-400 mt-1">安全基线: {item.alert_threshold} {item.unit || 'kg'}</div>
                     </div>
                   </div>
                 ))
@@ -160,6 +201,53 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 第四行：损耗排行 + 采购建议 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 损耗率排行 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h3 className="font-bold text-gray-800 text-lg mb-4"><i className="fas fa-chart-bar text-purple-500 mr-2"></i>工单损耗排行 TOP5</h3>
+          <div className="space-y-3">
+            {chartData.wasteTop5?.length > 0 ? chartData.wasteTop5.map((w, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${w.waste_rate > 10 ? 'bg-red-100 text-red-600' : w.waste_rate > 5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                  {i + 1}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm text-gray-800 truncate">{w.order_no}</div>
+                  <div className="text-xs text-gray-500">{w.product_name} · 计划{w.planned} / 实完{w.actual}</div>
+                </div>
+                <div className={`font-bold text-sm ${w.waste_rate > 10 ? 'text-red-600' : w.waste_rate > 5 ? 'text-orange-600' : 'text-green-600'}`}>
+                  {w.waste_rate}%
+                </div>
+              </div>
+            )) : (
+              <div className="text-center text-gray-400 py-8"><i className="fas fa-trophy text-gray-300 text-2xl mb-2"></i><p className="text-sm">暂无完工工单数据</p></div>
+            )}
+          </div>
+        </div>
+
+        {/* 采购建议 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h3 className="font-bold text-gray-800 text-lg mb-4"><i className="fas fa-shopping-bag text-blue-500 mr-2"></i>采购建议</h3>
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {purchaseSuggestions.length > 0 ? purchaseSuggestions.map((s, i) => (
+              <div key={i} className="flex items-center justify-between p-3 bg-blue-50 rounded-xl border border-blue-100">
+                <div>
+                  <div className="font-medium text-sm text-gray-800">{s.name} <span className="text-gray-400 text-xs">{s.code}</span></div>
+                  <div className="text-xs text-gray-500 mt-0.5">缺口: {s.shortage} {s.unit} · 当前库存: {s.current_stock} {s.unit}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold text-sm text-blue-600">建议采购</div>
+                  <div className="text-lg font-bold text-blue-700">{s.need_purchase} <span className="text-xs font-normal">{s.unit}</span></div>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center text-gray-400 py-8"><i className="fas fa-box-check text-green-400 text-2xl mb-2"></i><p className="text-sm">当前库存充足，无需采购</p></div>
+            )}
           </div>
         </div>
       </div>

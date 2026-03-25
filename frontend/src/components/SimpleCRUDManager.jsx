@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
-import Drawer from './Drawer';
-import Pagination from './Pagination';
+import Modal from './Modal';
 import SearchFilter from './SearchFilter';
 import Table from './Table';
 
@@ -14,7 +13,8 @@ const SimpleCRUDManager = ({
   searchFields = ['code', 'name'],
   filters = [],
   editPermission,
-  deletePermission
+  deletePermission,
+  hasStatus = false
 }) => {
   const [data, setData] = useState([]);
   const [modal, setModal] = useState({ open: false, item: null });
@@ -22,7 +22,7 @@ const SimpleCRUDManager = ({
   const [filterValues, setFilterValues] = useState({});
   
   const load = () => api.get(`/${apiPath}`).then(res => res.success && setData(res.data));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [apiPath]);
   
   const filteredData = data.filter(item => {
     const matchSearch = !searchText || searchFields.some(f => 
@@ -48,6 +48,12 @@ const SimpleCRUDManager = ({
     if (!confirm('确定删除？')) return;
     const res = await api.del(`/${apiPath}/${item.id}`);
     res.success ? load() : window.__toast?.error(res.message);
+  };
+
+  const toggleStatus = async (item) => {
+    const res = await api.put(`/${apiPath}/${item.id}/toggle-status`);
+    if (res.success) load();
+    else window.__toast?.error(res.message);
   };
 
   const renderField = (f) => {
@@ -81,6 +87,21 @@ const SimpleCRUDManager = ({
     );
   };
 
+  const statusAction = hasStatus ? (item) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); toggleStatus(item); }}
+      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+        item.status === 1 
+          ? 'text-orange-600 hover:bg-orange-50 border border-orange-200' 
+          : 'text-green-600 hover:bg-green-50 border border-green-200'
+      }`}
+      title={item.status === 1 ? '点击禁用' : '点击启用'}
+    >
+      <i className={`fas ${item.status === 1 ? 'fa-ban' : 'fa-check-circle'} mr-1`}></i>
+      {item.status === 1 ? '禁用' : '启用'}
+    </button>
+  ) : null;
+
   return (
     <div className="fade-in h-full flex flex-col">
       <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
@@ -96,26 +117,25 @@ const SimpleCRUDManager = ({
         onReset={resetFilters}
       />
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex-1 overflow-hidden">
-        <Table columns={columns} data={filteredData} onEdit={item => setModal({ open: true, item })} onDelete={del} editPermission={editPermission} deletePermission={deletePermission} />
+        <Table columns={columns} data={filteredData} onEdit={item => setModal({ open: true, item })} onDelete={del} editPermission={editPermission} deletePermission={deletePermission} customAction={statusAction} />
       </div>
 
-      <Drawer isOpen={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? `编辑${title}` : `新增${title}`}>
-        <form onSubmit={save} className="flex flex-col h-full">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 flex-1">
+      <Modal isOpen={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? `编辑${title}` : `新增${title}`}>
+        <form onSubmit={save} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {fields.map(f => (
-              <div key={f.name} className={f.fullWidth ? 'md:col-span-2' : ''}>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">{f.label}{f.required && <span className="text-red-500 ml-1">*</span>}</label>
+              <div key={f.name} className={f.fullWidth ? 'sm:col-span-2' : ''}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}{f.required && <span className="text-red-500 ml-1">*</span>}</label>
                 {renderField(f)}
               </div>
             ))}
           </div>
-          {/* 底部固定操作栏 */}
-          <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-gray-100 sticky bottom-0 bg-white pb-2">
-            <button type="button" onClick={() => setModal({ open: false, item: null })} className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors font-medium">取消</button>
-            <button type="submit" className="px-5 py-2.5 bg-teal-600 shadow-sm shadow-teal-500/30 text-white rounded-lg hover:bg-teal-500 transition-all font-medium">保存提交</button>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={() => setModal({ open: false, item: null })} className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">取消</button>
+            <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors">保存</button>
           </div>
         </form>
-      </Drawer>
+      </Modal>
     </div>
   );
 };

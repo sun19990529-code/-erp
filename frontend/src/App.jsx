@@ -26,6 +26,7 @@ const ProductManager = React.lazy(() => import('./pages/BasicDataPages').then(m 
 const SupplierManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.SupplierManager })));
 const CustomerManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.CustomerManager })));
 const DepartmentManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.DepartmentManager })));
+const MaterialCategoryManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.MaterialCategoryManager })));
 const RoleManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.RoleManager })));
 const PermissionManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.PermissionManager })));
 const UserManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.UserManager })));
@@ -60,6 +61,7 @@ const MENU_ROUTES = {
   'supplier': '/basic/supplier',
   'customer': '/basic/customer',
   'department': '/basic/department',
+  'material-category': '/basic/material-category',
   'role': '/system/role',
   'permission': '/system/permission',
   'user-internal': '/system/user-internal',
@@ -144,6 +146,7 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/basic/supplier" element={<SupplierManager />} />
                 <Route path="/basic/customer" element={<CustomerManager />} />
                 <Route path="/basic/department" element={<DepartmentManager />} />
+                <Route path="/basic/material-category" element={<MaterialCategoryManager />} />
                 <Route path="/system/role" element={<RoleManager />} />
                 <Route path="/system/permission" element={<PermissionManager />} />
                 <Route path="/system/user-internal" element={<UserManager userType="internal" />} />

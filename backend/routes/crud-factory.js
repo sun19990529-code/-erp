@@ -1,5 +1,9 @@
 const express = require('express');
 const { requirePermission } = require('../middleware/permission');
+const { validateId } = require('../middleware/validate');
+
+// 允许使用 CRUD 工厂的表名白名单
+const ALLOWED_TABLES = ['departments', 'customers', 'suppliers'];
 
 /**
  * 通用 CRUD 路由工厂
@@ -24,6 +28,10 @@ function createCRUDRouter(config) {
     permissionPrefix
   } = config;
 
+  if (!ALLOWED_TABLES.includes(table)) {
+    throw new Error(`[crud-factory] 表名 "${table}" 不在白名单中，请先添加到 ALLOWED_TABLES`);
+  }
+
   // 权限中间件：有 permissionPrefix 时自动挂载，否则跳过
   const perm = (action) => permissionPrefix ? requirePermission(`${permissionPrefix}_${action}`) : (req, res, next) => next();
 
@@ -41,11 +49,13 @@ function createCRUDRouter(config) {
   // 新增
   router.post('/', perm('create'), (req, res) => {
     try {
-      const values = fields.map(f => req.body[f] !== undefined ? req.body[f] : null);
-      const placeholders = fields.map(() => '?').join(', ');
-      const fieldNames = fields.join(', ');
-      req.db.run(`INSERT INTO ${table} (${fieldNames}) VALUES (${placeholders})`, values);
-      res.json({ success: true });
+      // 只写入前端实际传了值的字段，未传的让数据库用 DEFAULT
+      const activeFields = fields.filter(f => req.body[f] !== undefined);
+      const values = activeFields.map(f => req.body[f]);
+      const placeholders = activeFields.map(() => '?').join(', ');
+      const fieldNames = activeFields.join(', ');
+      const info = req.db.run(`INSERT INTO ${table} (${fieldNames}) VALUES (${placeholders})`, values);
+      res.json({ success: true, data: { id: info.lastInsertRowid } });
     } catch (error) {
       console.error(`[crud-${table}]`, error.message);
       if (error.message && error.message.includes('UNIQUE')) {
@@ -55,8 +65,24 @@ function createCRUDRouter(config) {
     }
   });
 
+  // 切换启用/禁用状态（必须在 /:id 之前定义，否则会被通配符拦截）
+  if (fields.includes('status')) {
+    router.put('/:id/toggle-status', validateId, perm('edit'), (req, res) => {
+      try {
+        const row = req.db.get(`SELECT status FROM ${table} WHERE id = ?`, [req.params.id]);
+        if (!row) return res.status(404).json({ success: false, message: '记录不存在' });
+        const newStatus = row.status === 1 ? 0 : 1;
+        req.db.run(`UPDATE ${table} SET status = ?${hasTimestamps ? ', updated_at = CURRENT_TIMESTAMP' : ''} WHERE id = ?`, [newStatus, req.params.id]);
+        res.json({ success: true, data: { status: newStatus } });
+      } catch (error) {
+        console.error(`[crud-${table}]`, error.message);
+        res.status(500).json({ success: false, message: '服务器错误' });
+      }
+    });
+  }
+
   // 更新
-  router.put('/:id', perm('edit'), (req, res) => {
+  router.put('/:id', validateId, perm('edit'), (req, res) => {
     try {
       const values = fields.map(f => req.body[f] !== undefined ? req.body[f] : null);
       const setClause = fields.map(f => `${f} = ?`).join(', ');
@@ -74,7 +100,7 @@ function createCRUDRouter(config) {
   });
 
   // 删除（带级联保护）
-  router.delete('/:id', perm('delete'), (req, res) => {
+  router.delete('/:id', validateId, perm('delete'), (req, res) => {
     try {
       // 检查关联关系
       for (const rel of checkRelations) {

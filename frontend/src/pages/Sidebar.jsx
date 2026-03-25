@@ -50,6 +50,7 @@ const menuConfig = [
       { key: 'supplier', label: '供应商管理' },
       { key: 'customer', label: '客户管理' },
       { key: 'department', label: '部门管理' },
+      { key: 'material-category', label: '材质分类管理' },
     ]
   },
   {
@@ -88,7 +89,7 @@ const menuPermissions = {
   // 产品档案（属于基础数据模块）
   'product-raw': 'basic_data_view', 'product-semi': 'basic_data_view', 'product-finished': 'basic_data_view',
   // 基础数据
-  'supplier': 'basic_data_view', 'customer': 'basic_data_view', 'department': 'basic_data_view',
+  'supplier': 'basic_data_view', 'customer': 'basic_data_view', 'department': 'basic_data_view', 'material-category': 'basic_data_view',
   // 系统管理（仅管理员，前端走 isAdmin 判断，权限码置 null）
   'role': null, 'permission': null,
   'user-internal': null, 'user-external': null,
@@ -139,8 +140,8 @@ const Sidebar = ({ activeMenu, setActiveMenu, user, permissions, onLogout, sideb
     <div className={`mobile-sidebar w-64 bg-white border-r border-gray-100 text-gray-700 flex flex-col min-h-screen shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-transform z-40 ${sidebarOpen ? 'open' : ''}`}>
       {/* Logo 区域 (轻量现代感) */}
       <div className="p-5 border-b border-gray-50 flex items-center gap-3 shrink-0">
-        <div className="w-10 h-10 bg-gradient-to-br from-teal-50 to-teal-100 text-teal-600 rounded-xl flex items-center justify-center shadow-sm border border-teal-200/40">
-          <i className="fas fa-industry text-xl"></i>
+        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm border border-gray-100 overflow-hidden">
+          <img src="/logo.png" alt="铭晟" className="w-8 h-8 object-contain" />
         </div>
         <div>
           <div className="font-bold text-gray-900 tracking-wide text-base">铭晟系统</div>

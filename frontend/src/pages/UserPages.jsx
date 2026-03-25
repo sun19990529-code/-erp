@@ -206,6 +206,7 @@ const UserManager = ({ userType }) => {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
+  const [extUserType, setExtUserType] = useState('supplier');
   
   const load = () => {
     api.get(`/users?user_type=${userType}`).then(res => res.success && setData(res.data));
@@ -217,6 +218,12 @@ const UserManager = ({ userType }) => {
   useEffect(() => { load(); }, [userType]);
   
   const externalType = userType === 'external';
+
+  // 打开 modal 时同步 extUserType
+  const openModal = (item) => {
+    setExtUserType(item?.user_type || 'supplier');
+    setModal({ open: true, item });
+  };
   
   const filteredData = data.filter(item => {
     const matchSearch = !searchText || 
@@ -234,8 +241,12 @@ const UserManager = ({ userType }) => {
     const fd = new FormData(e.target);
     const obj = {
       username: fd.get('username'), password: fd.get('password'), real_name: fd.get('real_name'),
-      user_type: userType, department_id: fd.get('department_id') || null, role_id: fd.get('role_id') || null,
-      supplier_id: fd.get('supplier_id') || null, customer_id: fd.get('customer_id') || null, status: fd.get('status') ? 1 : 0
+      user_type: externalType ? extUserType : 'internal',
+      department_id: fd.get('department_id') ? parseInt(fd.get('department_id')) : null,
+      role_id: fd.get('role_id') ? parseInt(fd.get('role_id')) : null,
+      supplier_id: fd.get('supplier_id') ? parseInt(fd.get('supplier_id')) : null,
+      customer_id: fd.get('customer_id') ? parseInt(fd.get('customer_id')) : null,
+      status: fd.get('status') ? 1 : 0
     };
     if (!obj.password) delete obj.password;
     const res = modal.item ? await api.put(`/users/${modal.item.id}`, obj) : await api.post('/users', obj);
@@ -272,7 +283,7 @@ const UserManager = ({ userType }) => {
     <div className="fade-in">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">{title}</h2>
-        <button onClick={() => setModal({ open: true, item: null })} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700"><i className="fas fa-plus mr-2"></i>新增</button>
+        <button onClick={() => openModal(null)} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700"><i className="fas fa-plus mr-2"></i>新增</button>
       </div>
       <SearchFilter
         searchPlaceholder="搜索用户名/姓名..."
@@ -282,7 +293,7 @@ const UserManager = ({ userType }) => {
         onFilterChange={(key, val) => { key === 'status' && setStatusFilter(val); key === 'department' && setDepartmentFilter(val); }}
         onReset={resetFilters}
       />
-      <div className="bg-white rounded-xl shadow"><Table columns={columns.filter(c => !externalType || ['username', 'real_name', 'supplier_name', 'customer_name', 'status'].includes(c.key))} data={filteredData} onEdit={item => setModal({ open: true, item })} onDelete={del} editPermission="basic_data_edit" deletePermission="basic_data_delete" /></div>
+      <div className="bg-white rounded-xl shadow"><Table columns={columns.filter(c => !externalType || ['username', 'real_name', 'supplier_name', 'customer_name', 'status'].includes(c.key))} data={filteredData} onEdit={item => openModal(item)} onDelete={del} editPermission="basic_data_edit" deletePermission="basic_data_delete" /></div>
       <Modal isOpen={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? `编辑${title}` : `新增${title}`}>
         <form onSubmit={save} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -298,12 +309,22 @@ const UserManager = ({ userType }) => {
               </div>
             </>}
             {externalType && <>
-              <div><label className="block text-sm font-medium mb-1">关联供应商</label>
-                <SearchSelect name="supplier_id" options={suppliers} value={modal.item?.supplier_id} placeholder="无" />
+              <div><label className="block text-sm font-medium mb-1">用户类型 *</label>
+                <select name="user_type" value={extUserType} onChange={e => setExtUserType(e.target.value)} className="w-full border rounded-lg px-3 py-2" required>
+                  <option value="supplier">供应商</option>
+                  <option value="customer">客户</option>
+                </select>
               </div>
-              <div><label className="block text-sm font-medium mb-1">关联客户</label>
-                <SearchSelect name="customer_id" options={customers} value={modal.item?.customer_id} placeholder="无" />
-              </div>
+              {extUserType === 'supplier' && (
+                <div><label className="block text-sm font-medium mb-1">关联供应商</label>
+                  <SearchSelect name="supplier_id" options={suppliers} value={modal.item?.supplier_id} placeholder="无" />
+                </div>
+              )}
+              {extUserType === 'customer' && (
+                <div><label className="block text-sm font-medium mb-1">关联客户</label>
+                  <SearchSelect name="customer_id" options={customers} value={modal.item?.customer_id} placeholder="无" />
+                </div>
+              )}
             </>}
             <div className="flex items-center pt-6">
               <label className="flex items-center gap-2 cursor-pointer">

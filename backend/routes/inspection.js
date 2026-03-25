@@ -28,6 +28,9 @@ router.post('/inbound', requirePermission('inspection_create'), (req, res) => {
       inspector, remark, defect_quantity, defect_type,
       pass_quantity, fail_quantity
     } = req.body;
+    if (!['pass', 'fail'].includes(inspResult)) {
+      return res.status(400).json({ success: false, message: '检验结果无效，仅允许 pass/fail' });
+    }
     const inspNo = generateOrderNo('IBI');
     
     req.db.transaction(() => {
@@ -109,6 +112,9 @@ router.get('/patrol', requirePermission('inspection_view'), (req, res) => {
 router.post('/patrol', requirePermission('inspection_create'), (req, res) => {
   try {
     const { production_order_id, process_id, product_id, result: inspResult, inspector, remark, defect_quantity, defect_type } = req.body;
+    if (!['pass', 'fail'].includes(inspResult)) {
+      return res.status(400).json({ success: false, message: '检验结果无效，仅允许 pass/fail' });
+    }
     const inspNo = generateOrderNo('IPT');
     req.db.transaction(() => {
       req.db.run(`
@@ -151,6 +157,9 @@ router.get('/outsourcing', requirePermission('inspection_view'), (req, res) => {
 router.post('/outsourcing', requirePermission('inspection_create'), (req, res) => {
   try {
     const { outsourcing_order_id, product_id, quantity, result: inspResult, inspector, remark, defect_quantity, defect_type } = req.body;
+    if (!['pass', 'fail'].includes(inspResult)) {
+      return res.status(400).json({ success: false, message: '检验结果无效，仅允许 pass/fail' });
+    }
     const inspNo = generateOrderNo('IOS');
     
     req.db.transaction(() => {
@@ -195,6 +204,9 @@ router.get('/final', requirePermission('inspection_view'), (req, res) => {
 router.post('/final', requirePermission('inspection_create'), (req, res) => {
   try {
     const { production_order_id, product_id, quantity, result: inspResult, inspector, remark, defect_quantity, defect_type } = req.body;
+    if (!['pass', 'fail'].includes(inspResult)) {
+      return res.status(400).json({ success: false, message: '检验结果无效，仅允许 pass/fail' });
+    }
     const inspNo = generateOrderNo('IFN');
     
     req.db.transaction(() => {

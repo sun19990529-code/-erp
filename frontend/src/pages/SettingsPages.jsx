@@ -1,15 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
-import Modal from '../components/Modal';
-import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
-import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
-import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
-import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
 const BackupSettings = () => {
   const [config, setConfig] = useState({
@@ -263,7 +253,7 @@ const BackupSettings = () => {
 };
 
 const AboutSystem = () => {
-  const [version, setVersion] = useState({ version: 'v1.1.0', date: '2026-03-21' });
+  const [version, setVersion] = useState({ version: `v${__APP_VERSION__}`, date: '2026-03-25' });
 
   useEffect(() => {
     // 尝试读取VERSION文件
@@ -319,7 +309,7 @@ const AboutSystem = () => {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">数据库:</span>
-              <span className="font-medium">SQLite (sql.js)</span>
+              <span className="font-medium">SQLite (better-sqlite3)</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">UI框架:</span>

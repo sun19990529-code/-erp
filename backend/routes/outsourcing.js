@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
-const { validate } = require('../middleware/validate');
+const { validate, validateId } = require('../middleware/validate');
 const { outsourcingCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
@@ -87,7 +87,7 @@ router.get('/', requirePermission('outsourcing_view'), (req, res) => {
   }
 });
 
-router.get('/:id', requirePermission('outsourcing_view'), (req, res) => {
+router.get('/:id', validateId, requirePermission('outsourcing_view'), (req, res) => {
   try {
     const order = req.db.get(`SELECT oo.*, s.name as supplier_name, po.order_no as production_order_no FROM outsourcing_orders oo JOIN suppliers s ON oo.supplier_id = s.id LEFT JOIN production_orders po ON oo.production_order_id = po.id WHERE oo.id = ?`, [req.params.id]);
     const items = req.db.all(`SELECT oi.*, p.code, p.name, p.specification, p.unit FROM outsourcing_items oi JOIN products p ON oi.product_id = p.id WHERE oi.outsourcing_order_id = ?`, [req.params.id]);
@@ -122,7 +122,7 @@ router.post('/', requirePermission('outsourcing_create'), validate(outsourcingCr
   }
 });
 
-router.put('/:id/status', requirePermission('outsourcing_edit'), (req, res) => {
+router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), (req, res) => {
   try {
     const { status } = req.body;
     // 【安全】状态值白名单校验
@@ -230,6 +230,7 @@ router.put('/:id/status', requirePermission('outsourcing_edit'), (req, res) => {
       }
       req.db.run('UPDATE outsourcing_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
     });
+    writeLog(req.db, req.user?.id, '委外状态变更', 'outsourcing', req.params.id, `状态: ${status}`);
     res.json({ success: true });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
@@ -237,7 +238,7 @@ router.put('/:id/status', requirePermission('outsourcing_edit'), (req, res) => {
   }
 });
 
-router.put('/:id', requirePermission('outsourcing_edit'), (req, res) => {
+router.put('/:id', validateId, requirePermission('outsourcing_edit'), (req, res) => {
   try {
     const { supplier_id, production_order_id, process_id, expected_date, operator, remark, items } = req.body;
     req.db.transaction(() => {
@@ -256,7 +257,7 @@ router.put('/:id', requirePermission('outsourcing_edit'), (req, res) => {
   }
 });
 
-router.delete('/:id', requirePermission('outsourcing_delete'), (req, res) => {
+router.delete('/:id', validateId, requirePermission('outsourcing_delete'), (req, res) => {
   try {
     const order = req.db.get('SELECT * FROM outsourcing_orders WHERE id = ?', [req.params.id]);
     if (order && order.status !== 'pending') return res.status(400).json({ success: false, message: '只能删除待处理状态的委外单' });

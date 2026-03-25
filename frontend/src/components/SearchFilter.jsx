@@ -1,14 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-// 防抖 Hook（原 App.jsx 中提取，在 SearchFilter 内联定义）
-const useDebounce = (value, delay = 300) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debouncedValue;
-};
+import { useDebounce } from '../hooks/useDebounce';
 
 const SearchFilter = ({ searchPlaceholder = '搜索...', searchValue, onSearchChange, filters = [], onFilterChange, onReset, debounceDelay = 300 }) => {
   const [localSearchValue, setLocalSearchValue] = useState(searchValue || '');

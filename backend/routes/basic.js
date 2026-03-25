@@ -234,8 +234,12 @@ router.get('/users', (req, res) => {
     `;
     const params = [];
     if (user_type) {
-      sql += ' AND u.user_type = ?';
-      params.push(user_type);
+      if (user_type === 'external') {
+        sql += " AND u.user_type IN ('supplier', 'customer')";
+      } else {
+        sql += ' AND u.user_type = ?';
+        params.push(user_type);
+      }
     }
     sql += ' ORDER BY u.id';
     const users = req.db.all(sql, params);
