@@ -1,6 +1,6 @@
 # 铭晟 ERP-MES 管理系统
 
-> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.5.1**
+> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.5.2**
 
 ## 技术栈
 
@@ -25,7 +25,7 @@
 - **质量检验** — 来料/巡检/委外/成品四类检验
 - **采购管理** — 采购单据、供应商管理
 - **委外加工** — 委外工单、自动入库联动
-- **基础数据** — 产品档案、供应商/客户/部门管理
+- **基础数据** — 产品档案、供应商/客户/部门管理、材质分类（树形）
 - **系统管理** — 角色权限、用户管理、数据备份与恢复
 - **扫码工站** — 条码扫描快速跳转
 - **车间大屏** — 生产状态全景监控
@@ -71,7 +71,7 @@ cd backend && npm run lint
 erp-mes-system/
 ├── frontend/
 │   └── src/
-│       ├── components/     # 通用组件 (Table, Modal, Pagination, ErrorBoundary...)
+│       ├── components/     # 通用组件 (Table, Modal, ProcessConfigPanel...)
 │       ├── pages/          # 页面模块 (Dashboard, Sidebar, *Pages...)
 │       ├── context/        # React Context (Auth, Toast)
 │       ├── hooks/          # 自定义 Hook (useDraftForm)
@@ -115,6 +115,14 @@ erp-mes-system/
 - 📚 **Swagger API 文档** — 访问 `/api-docs`
 - 🔄 **GitHub Actions CI** — 推送自动运行 lint → test → build
 - 🗺️ **React Router** — 30 个 URL 路由，支持浏览器前进后退
+
+### v1.5.2 代码质量优化
+- 🧩 **ProcessConfigPanel 组件抽取** — 三处工序配置 UI 统一为共享组件，减少 260+ 行代码
+- 🔒 **CSP 安全策略** — 从 `contentSecurityPolicy: false` 改为合理的指令配置
+- 🛡️ **产品编码唯一性校验** — POST 创建时前置检查，防止重复编码
+- ⚡ **buildTree O(n) 优化** — 材质分类树构建从 O(n²) 递归改为 HashMap 单次遍历
+- 🔧 **竞态修复** — 原材料/半成品加载改为 `Promise.all` 消除状态覆盖
+- 📦 **版本号自动注入** — Vite 构建时从 `package.json` 注入，"关于系统"页面自动同步
 
 ## 数据库关系图
 

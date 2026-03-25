@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
+const { validateId } = require('../middleware/validate');
 
 // 产品管理
 router.get('/', requirePermission('basic_data_view'), (req, res) => {
@@ -29,21 +30,37 @@ router.get('/', requirePermission('basic_data_view'), (req, res) => {
     }
     sql += ' ORDER BY p.id DESC';
     const products = req.db.all(sql, params);
-    // 附带每个产品的供应商和客户列表
-    products.forEach(p => {
-      p.suppliers = req.db.all(`
+    if (products.length > 0) {
+      // 批量查询供应商和客户关联（消除 N+1）
+      const pids = products.map(p => p.id);
+      const ph = pids.map(() => '?').join(',');
+      const allSuppliers = req.db.all(`
         SELECT ps.*, s.name as supplier_name, s.code as supplier_code
         FROM product_suppliers ps
         JOIN suppliers s ON ps.supplier_id = s.id
-        WHERE ps.product_id = ?
-      `, [p.id]);
-      p.customers = req.db.all(`
+        WHERE ps.product_id IN (${ph})
+      `, pids);
+      const allCustomers = req.db.all(`
         SELECT pc.*, c.name as customer_name, c.code as customer_code
         FROM product_customers pc
         JOIN customers c ON pc.customer_id = c.id
-        WHERE pc.product_id = ?
-      `, [p.id]);
-    });
+        WHERE pc.product_id IN (${ph})
+      `, pids);
+      const supplierMap = new Map();
+      const customerMap = new Map();
+      allSuppliers.forEach(s => {
+        if (!supplierMap.has(s.product_id)) supplierMap.set(s.product_id, []);
+        supplierMap.get(s.product_id).push(s);
+      });
+      allCustomers.forEach(c => {
+        if (!customerMap.has(c.product_id)) customerMap.set(c.product_id, []);
+        customerMap.get(c.product_id).push(c);
+      });
+      products.forEach(p => {
+        p.suppliers = supplierMap.get(p.id) || [];
+        p.customers = customerMap.get(p.id) || [];
+      });
+    }
     res.json({ success: true, data: products });
   } catch (error) {
     console.error(`[products.js]`, error.message);
@@ -56,19 +73,26 @@ router.post('/', requirePermission('basic_data_create'), (req, res) => {
     const {
       code, name, specification, unit, category, unit_price,
       min_stock, max_stock, outer_diameter, inner_diameter,
-      wall_thickness, length, supplier_id
+      wall_thickness, length, supplier_id, material_category_id
     } = req.body;
+    if (!code || !name) {
+      return res.status(400).json({ success: false, message: '产品编码和名称为必填项' });
+    }
+    const dup = req.db.get('SELECT id FROM products WHERE code = ?', [code]);
+    if (dup) {
+      return res.status(400).json({ success: false, message: `产品编码「${code}」已存在` });
+    }
     const result = req.db.run(`
       INSERT INTO products
         (code, name, specification, unit, category, unit_price,
          min_stock, max_stock, outer_diameter, inner_diameter,
-         wall_thickness, length, supplier_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         wall_thickness, length, supplier_id, material_category_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       code, name, specification, unit, category, unit_price,
       min_stock || 0, max_stock || 0, outer_diameter || null,
       inner_diameter || null, wall_thickness || null,
-      length || null, supplier_id || null
+      length || null, supplier_id || null, material_category_id || null
     ]);
     res.json({ success: true, data: { id: result.lastInsertRowid } });
   } catch (error) {
@@ -77,12 +101,12 @@ router.post('/', requirePermission('basic_data_create'), (req, res) => {
   }
 });
 
-router.put('/:id', requirePermission('basic_data_edit'), (req, res) => {
+router.put('/:id', validateId, requirePermission('basic_data_edit'), (req, res) => {
   try {
     const {
       code, name, specification, unit, category, unit_price, status,
       min_stock, max_stock, outer_diameter, inner_diameter,
-      wall_thickness, length, supplier_id
+      wall_thickness, length, supplier_id, material_category_id
     } = req.body;
     
     const existing = req.db.get('SELECT * FROM products WHERE id = ?', [req.params.id]);
@@ -97,6 +121,7 @@ router.put('/:id', requirePermission('basic_data_edit'), (req, res) => {
           min_stock = ?, max_stock = ?,
           outer_diameter = ?, inner_diameter = ?,
           wall_thickness = ?, length = ?, supplier_id = ?,
+          material_category_id = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `,
@@ -115,6 +140,7 @@ router.put('/:id', requirePermission('basic_data_edit'), (req, res) => {
         wall_thickness !== undefined ? wall_thickness : existing.wall_thickness,
         length !== undefined ? length : existing.length,
         supplier_id !== undefined ? (supplier_id || null) : existing.supplier_id,
+        material_category_id !== undefined ? (material_category_id || null) : existing.material_category_id,
         req.params.id
       ]);
     res.json({ success: true });
@@ -124,7 +150,7 @@ router.put('/:id', requirePermission('basic_data_edit'), (req, res) => {
   }
 });
 
-router.delete('/:id', requirePermission('basic_data_delete'), (req, res) => {
+router.delete('/:id', validateId, requirePermission('basic_data_delete'), (req, res) => {
   try {
     // 检查关联
     const invCount = req.db.get('SELECT COUNT(*) as count FROM inventory WHERE product_id = ?', [req.params.id]);
@@ -132,6 +158,9 @@ router.delete('/:id', requirePermission('basic_data_delete'), (req, res) => {
       return res.status(400).json({ success: false, message: '该产品有库存记录，无法删除' });
     }
     req.db.transaction(() => {
+      req.db.run('DELETE FROM product_suppliers WHERE product_id = ?', [req.params.id]);
+      req.db.run('DELETE FROM product_customers WHERE product_id = ?', [req.params.id]);
+      req.db.run('DELETE FROM process_materials WHERE product_process_id IN (SELECT id FROM product_processes WHERE product_id = ?)', [req.params.id]);
       req.db.run('DELETE FROM product_processes WHERE product_id = ?', [req.params.id]);
       req.db.run('DELETE FROM products WHERE id = ?', [req.params.id]);
     });
@@ -143,7 +172,7 @@ router.delete('/:id', requirePermission('basic_data_delete'), (req, res) => {
 });
 
 // 产品工序流程配置
-router.get('/:id/processes', requirePermission('basic_data_view'), (req, res) => {
+router.get('/:id/processes', validateId, requirePermission('basic_data_view'), (req, res) => {
   try {
     const processes = req.db.all(`
       SELECT pp.*, p.name as process_name, p.code as process_code, p.description
@@ -159,7 +188,7 @@ router.get('/:id/processes', requirePermission('basic_data_view'), (req, res) =>
   }
 });
 
-router.post('/:id/processes', requirePermission('basic_data_edit'), (req, res) => {
+router.post('/:id/processes', validateId, requirePermission('basic_data_edit'), (req, res) => {
   try {
     const { processes } = req.body;
     
@@ -185,7 +214,7 @@ router.post('/:id/processes', requirePermission('basic_data_edit'), (req, res) =
             req.db.run(`
               INSERT INTO process_materials (product_process_id, material_id, quantity, unit, remark)
               VALUES (?, ?, ?, ?, ?)
-            `, [productProcessId, m.material_id, m.quantity || 1, m.unit || '公斤', m.remark]);
+            `, [productProcessId, m.material_id, m.quantity || 0, m.unit || '公斤', m.remark]);
           });
         }
       });
@@ -215,7 +244,7 @@ router.get('/product-processes/:productProcessId/materials', requirePermission('
 });
 
 // 获取产品所有工序的材料配置
-router.get('/:id/process-materials', requirePermission('basic_data_view'), (req, res) => {
+router.get('/:id/process-materials', validateId, requirePermission('basic_data_view'), (req, res) => {
   try {
     const materials = req.db.all(`
       SELECT pm.*, pp.sequence as process_sequence, pp.process_id,
@@ -236,7 +265,7 @@ router.get('/:id/process-materials', requirePermission('basic_data_view'), (req,
   }
 });
 
-router.put('/:id/processes/:processId', requirePermission('basic_data_edit'), (req, res) => {
+router.put('/:id/processes/:processId', validateId, requirePermission('basic_data_edit'), (req, res) => {
   try {
     const { sequence, is_outsourced, estimated_duration, remark } = req.body;
     req.db.run(`
@@ -251,7 +280,7 @@ router.put('/:id/processes/:processId', requirePermission('basic_data_edit'), (r
   }
 });
 
-router.delete('/:id/processes/:processId', requirePermission('basic_data_delete'), (req, res) => {
+router.delete('/:id/processes/:processId', validateId, requirePermission('basic_data_delete'), (req, res) => {
   try {
     req.db.run('DELETE FROM product_processes WHERE product_id = ? AND process_id = ?', [req.params.id, req.params.processId]);
     res.json({ success: true });
@@ -263,7 +292,7 @@ router.delete('/:id/processes/:processId', requirePermission('basic_data_delete'
 
 // ==================== 产品-供应商 多对多管理 ====================
 // 获取产品关联的供应商
-router.get('/:id/suppliers', requirePermission('basic_data_view'), (req, res) => {
+router.get('/:id/suppliers', validateId, requirePermission('basic_data_view'), (req, res) => {
   try {
     const suppliers = req.db.all(`
       SELECT ps.*, s.name as supplier_name, s.code as supplier_code
@@ -279,7 +308,7 @@ router.get('/:id/suppliers', requirePermission('basic_data_view'), (req, res) =>
 });
 
 // 设置产品关联的供应商（全量替换）
-router.put('/:id/suppliers', requirePermission('basic_data_edit'), (req, res) => {
+router.put('/:id/suppliers', validateId, requirePermission('basic_data_edit'), (req, res) => {
   try {
     const { supplier_ids } = req.body; // [1, 2, 3]
     req.db.transaction(() => {
@@ -296,7 +325,7 @@ router.put('/:id/suppliers', requirePermission('basic_data_edit'), (req, res) =>
 });
 
 // ==================== 产品-客户 多对多管理 ====================
-router.get('/:id/customers', requirePermission('basic_data_view'), (req, res) => {
+router.get('/:id/customers', validateId, requirePermission('basic_data_view'), (req, res) => {
   try {
     const customers = req.db.all(`
       SELECT pc.*, c.name as customer_name, c.code as customer_code
@@ -311,7 +340,7 @@ router.get('/:id/customers', requirePermission('basic_data_view'), (req, res) =>
   }
 });
 
-router.put('/:id/customers', requirePermission('basic_data_edit'), (req, res) => {
+router.put('/:id/customers', validateId, requirePermission('basic_data_edit'), (req, res) => {
   try {
     const { customer_ids } = req.body; // [1, 2, 3]
     req.db.transaction(() => {

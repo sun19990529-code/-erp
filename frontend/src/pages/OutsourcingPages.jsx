@@ -143,7 +143,7 @@ const OutsourcingManager = () => {
   };
 
   const updateOutsourcingStatus = async (outsourcingId, newStatus) => {
-    const statusLabels = { confirmed: '确认委外', received: '确认收货', cancelled: '取消委外' };
+    const statusLabels = { confirmed: '确认委外', processing: '开始加工', received: '确认收货', cancelled: '取消委外' };
     if (newStatus === 'received') {
       if (!confirm('确认收货？将自动创建入库单并更新库存。')) return;
     } else {
@@ -207,6 +207,7 @@ const OutsourcingManager = () => {
           { key: 'status', label: '状态', value: statusFilter, options: [
               { value: 'pending', label: '待处理' }, 
               { value: 'confirmed', label: '已确认' }, 
+              { value: 'processing', label: '加工中' },
               { value: 'received', label: '已收货' }, 
               { value: 'cancelled', label: '已取消' }
             ]
@@ -257,7 +258,7 @@ const OutsourcingManager = () => {
             </table>
             
             {/* 委外状态操作按钮 */}
-            {modal.item?.status !== 'received' && modal.item?.status !== 'cancelled' && (
+            {modal.item?.status !== 'received' && modal.item?.status !== 'cancelled' && modal.item?.status !== 'completed' && (
               <div className="bg-gray-50 rounded-lg p-3">
                 <h4 className="font-medium mb-2"><i className="fas fa-tasks mr-2 text-teal-500"></i>状态操作</h4>
                 <div className="flex flex-wrap gap-2">
@@ -269,7 +270,14 @@ const OutsourcingManager = () => {
                   )}
                   {modal.item?.status === 'confirmed' && (
                     <>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'processing')} className="px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"><i className="fas fa-cogs mr-1"></i>开始加工</button>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm"><i className="fas fa-times mr-1"></i>取消委外</button>
+                    </>
+                  )}
+                  {modal.item?.status === 'processing' && (
+                    <>
                       <button onClick={() => updateOutsourcingStatus(modal.item.id, 'received')} className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm"><i className="fas fa-truck mr-1"></i>确认收货</button>
+                      <button onClick={() => { closeModal(); window.__toast?.info('请前往 质检管理 → 委外加工检验 进行检验'); }} className="px-3 py-1.5 bg-orange-500 text-white rounded hover:bg-orange-600 text-sm"><i className="fas fa-clipboard-check mr-1"></i>去检验</button>
                       <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm"><i className="fas fa-times mr-1"></i>取消委外</button>
                     </>
                   )}

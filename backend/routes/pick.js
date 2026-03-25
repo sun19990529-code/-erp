@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
+const { validateId } = require('../middleware/validate');
 const { generateOrderNo } = require('../utils/order-number');
 const { convertToKg } = require('../utils/unit-convert');
 
@@ -29,7 +30,7 @@ router.get('/', requirePermission('warehouse_view'), (req, res) => {
   }
 });
 
-router.get('/:id', requirePermission('warehouse_view'), (req, res) => {
+router.get('/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
   try {
     const order = req.db.get(`SELECT po.*, w.name as warehouse_name, o.order_no, ppo.order_no as production_order_no FROM pick_orders po JOIN warehouses w ON po.warehouse_id = w.id LEFT JOIN orders o ON po.order_id = o.id LEFT JOIN production_orders ppo ON po.production_order_id = ppo.id WHERE po.id = ?`, [req.params.id]);
     const items = req.db.all(`SELECT pi.*, p.code, p.name, p.unit FROM pick_items pi JOIN products p ON pi.material_id = p.id WHERE pi.pick_order_id = ?`, [req.params.id]);
@@ -68,7 +69,7 @@ router.post('/', requirePermission('warehouse_create'), (req, res) => {
   }
 });
 
-router.put('/:id/status', requirePermission('warehouse_edit'), (req, res) => {
+router.put('/:id/status', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { status } = req.body;
     
@@ -131,7 +132,7 @@ router.put('/:id/status', requirePermission('warehouse_edit'), (req, res) => {
   }
 });
 
-router.put('/:id', requirePermission('warehouse_edit'), (req, res) => {
+router.put('/:id', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { order_id, production_order_id, warehouse_id, operator, remark, items } = req.body;
     req.db.transaction(() => {
@@ -153,7 +154,7 @@ router.put('/:id', requirePermission('warehouse_edit'), (req, res) => {
   }
 });
 
-router.delete('/:id', requirePermission('warehouse_delete'), (req, res) => {
+router.delete('/:id', validateId, requirePermission('warehouse_delete'), (req, res) => {
   try {
     const { force } = req.query;
     const order = req.db.get('SELECT * FROM pick_orders WHERE id = ?', [req.params.id]);
@@ -167,10 +168,11 @@ router.delete('/:id', requirePermission('warehouse_delete'), (req, res) => {
       if (order && order.status === 'completed') {
         const items = req.db.all('SELECT * FROM pick_items WHERE pick_order_id = ?', [req.params.id]);
         items.forEach(item => {
-          const inventory = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ?', [order.warehouse_id, item.material_id]);
-          if (inventory) {
-            req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ?',
-              [item.quantity, order.warehouse_id, item.material_id]);
+          // 回退库存：优先回退到最近的同物料批次，若无则新建
+          const latestBatch = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? ORDER BY updated_at DESC LIMIT 1', [order.warehouse_id, item.material_id]);
+          if (latestBatch) {
+            req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+              [item.quantity, latestBatch.id]);
           } else {
             req.db.run('INSERT INTO inventory (warehouse_id, product_id, quantity) VALUES (?, ?, ?)',
               [order.warehouse_id, item.material_id, item.quantity]);

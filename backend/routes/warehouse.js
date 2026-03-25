@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
-const { validate } = require('../middleware/validate');
+const { validate, validateId } = require('../middleware/validate');
 const { inboundCreate, outboundCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
@@ -89,7 +89,7 @@ router.get('/inbound', requirePermission('warehouse_view'), (req, res) => {
   }
 });
 
-router.get('/inbound/:id', requirePermission('warehouse_view'), (req, res) => {
+router.get('/inbound/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
   try {
     const order = req.db.get(`
       SELECT io.*, w.name as warehouse_name, s.name as supplier_name
@@ -161,7 +161,7 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
   }
 });
 
-router.put('/inbound/:id/status', requirePermission('warehouse_edit'), (req, res) => {
+router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { status } = req.body;
     // 【安全】状态值白名单校验
@@ -196,7 +196,7 @@ router.put('/inbound/:id/status', requirePermission('warehouse_edit'), (req, res
   }
 });
 
-router.put('/inbound/:id', requirePermission('warehouse_edit'), (req, res) => {
+router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { warehouse_id, supplier_id, operator, remark, items } = req.body;
     
@@ -231,7 +231,7 @@ router.put('/inbound/:id', requirePermission('warehouse_edit'), (req, res) => {
   }
 });
 
-router.delete('/inbound/:id', requirePermission('warehouse_delete'), (req, res) => {
+router.delete('/inbound/:id', validateId, requirePermission('warehouse_delete'), (req, res) => {
   try {
     const { force } = req.query;
     const order = req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
@@ -258,6 +258,7 @@ router.delete('/inbound/:id', requirePermission('warehouse_delete'), (req, res) 
       req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
       req.db.run('DELETE FROM inbound_orders WHERE id = ?', [req.params.id]);
     });
+    writeLog(req.db, req.user?.id, '删除入库单', 'inbound', req.params.id, `入库单号: ${order?.order_no || req.params.id}，状态: ${order?.status}`);
     res.json({ success: true });
   } catch (error) {
     console.error(`[warehouse.js]`, error.message);
@@ -288,7 +289,7 @@ router.get('/outbound', requirePermission('warehouse_view'), (req, res) => {
   }
 });
 
-router.get('/outbound/:id', requirePermission('warehouse_view'), (req, res) => {
+router.get('/outbound/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
   try {
     const order = req.db.get(`
       SELECT oo.*, w.name as warehouse_name
@@ -358,7 +359,7 @@ router.post('/outbound', requirePermission('warehouse_create'), validate(outboun
   }
 });
 
-router.put('/outbound/:id/status', requirePermission('warehouse_edit'), (req, res) => {
+router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { status } = req.body;
     // 【安全】状态值白名单校验
@@ -399,7 +400,7 @@ router.put('/outbound/:id/status', requirePermission('warehouse_edit'), (req, re
   }
 });
 
-router.put('/outbound/:id', requirePermission('warehouse_edit'), (req, res) => {
+router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { warehouse_id, order_id, operator, remark, items } = req.body;
     
@@ -431,7 +432,7 @@ router.put('/outbound/:id', requirePermission('warehouse_edit'), (req, res) => {
   }
 });
 
-router.delete('/outbound/:id', requirePermission('warehouse_delete'), (req, res) => {
+router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete'), (req, res) => {
   try {
     const { force } = req.query;
     const order = req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
@@ -457,6 +458,7 @@ router.delete('/outbound/:id', requirePermission('warehouse_delete'), (req, res)
       req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
       req.db.run('DELETE FROM outbound_orders WHERE id = ?', [req.params.id]);
     });
+    writeLog(req.db, req.user?.id, '删除出库单', 'outbound', req.params.id, `出库单号: ${order?.order_no || req.params.id}，状态: ${order?.status}`);
     res.json({ success: true });
   } catch (error) {
     console.error(`[warehouse.js]`, error.message);

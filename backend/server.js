@@ -21,9 +21,11 @@ app.use(cors({
       // 放行 localhost / 127.x / 局域网 / 任意 IP 直接访问（外网通过 IP 访问本机属合法同主机场景）
       const isLocalhost = /^(localhost|127\.\d+\.\d+\.\d+)$/.test(hostname);
       const isLAN      = /^(192\.168\.|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
-      const isIPv4     = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
       const isTrusted  = /(^|\.)suncraft\.site$/.test(hostname);
-      if (isLocalhost || isLAN || isIPv4 || isTrusted) return callback(null, true);
+      // 开发环境放行所有 IP，生产环境仅放行局域网+可信域名
+      const isProd = process.env.NODE_ENV === 'production';
+      const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+      if (isLocalhost || isLAN || isTrusted || (!isProd && isIPv4)) return callback(null, true);
       callback(new Error('CORS 来源不允许'));
     } catch {
       callback(new Error('CORS 来源解析失败'));
@@ -31,12 +33,22 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '1mb' }));
 
 // 安全响应头（防 XSS、点击劫持、MIME 嗅探等）
 const helmet = require('helmet');
 app.use(helmet({
-  contentSecurityPolicy: false, // SPA 应用需关闭 CSP 以允许内联脚本
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+    }
+  },
   crossOriginEmbedderPolicy: false,
 }));
 
@@ -52,12 +64,8 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// ==================== 数据库辅助工具 ====================
-
-// better-sqlite3 是直接落盘的持久化数据库，无需手动存盘
-function saveDatabase() {
-  // compat placeholder
-}
+// better-sqlite3 自动持久化，无需手动存盘（保留接口兼容 backup 模块）
+function saveDatabase() { /* no-op for better-sqlite3 */ }
 
 
 const dbHelper = {
@@ -164,9 +172,16 @@ app.use('/api/outsourcing', outsourcingRoutes);
 app.use('/api/pick', pickRoutes);
 app.use('/api/backup', backupRoutes);
 
+const materialCategoryRoutes = require('./routes/material-categories');
+app.use('/api/material-categories', materialCategoryRoutes);
+
 // 操作日志路由
 const logsRoutes = require('./routes/logs');
 app.use('/api/logs', logsRoutes);
+
+// 生产追踪路由
+const trackingRoutes = require('./routes/production-tracking');
+app.use('/api/tracking', trackingRoutes);
 
 // ==================== 全局错误处理中间件 ====================
  

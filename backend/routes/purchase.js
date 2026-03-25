@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
-const { validate } = require('../middleware/validate');
+const { validate, validateId } = require('../middleware/validate');
 const { purchaseCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
@@ -23,7 +23,7 @@ router.get('/', requirePermission('purchase_view'), (req, res) => {
   }
 });
 
-router.get('/:id', requirePermission('purchase_view'), (req, res) => {
+router.get('/:id', validateId, requirePermission('purchase_view'), (req, res) => {
   try {
     const order = req.db.get(`
       SELECT po.*, s.name as supplier_name
@@ -70,7 +70,7 @@ router.post('/', requirePermission('purchase_create'), validate(purchaseCreate),
   }
 });
 
-router.put('/:id/status', requirePermission('purchase_edit'), (req, res) => {
+router.put('/:id/status', validateId, requirePermission('purchase_edit'), (req, res) => {
   try {
     const { status } = req.body;
     // 【安全】状态值白名单校验
@@ -111,7 +111,7 @@ router.put('/:id/status', requirePermission('purchase_edit'), (req, res) => {
   }
 });
 
-router.put('/:id', requirePermission('purchase_edit'), (req, res) => {
+router.put('/:id', validateId, requirePermission('purchase_edit'), (req, res) => {
   try {
     const { supplier_id, expected_date, operator, remark, items } = req.body;
     req.db.transaction(() => {
@@ -130,7 +130,7 @@ router.put('/:id', requirePermission('purchase_edit'), (req, res) => {
   }
 });
 
-router.delete('/:id', requirePermission('purchase_delete'), (req, res) => {
+router.delete('/:id', validateId, requirePermission('purchase_delete'), (req, res) => {
   try {
     const order = req.db.get('SELECT * FROM purchase_orders WHERE id = ?', [req.params.id]);
     if (order && order.status !== 'pending') return res.status(400).json({ success: false, message: '只能删除待处理状态的采购单' });

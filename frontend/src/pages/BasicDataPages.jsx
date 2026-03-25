@@ -1,16 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
-import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
-import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
-import PrintableQRCode from '../components/PrintableQRCode';
+import ProcessConfigPanel from '../components/ProcessConfigPanel';
 
 const SupplierManager = () => (
   <SimpleCRUDManager
@@ -35,6 +28,7 @@ const SupplierManager = () => (
     filters={[{ key: 'status', label: '状态', options: [{ value: '1', label: '启用' }, { value: '0', label: '禁用' }] }]}
     editPermission="basic_data_edit"
     deletePermission="basic_data_delete"
+    hasStatus={true}
   />
 );
 
@@ -66,6 +60,7 @@ const CustomerManager = () => (
     ]}
     editPermission="basic_data_edit"
     deletePermission="basic_data_delete"
+    hasStatus={true}
   />
 );
 
@@ -96,6 +91,9 @@ const ProductManager = ({ category }) => {
   const [semiProducts, setSemiProducts] = useState([]); // 半成品列表（用于工序材料配置）
   const [allSuppliers, setAllSuppliers] = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
+  const [materialCategories, setMaterialCategories] = useState([]); // 材质分类（扁平）
+  const [selectedMaterialCategoryId, setSelectedMaterialCategoryId] = useState('');
+  const [selectedParentCategoryId, setSelectedParentCategoryId] = useState('');
   const [selectedSupplierIds, setSelectedSupplierIds] = useState([]);
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
   const [modal, setModal] = useState({ open: false, item: null, mode: 'list', productProcesses: [] });
@@ -149,6 +147,15 @@ const ProductManager = ({ category }) => {
       length: item.length || ''
     });
     setSelectedUnit(item.unit || '公斤');
+    const catId = item.material_category_id || '';
+    setSelectedMaterialCategoryId(catId);
+    // 自动推算大类
+    if (catId) {
+      const cat = materialCategories.find(c => c.id == catId);
+      setSelectedParentCategoryId(cat?.parent_id ? String(cat.parent_id) : String(catId));
+    } else {
+      setSelectedParentCategoryId('');
+    }
     
     // 成品加载工序配置
     if (isFinishedProduct) {
@@ -172,9 +179,10 @@ const ProductManager = ({ category }) => {
   const load = () => {
     const params = category ? `?category=${encodeURIComponent(category)}` : '';
     api.get(`/products${params}`).then(res => res.success && setData(res.data));
-    api.get('/processes').then(res => res.success && setProcesses(res.data));
+    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
     api.get('/suppliers').then(res => res.success && setAllSuppliers(res.data));
     api.get('/customers').then(res => res.success && setAllCustomers(res.data));
+    api.get('/material-categories?flat=1').then(res => res.success && setMaterialCategories(res.data));
     if (isFinishedProduct) {
       api.get('/products?category=原材料').then(res => res.success && setRawMaterials(res.data));
       api.get('/products?category=半成品').then(res => res.success && setSemiProducts(res.data));
@@ -202,6 +210,8 @@ const ProductManager = ({ category }) => {
     setModal({ open: false, item: null, mode: 'list', productProcesses: [] });
     setDimensions({ outer_diameter: '', inner_diameter: '', wall_thickness: '', length: '' });
     setSelectedUnit('');
+    setSelectedMaterialCategoryId('');
+    setSelectedParentCategoryId('');
     setSelectedSupplierIds([]);
     setSelectedCustomerIds([]);
   };
@@ -220,7 +230,8 @@ const ProductManager = ({ category }) => {
       outer_diameter: dimensions.outer_diameter ? parseFloat(dimensions.outer_diameter) : null,
       inner_diameter: dimensions.inner_diameter ? parseFloat(dimensions.inner_diameter) : null,
       wall_thickness: dimensions.wall_thickness ? parseFloat(dimensions.wall_thickness) : null,
-      length: dimensions.length ? parseFloat(dimensions.length) : null
+      length: dimensions.length ? parseFloat(dimensions.length) : null,
+      material_category_id: selectedMaterialCategoryId ? parseInt(selectedMaterialCategoryId) : null
     };
     
     // 保存产品
@@ -263,47 +274,8 @@ const ProductManager = ({ category }) => {
     res.success ? load() : window.__toast?.error(res.message);
   };
   
-  const addProcessRow = () => {
-    setModal({ 
-      ...modal, 
-      productProcesses: [...modal.productProcesses, { process_id: '', sequence: modal.productProcesses.length + 1, is_outsourced: 0, remark: '', materials: [] }] 
-    });
-  };
-  
-  const removeProcessRow = (index) => {
-    const newProcesses = modal.productProcesses.filter((_, i) => i !== index);
-    newProcesses.forEach((p, i) => p.sequence = i + 1);
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-  
-  const updateProcessRow = (index, field, value) => {
-    const newProcesses = [...modal.productProcesses];
-    newProcesses[index] = { ...newProcesses[index], [field]: value };
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-  
-  // 工序材料操作
-  const addMaterialRow = (processIndex) => {
-    const newProcesses = [...modal.productProcesses];
-    if (!newProcesses[processIndex].materials) {
-      newProcesses[processIndex].materials = [];
-    }
-    newProcesses[processIndex].materials.push({ material_id: '', quantity: 1, unit: '公斤', remark: '' });
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-  
-  const removeMaterialRow = (processIndex, materialIndex) => {
-    const newProcesses = [...modal.productProcesses];
-    newProcesses[processIndex].materials = newProcesses[processIndex].materials.filter((_, i) => i !== materialIndex);
-    setModal({ ...modal, productProcesses: newProcesses });
-  };
-  
-  const updateMaterialRow = (processIndex, materialIndex, field, value) => {
-    const newProcesses = [...modal.productProcesses];
-    newProcesses[processIndex].materials[materialIndex] = { 
-      ...newProcesses[processIndex].materials[materialIndex], 
-      [field]: value 
-    };
+  // 工序配置更新回调
+  const handleProcessChange = (newProcesses) => {
     setModal({ ...modal, productProcesses: newProcesses });
   };
   
@@ -338,7 +310,7 @@ const ProductManager = ({ category }) => {
           { key: 'category', title: '类别', render: v => <span className="px-2 py-1 bg-gray-100 rounded text-xs">{v}</span> },
           { key: 'unit', title: '单位' },
           { key: 'kg_per_piece', title: '每支公斤', render: (v, row) => {
-            if (row.unit === '支' && row.outer_diameter && row.wall_thickness && row.length) {
+            if (row.outer_diameter && row.wall_thickness && row.length) {
               const kgPerPiece = ((parseFloat(row.outer_diameter) - parseFloat(row.wall_thickness)) * parseFloat(row.wall_thickness) * 0.02491 * parseFloat(row.length)).toFixed(4);
               return <span className="text-teal-600 font-medium">{kgPerPiece}</span>;
             }
@@ -375,55 +347,14 @@ const ProductManager = ({ category }) => {
                 <span className="px-2 py-1 bg-gray-200 rounded text-xs">{modal.item?.category}</span>
               </div>
             </div>
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-medium">加工工序流程</label>
-                <button onClick={addProcessRow} className="text-teal-600 text-sm"><i className="fas fa-plus mr-1"></i>添加工序</button>
-              </div>
-              <div className="border rounded-lg overflow-x-auto">
-                <table className="w-full min-w-[500px]">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs w-16">顺序</th>
-                      <th className="px-3 py-2 text-left text-xs">工序</th>
-                      <th className="px-3 py-2 text-left text-xs w-24">委外加工</th>
-                      <th className="px-3 py-2 text-left text-xs">备注</th>
-                      <th className="px-3 py-2 w-16"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {modal.productProcesses.map((p, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="px-3 py-2">
-                          <input type="number" value={p.sequence} onChange={e => updateProcessRow(i, 'sequence', parseInt(e.target.value) || 1)} className="w-12 border rounded px-2 py-1 text-center" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <select value={p.process_id} onChange={e => updateProcessRow(i, 'process_id', e.target.value)} className="w-full border rounded px-2 py-1">
-                            <option value="">选择工序</option>
-                            {processes.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-                          </select>
-                        </td>
-                        <td className="px-3 py-2">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={p.is_outsourced} onChange={e => updateProcessRow(i, 'is_outsourced', e.target.checked ? 1 : 0)} className="w-4 h-4" />
-                            <span className="text-sm">委外</span>
-                          </label>
-                        </td>
-                        <td className="px-3 py-2">
-                          <input value={p.remark || ''} onChange={e => updateProcessRow(i, 'remark', e.target.value)} className="w-full border rounded px-2 py-1" placeholder="备注" />
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button onClick={() => removeProcessRow(i)} className="text-red-600"><i className="fas fa-trash"></i></button>
-                        </td>
-                      </tr>
-                    ))}
-                    {modal.productProcesses.length === 0 && (
-                      <tr><td colSpan="5" className="px-3 py-4 text-center text-gray-500">暂无工序配置，点击上方"添加工序"按钮</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <ProcessConfigPanel
+                processes={processes}
+                productProcesses={modal.productProcesses}
+                rawMaterials={rawMaterials}
+                materialCategoryId={selectedMaterialCategoryId || modal.item?.material_category_id}
+                materialCategories={materialCategories}
+                onChange={handleProcessChange}
+              />
             <div className="flex justify-end gap-2 pt-4">
               <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
               <button onClick={saveProcesses} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">保存配置</button>
@@ -456,6 +387,42 @@ const ProductManager = ({ category }) => {
               </div>
               <div><label className="block text-sm font-medium mb-1">最低安全库存(kg)</label><input name="min_stock" type="number" defaultValue={modal.item?.min_stock || 0} className="w-full border rounded-lg px-3 py-2" placeholder="低于此数量全系统红盘预警" /></div>
               <div className="sm:col-span-2"><label className="block text-sm font-medium mb-1">最高库存上限(kg)</label><input name="max_stock" type="number" defaultValue={modal.item?.max_stock || 0} className="w-full border rounded-lg px-3 py-2" placeholder="到达最高限系统防呆介入" /></div>
+              <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium mb-1">材质分类</label>
+                  {(() => {
+                    const topLevels = materialCategories.filter(c => !c.parent_id);
+                    const children = selectedParentCategoryId ? materialCategories.filter(c => String(c.parent_id) === String(selectedParentCategoryId)) : [];
+                    return (
+                      <div className="flex gap-2">
+                        <select
+                          value={selectedParentCategoryId}
+                          onChange={e => {
+                            const pid = e.target.value;
+                            setSelectedParentCategoryId(pid);
+                            if (!pid) { setSelectedMaterialCategoryId(''); return; }
+                            const subs = materialCategories.filter(c => String(c.parent_id) === pid);
+                            // 无子分类→直接选中大类本身，有子分类→等用户选
+                            setSelectedMaterialCategoryId(subs.length > 0 ? '' : pid);
+                          }}
+                          className="flex-1 border rounded-lg px-3 py-2"
+                        >
+                          <option value="">选择大类</option>
+                          {topLevels.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                        </select>
+                        {children.length > 0 && (
+                          <select
+                            value={String(selectedMaterialCategoryId)}
+                            onChange={e => setSelectedMaterialCategoryId(e.target.value || '')}
+                            className="flex-1 border rounded-lg px-3 py-2"
+                          >
+                            <option value="">选择牌号</option>
+                            {children.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
             </div>
             
             {/* 尺寸参数区域 */}
@@ -579,76 +546,14 @@ const ProductManager = ({ category }) => {
             {/* 成品工序配置区域 */}
             {isFinishedProduct && (
               <div className="border-t pt-4 mt-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-sm font-medium text-gray-700"><i className="fas fa-sitemap mr-2"></i>加工工序流程</h4>
-                  <button type="button" onClick={addProcessRow} className="text-teal-600 text-sm"><i className="fas fa-plus mr-1"></i>添加工序</button>
-                </div>
-                
-                {modal.productProcesses.map((p, processIndex) => (
-                  <div key={processIndex} className="border rounded-lg mb-3 overflow-hidden">
-                    <div className="bg-gray-50 p-3 flex items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">顺序:</span>
-                        <input type="number" value={p.sequence} onChange={e => updateProcessRow(processIndex, 'sequence', parseInt(e.target.value) || 1)} className="w-16 border rounded px-2 py-1 text-center" />
-                      </div>
-                      <div className="flex-1">
-                        <select value={p.process_id} onChange={e => updateProcessRow(processIndex, 'process_id', e.target.value)} className="w-full border rounded px-2 py-1">
-                          <option value="">选择工序</option>
-                          {processes.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-                        </select>
-                      </div>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={p.is_outsourced} onChange={e => updateProcessRow(processIndex, 'is_outsourced', e.target.checked ? 1 : 0)} className="w-4 h-4" />
-                        <span className="text-sm">委外</span>
-                      </label>
-                      <input value={p.remark || ''} onChange={e => updateProcessRow(processIndex, 'remark', e.target.value)} className="w-32 border rounded px-2 py-1" placeholder="备注" />
-                      <button type="button" onClick={() => removeProcessRow(processIndex)} className="text-red-600"><i className="fas fa-trash"></i></button>
-                    </div>
-                    
-                    {/* 工序材料配置 - 仅顺序为1的工序显示 */}
-                    {p.sequence === 1 && (
-                      <div className="p-3 border-t bg-blue-50">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-medium text-blue-700"><i className="fas fa-cubes mr-1"></i>该工序所需材料</span>
-                          <button type="button" onClick={() => addMaterialRow(processIndex)} className="text-blue-600 text-sm"><i className="fas fa-plus mr-1"></i>添加材料</button>
-                        </div>
-                        
-                        {p.materials && p.materials.length > 0 ? (
-                          <div className="space-y-2">
-                            {p.materials.map((m, matIndex) => (
-                              <div key={matIndex} className="flex items-center gap-2 bg-white p-2 rounded">
-                                <select value={m.material_id} onChange={e => updateMaterialRow(processIndex, matIndex, 'material_id', e.target.value)} className="flex-1 border rounded px-2 py-1 text-sm">
-                                  <option value="">选择材料</option>
-                                  <optgroup label="原材料">
-                                    {rawMaterials.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
-                                  </optgroup>
-                                  <optgroup label="半成品">
-                                    {semiProducts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.code})</option>)}
-                                  </optgroup>
-                                </select>
-                                <input type="number" step="0.01" value={m.quantity} onChange={e => updateMaterialRow(processIndex, matIndex, 'quantity', parseFloat(e.target.value) || 0)} className="w-20 border rounded px-2 py-1 text-sm" placeholder="数量" />
-                                <select value={m.unit || '公斤'} onChange={e => updateMaterialRow(processIndex, matIndex, 'unit', e.target.value)} className="w-20 border rounded px-2 py-1 text-sm">
-                                  <option value="公斤">公斤</option>
-                                  <option value="支">支</option>
-                                </select>
-                                <input value={m.remark || ''} onChange={e => updateMaterialRow(processIndex, matIndex, 'remark', e.target.value)} className="w-24 border rounded px-2 py-1 text-sm" placeholder="备注" />
-                                <button type="button" onClick={() => removeMaterialRow(processIndex, matIndex)} className="text-red-500 text-sm"><i className="fas fa-times"></i></button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500 italic">暂无材料配置</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                
-                {modal.productProcesses.length === 0 && (
-                  <div className="border rounded-lg p-4 text-center text-gray-500">
-                    暂无工序配置，点击上方"添加工序"按钮
-                  </div>
-                )}
+                <ProcessConfigPanel
+                  processes={processes}
+                  productProcesses={modal.productProcesses}
+                  rawMaterials={rawMaterials}
+                  materialCategoryId={selectedMaterialCategoryId || modal.item?.material_category_id}
+                  materialCategories={materialCategories}
+                  onChange={handleProcessChange}
+                />
               </div>
             )}
             
@@ -663,4 +568,151 @@ const ProductManager = ({ category }) => {
   );
 };
 
-export { SupplierManager, CustomerManager, DepartmentManager, ProductManager };
+// ==================== 材质分类管理 ====================
+const MaterialCategoryManager = () => {
+  const [tree, setTree] = useState([]);
+  const [flat, setFlat] = useState([]);
+  const [modal, setModal] = useState({ open: false, item: null });
+
+  const load = () => {
+    api.get('/material-categories').then(res => res.success && setTree(res.data));
+    api.get('/material-categories?flat=1').then(res => res.success && setFlat(res.data));
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const obj = {
+      name: fd.get('name'),
+      parent_id: fd.get('parent_id') || null,
+      sort_order: parseInt(fd.get('sort_order')) || 0,
+      description: fd.get('description')
+    };
+    if (modal.item?.id) {
+      await api.put(`/material-categories/${modal.item.id}`, obj);
+    } else {
+      await api.post('/material-categories', obj);
+    }
+    setModal({ open: false, item: null });
+    load();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('确定删除该分类？')) return;
+    const res = await api.del(`/material-categories/${id}`);
+    if (!res.success) alert(res.message);
+    load();
+  };
+
+  const handleReorder = async (id, direction) => {
+    await api.post('/material-categories/reorder', { id, direction });
+    load();
+  };
+
+  const renderTree = (nodes, depth = 0) => (
+    nodes.map((n, idx) => (
+      <React.Fragment key={n.id}>
+        <tr className="hover:bg-gray-50">
+          <td className="px-4 py-3" style={{ paddingLeft: `${depth * 24 + 16}px` }}>
+            {n.children?.length > 0 && <i className="fas fa-folder-open text-amber-500 mr-2"></i>}
+            {(!n.children || n.children.length === 0) && <i className="fas fa-tag text-teal-500 mr-2"></i>}
+            <span className={depth === 0 ? 'font-bold' : ''}>{n.name}</span>
+          </td>
+          <td className="px-4 py-3 text-sm text-gray-500">{n.description || '-'}</td>
+          <td className="px-4 py-3">
+            <button onClick={() => handleReorder(n.id, 'up')} className={`mr-1 ${idx === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-gray-800'}`} disabled={idx === 0} title="上移"><i className="fas fa-arrow-up"></i></button>
+            <button onClick={() => handleReorder(n.id, 'down')} className={`mr-3 ${idx === nodes.length - 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-gray-800'}`} disabled={idx === nodes.length - 1} title="下移"><i className="fas fa-arrow-down"></i></button>
+            <button onClick={() => setModal({ open: true, item: { parent_id: n.id } })} className="text-teal-600 hover:text-teal-800 mr-3" title="新增子分类"><i className="fas fa-plus"></i></button>
+            <button onClick={() => setModal({ open: true, item: n })} className="text-blue-600 hover:text-blue-800 mr-3" title="编辑"><i className="fas fa-edit"></i></button>
+            <button onClick={() => handleDelete(n.id)} className="text-red-500 hover:text-red-700" title="删除"><i className="fas fa-trash"></i></button>
+          </td>
+        </tr>
+        {n.children && renderTree(n.children, depth + 1)}
+      </React.Fragment>
+    ))
+  );
+
+  return (
+    <div className="fade-in">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">材质分类管理</h2>
+        <button onClick={() => setModal({ open: true, item: null })} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700">
+          <i className="fas fa-plus mr-2"></i>新增大类
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="px-4 py-3 text-left">分类名称</th>
+              <th className="px-4 py-3 text-left">描述</th>
+              <th className="px-4 py-3 text-left">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {tree.length === 0 ? (
+              <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">暂无分类数据</td></tr>
+            ) : renderTree(tree)}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 弹窗：根据场景区分 */}
+      {(() => {
+        const isEdit = !!modal.item?.id;
+        const isAddChild = modal.item?.parent_id && !modal.item?.id;
+        const isAddRoot = !modal.item;
+        // 判断是否为顶级分类（新增大类 或 编辑没有 parent_id 的分类）
+        const isTopLevel = isAddRoot || (isEdit && !modal.item?.parent_id);
+        const parentName = (isAddChild || (isEdit && modal.item?.parent_id))
+          ? flat.find(c => c.id === modal.item.parent_id)?.name
+          : null;
+        const title = isEdit
+          ? (isTopLevel ? '编辑大类' : `编辑子分类 — ${parentName || ''}`)
+          : isAddChild ? `新增子分类 — ${parentName || ''}` : '新增大类';
+
+        // 自动计算排序号：同级最大值 + 1
+        const calcNextSort = () => {
+          if (isEdit) return modal.item.sort_order;
+          const parentId = isAddChild ? modal.item.parent_id : null;
+          const siblings = flat.filter(c => (c.parent_id || null) === parentId);
+          if (siblings.length === 0) return 1;
+          return Math.max(...siblings.map(c => c.sort_order || 0)) + 1;
+        };
+
+        return (
+      <Modal isOpen={modal.open} onClose={() => setModal({ open: false, item: null })} title={title}>
+        <form onSubmit={save} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">分类名称 *</label>
+            <input name="name" defaultValue={isEdit ? modal.item?.name : ''} className="w-full border rounded-lg px-3 py-2" required placeholder={isTopLevel ? '如：不锈钢、合金、铜材' : '如：304、304L、316'} />
+          </div>
+          {/* 顶级分类（新增大类 / 编辑大类）：隐藏父级 */}
+          {isTopLevel && <input type="hidden" name="parent_id" value="" />}
+          {/* 非顶级（新增子分类 / 编辑子分类）：只读显示父级 */}
+          {!isTopLevel && (
+            <div>
+              <label className="block text-sm font-medium mb-1">所属大类</label>
+              <input type="text" value={parentName || ''} disabled className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-500" />
+              <input type="hidden" name="parent_id" value={modal.item?.parent_id} />
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium mb-1">描述</label>
+            <input name="description" defaultValue={isEdit ? modal.item?.description : ''} className="w-full border rounded-lg px-3 py-2" placeholder="可选" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setModal({ open: false, item: null })} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+            <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">保存</button>
+          </div>
+        </form>
+      </Modal>
+        );
+      })()}
+    </div>
+  );
+};
+
+export { SupplierManager, CustomerManager, DepartmentManager, ProductManager, MaterialCategoryManager };

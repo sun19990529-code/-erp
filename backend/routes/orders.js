@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { generateOrderNo } = require('../utils/order-number');
 const { requirePermission } = require('../middleware/permission');
-const { validate } = require('../middleware/validate');
+const { validate, validateId } = require('../middleware/validate');
 const { orderCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 
@@ -28,7 +28,7 @@ router.get('/', requirePermission('order_view'), (req, res) => {
   }
 });
 
-router.get('/:id', requirePermission('order_view'), (req, res) => {
+router.get('/:id', validateId, requirePermission('order_view'), (req, res) => {
   try {
     const order = req.db.get(`
       SELECT o.*, c.name as customer_name_real, c.contact_person, c.phone as customer_phone_real, c.address as customer_address_real
@@ -71,7 +71,7 @@ router.post('/', requirePermission('order_create'), validate(orderCreate), (req,
   }
 });
 
-router.put('/:id/status', requirePermission('order_edit'), (req, res) => {
+router.put('/:id/status', validateId, requirePermission('order_edit'), (req, res) => {
   try {
     const { status } = req.body;
     // 【安全】状态值白名单校验
@@ -95,9 +95,6 @@ router.put('/:id/status', requirePermission('order_edit'), (req, res) => {
             const productionId = result.lastInsertRowid;
             const productProcesses = req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [item.product_id]);
             if (productProcesses.length > 0) {
-              productProcesses.forEach(pp => {
-                req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [productionId, pp.process_id]);
-              });
               req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, productionId]);
             }
           });
@@ -112,7 +109,7 @@ router.put('/:id/status', requirePermission('order_edit'), (req, res) => {
   }
 });
 
-router.put('/:id', requirePermission('order_edit'), (req, res) => {
+router.put('/:id', validateId, requirePermission('order_edit'), (req, res) => {
   try {
     const { customer_id, customer_name, customer_phone, customer_address, delivery_date, priority, remark, items } = req.body;
     // 【B5】只允许 pending/confirmed 状态的订单修改
@@ -140,7 +137,7 @@ router.put('/:id', requirePermission('order_edit'), (req, res) => {
   }
 });
 
-router.delete('/:id', requirePermission('order_delete'), (req, res) => {
+router.delete('/:id', validateId, requirePermission('order_delete'), (req, res) => {
   try {
     const { force } = req.query;
     const isAdmin = req.user?.role_code === 'admin';
@@ -201,7 +198,7 @@ router.delete('/:id', requirePermission('order_delete'), (req, res) => {
 });
 
 // 订单原材料需求
-router.get('/:id/materials', requirePermission('order_view'), (req, res) => {
+router.get('/:id/materials', validateId, requirePermission('order_view'), (req, res) => {
   try {
     const materials = req.db.all(`SELECT om.*, p.code, p.name, p.unit, p.specification FROM order_materials om JOIN products p ON om.material_id = p.id WHERE om.order_id = ?`, [req.params.id]);
     res.json({ success: true, data: materials });
@@ -211,7 +208,7 @@ router.get('/:id/materials', requirePermission('order_view'), (req, res) => {
   }
 });
 
-router.post('/:id/materials', requirePermission('order_edit'), (req, res) => {
+router.post('/:id/materials', validateId, requirePermission('order_edit'), (req, res) => {
   try {
     const { materials } = req.body;
     req.db.transaction(() => {

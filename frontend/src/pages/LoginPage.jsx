@@ -39,8 +39,8 @@ const LoginPage = ({ onLogin }) => {
 
         {/* 顶部 Logo */}
         <div className="relative z-10 flex items-center gap-4 fade-in">
-          <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20 shadow-lg">
-            <i className="fas fa-industry text-white text-2xl"></i>
+          <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20 shadow-lg overflow-hidden">
+            <img src="/logo.png" alt="铭晨" className="w-10 h-10 object-contain" />
           </div>
           <span className="text-white text-2xl font-bold tracking-wider">铭晟 <span className="text-teal-300">ERP</span></span>
         </div>
@@ -48,7 +48,7 @@ const LoginPage = ({ onLogin }) => {
         {/* 居中核心信息 */}
         <div className="relative z-10 my-auto pt-10">
           <div className="inline-block px-4 py-1.5 rounded-full border border-teal-400/30 bg-teal-400/10 backdrop-blur-sm text-teal-200 text-sm font-medium mb-8 fade-in" style={{animationDelay: '0.1s'}}>
-            <i className="fas fa-rocket mr-2"></i> 全新一代制造执行系统 v1.4.1
+            <i className="fas fa-rocket mr-2"></i> 全新一代制造执行系统 v1.5.1
           </div>
           <h1 className="text-5xl lg:text-6xl font-extrabold text-white mb-6 leading-[1.1] tracking-tight fade-in" style={{animationDelay: '0.2s'}}>
             智能化制造 <br/>
@@ -91,8 +91,8 @@ const LoginPage = ({ onLogin }) => {
         <div className="w-full max-w-[420px] fade-in transform transition-all">
           {/* 移动端显示的 Logo */}
           <div className="text-center mb-8 lg:hidden px-4 py-6 bg-white/60 backdrop-blur-xl rounded-3xl border border-gray-100 shadow-xl shadow-teal-900/5">
-            <div className="w-14 h-14 bg-gradient-to-br from-teal-600 to-cyan-700 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-teal-500/30">
-              <i className="fas fa-industry text-xl"></i>
+            <div className="w-14 h-14 bg-gradient-to-br from-teal-50 to-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-teal-500/30 overflow-hidden border border-teal-100">
+              <img src="/logo.png" alt="铭晨" className="w-10 h-10 object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-wide">铭晟 <span className="text-teal-600">ERP</span></h1>
             <p className="text-gray-500 mt-1.5 text-xs">企业级资源管理与制造执行系统</p>

@@ -7,7 +7,7 @@ const VIRTUAL_THRESHOLD = 100; // 超过此行数启用虚拟滚动
 const ROW_HEIGHT = 48; // 每行高度（px）
 const OVERSCAN = 5; // 预渲染行数
 
-const Table = ({ columns, data, onEdit, onDelete, onView, editPermission, deletePermission, loading = false }) => {
+const Table = ({ columns, data, onEdit, onDelete, onView, editPermission, deletePermission, customAction, loading = false }) => {
   const { permissions = [], isAdmin = false } = useContext(AuthContext) || {};
   const scrollRef = useRef(null);
   const [scrollTop, setScrollTop] = React.useState(0);
@@ -43,10 +43,13 @@ const Table = ({ columns, data, onEdit, onDelete, onView, editPermission, delete
     <tr key={row.id || idx} className="hover:bg-gray-50 transition-colors" style={useVirtual ? { height: ROW_HEIGHT } : undefined}>
       {columns.map(col => <td key={col.key} className={`px-4 py-3 text-sm ${col.nowrap === false ? '' : 'whitespace-nowrap'}`}>{col.render ? col.render(row[col.key], row) : row[col.key]}</td>)}
       <td className="px-4 py-3 text-right text-sm whitespace-nowrap">
-        {onView && <button onClick={() => onView(row)} className="text-blue-600 hover:text-blue-800 mr-2" title="查看"><i className="fas fa-eye"></i></button>}
-        {onEdit && showEdit && <button onClick={() => onEdit(row)} className="text-green-600 hover:text-green-800 mr-2" title="编辑"><i className="fas fa-edit"></i></button>}
-        {onDelete && showDelete && <button onClick={() => onDelete(row)} className="text-red-600 hover:text-red-800" title="删除"><i className="fas fa-trash"></i></button>}
-        {!onView && !onEdit && !onDelete && <span className="text-gray-400">-</span>}
+        <div className="flex items-center justify-end gap-3">
+          {customAction && customAction(row)}
+          {onView && <button onClick={() => onView(row)} className="text-blue-600 hover:text-blue-800" title="查看"><i className="fas fa-eye"></i></button>}
+          {onEdit && showEdit && <button onClick={() => onEdit(row)} className="text-green-600 hover:text-green-800" title="编辑"><i className="fas fa-edit"></i></button>}
+          {onDelete && showDelete && <button onClick={() => onDelete(row)} className="text-red-600 hover:text-red-800" title="删除"><i className="fas fa-trash"></i></button>}
+          {!customAction && !onView && !onEdit && !onDelete && <span className="text-gray-400">-</span>}
+        </div>
       </td>
     </tr>
   );

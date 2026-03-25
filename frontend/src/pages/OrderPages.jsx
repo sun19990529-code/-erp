@@ -243,12 +243,13 @@ const OrderManager = () => {
             <table className="w-full border">
               <thead className="bg-gray-50"><tr>
                 <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
-                <th className="px-3 py-2 text-left text-xs">数量</th>
+                <th className="px-3 py-2 text-left text-xs">数量</th><th className="px-3 py-2 text-left text-xs">单位</th>
               </tr></thead>
               <tbody>
                 {(modal.item?.items || []).map((it, i) => (
                   <tr key={i} className="border-t"><td className="px-3 py-2 text-sm">{it.code}</td><td className="px-3 py-2 text-sm">{it.name}</td>
-                    <td className="px-3 py-2 text-sm">{it.quantity}</td>
+                    <td className="px-3 py-2 text-sm font-medium">{it.quantity}</td>
+                    <td className="px-3 py-2 text-sm">{it.unit || '支'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -370,21 +371,21 @@ const OrderManager = () => {
           <form onSubmit={save} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><label className="block text-sm font-medium mb-1">客户</label>
-                <select name="customer_id" onChange={e => { const c = customers.find(x => x.id == e.target.value); if (c) { e.target.form.customer_name.value = c.name; e.target.form.customer_phone.value = c.phone || ''; e.target.form.customer_address.value = c.address || ''; }}} className="w-full border rounded-lg px-3 py-2">
+                <select name="customer_id" defaultValue={modal.item?.customer_id || ''} onChange={e => { const c = customers.find(x => x.id == e.target.value); if (c) { e.target.form.customer_name.value = c.name; e.target.form.customer_phone.value = c.phone || ''; e.target.form.customer_address.value = c.address || ''; }}} className="w-full border rounded-lg px-3 py-2">
                   <option value="">选择客户</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
-              <div><label className="block text-sm font-medium mb-1">客户名称 *</label><input name="customer_name" className="w-full border rounded-lg px-3 py-2" required /></div>
-              <div><label className="block text-sm font-medium mb-1">联系电话</label><input name="customer_phone" className="w-full border rounded-lg px-3 py-2" /></div>
-              <div><label className="block text-sm font-medium mb-1">交货日期</label><input name="delivery_date" type="date" className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium mb-1">客户名称</label><input name="customer_name" defaultValue={modal.item?.customer_name || ''} className="w-full border rounded-lg px-3 py-2 bg-gray-50" readOnly /></div>
+              <div><label className="block text-sm font-medium mb-1">联系电话</label><input name="customer_phone" defaultValue={modal.item?.customer_phone || ''} className="w-full border rounded-lg px-3 py-2 bg-gray-50" readOnly /></div>
+              <div><label className="block text-sm font-medium mb-1">交货日期</label><input name="delivery_date" type="date" defaultValue={modal.item?.delivery_date || ''} className="w-full border rounded-lg px-3 py-2" /></div>
               <div><label className="block text-sm font-medium mb-1">优先级</label>
-                <select name="priority" defaultValue="1" className="w-full border rounded-lg px-3 py-2">
+                <select name="priority" defaultValue={modal.item?.priority || '1'} className="w-full border rounded-lg px-3 py-2">
                   <option value="1">普通</option><option value="2">加急</option><option value="3">特急</option>
                 </select>
               </div>
             </div>
-            <div><label className="block text-sm font-medium mb-1">收货地址</label><input name="customer_address" className="w-full border rounded-lg px-3 py-2" /></div>
+            <div><label className="block text-sm font-medium mb-1">收货地址</label><input name="customer_address" defaultValue={modal.item?.customer_address || ''} className="w-full border rounded-lg px-3 py-2" /></div>
             <div>
               <label className="block text-sm font-medium mb-2">订单明细</label>
               <div className="border rounded-lg p-3 space-y-2">
@@ -399,12 +400,8 @@ const OrderManager = () => {
                     <div className="w-[45%] lg:w-32 flex items-center">
                       <input type="number" value={it.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 0)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none" placeholder="销售数量" />
                     </div>
-                    <div className="w-[45%] lg:w-32">
-                      <select value={it.unit || '支'} onChange={e => updateItem(i, 'unit', e.target.value)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none bg-white">
-                        <option value="公斤">公斤</option>
-                        <option value="支">支</option>
-                        <option value="吨">吨</option>
-                      </select>
+                    <div className="w-16 text-sm text-gray-500 flex items-center">
+                      {products.find(p => p.id == it.product_id)?.unit || '-'}
                     </div>
                     
                     <div className="w-full lg:w-16 flex items-center justify-end border-t lg:border-t-0 lg:border-l border-gray-200 pt-2 lg:pt-0 lg:pl-3 mt-1 lg:mt-0">
@@ -417,7 +414,7 @@ const OrderManager = () => {
                 <button type="button" onClick={addRow} className="w-full py-2.5 border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2"><i className="fas fa-plus-circle"></i> 继续添加明细</button>
               </div>
             </div>
-            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
+            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" defaultValue={modal.item?.remark || ''} className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
             <div className="flex justify-end gap-2 pt-4">
               <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
               <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">提交</button>

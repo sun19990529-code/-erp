@@ -12,7 +12,7 @@ const OperatorSelect = ({ name = 'operator', value, defaultValue, className = ''
   const [groups, setGroups] = useState([]);
 
   useEffect(() => {
-    api.get('/basic/operators').then(res => {
+    api.get('/operators').then(res => {
       if (res?.success) setGroups(res.data || []);
     }).catch(() => {});
   }, []);

@@ -447,7 +447,7 @@ const WarehouseOrderManager = ({ orderType }) => {
                   const kgQuantity = convertToKg(it.input_quantity || it.quantity || 0, unit, it.product_id);
                   // 计算每支公斤数（用于显示）
                   let kgPerPiece = null;
-                  if (unit === '支' && product?.outer_diameter && product?.wall_thickness && product?.length) {
+                  if (product?.outer_diameter && product?.wall_thickness && product?.length) {
                     kgPerPiece = ((parseFloat(product.outer_diameter) - parseFloat(product.wall_thickness)) * parseFloat(product.wall_thickness) * 0.02491 * parseFloat(product.length)).toFixed(4);
                   }
                   

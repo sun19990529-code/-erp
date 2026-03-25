@@ -71,7 +71,9 @@ function createTablesIfNotExist(db) {
     { name: 'purchase_items', sql: `CREATE TABLE IF NOT EXISTS purchase_items (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_order_id INTEGER NOT NULL, product_id INTEGER NOT NULL, quantity INTEGER NOT NULL, received_quantity INTEGER DEFAULT 0, unit_price REAL DEFAULT 0, remark TEXT, FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id), FOREIGN KEY (product_id) REFERENCES products(id))` },
     { name: 'outsourcing_orders', sql: `CREATE TABLE IF NOT EXISTS outsourcing_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT UNIQUE NOT NULL, supplier_id INTEGER NOT NULL, production_order_id INTEGER, process_id INTEGER, total_amount REAL DEFAULT 0, expected_date DATE, operator TEXT, status TEXT DEFAULT 'pending', remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (supplier_id) REFERENCES suppliers(id), FOREIGN KEY (production_order_id) REFERENCES production_orders(id), FOREIGN KEY (process_id) REFERENCES processes(id))` },
     { name: 'outsourcing_items', sql: `CREATE TABLE IF NOT EXISTS outsourcing_items (id INTEGER PRIMARY KEY AUTOINCREMENT, outsourcing_order_id INTEGER NOT NULL, product_id INTEGER NOT NULL, quantity INTEGER NOT NULL, returned_quantity INTEGER DEFAULT 0, unit_price REAL DEFAULT 0, remark TEXT, FOREIGN KEY (outsourcing_order_id) REFERENCES outsourcing_orders(id), FOREIGN KEY (product_id) REFERENCES products(id))` },
-    { name: 'operation_logs', sql: `CREATE TABLE IF NOT EXISTS operation_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, module TEXT NOT NULL, target_id TEXT, detail TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))` }
+    { name: 'operation_logs', sql: `CREATE TABLE IF NOT EXISTS operation_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, module TEXT NOT NULL, target_id TEXT, detail TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))` },
+    { name: 'material_categories', sql: `CREATE TABLE IF NOT EXISTS material_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, parent_id INTEGER DEFAULT NULL, sort_order INTEGER DEFAULT 0, description TEXT, status INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (parent_id) REFERENCES material_categories(id))` },
+    { name: 'production_material_consumption', sql: `CREATE TABLE IF NOT EXISTS production_material_consumption (id INTEGER PRIMARY KEY AUTOINCREMENT, production_order_id INTEGER NOT NULL, process_id INTEGER NOT NULL, material_id INTEGER NOT NULL, planned_quantity REAL DEFAULT 0, actual_quantity REAL DEFAULT 0, unit TEXT DEFAULT '公斤', operator TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (production_order_id) REFERENCES production_orders(id), FOREIGN KEY (process_id) REFERENCES processes(id), FOREIGN KEY (material_id) REFERENCES products(id))` }
   ];
   
   tables.forEach(t => {
@@ -101,6 +103,7 @@ function createTablesIfNotExist(db) {
     checkAndAddCol('inbound_orders', 'production_order_id', "ALTER TABLE inbound_orders ADD COLUMN production_order_id INTEGER REFERENCES production_orders(id);");
     checkAndAddCol('inbound_orders', 'purchase_order_id', "ALTER TABLE inbound_orders ADD COLUMN purchase_order_id INTEGER REFERENCES purchase_orders(id);");
     checkAndAddCol('production_orders', 'material_ready', "ALTER TABLE production_orders ADD COLUMN material_ready INTEGER DEFAULT 0;");
+    checkAndAddCol('products', 'material_category_id', "ALTER TABLE products ADD COLUMN material_category_id INTEGER REFERENCES material_categories(id);");
     
   } catch (e) {
     console.log('字段添加跳过（可能已存在）:', e.message);
@@ -321,6 +324,26 @@ function insertInitialData(db) {
   db.run("INSERT INTO processes (name, code, sequence, description) VALUES ('线切割', 'WIRE_CUTTING', 8, '线切割工序')");
   db.run("INSERT INTO processes (name, code, sequence, description) VALUES ('激光切割', 'LASER_CUTTING', 9, '激光切割工序')");
   db.run("INSERT INTO processes (name, code, sequence, description) VALUES ('热处理', 'HEAT_TREATMENT', 10, '热处理工序')");
+
+  // 默认材质分类
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('不锈钢', NULL, 1, '不锈钢系列材料')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('304', 1, 1, '304不锈钢')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('304L', 1, 2, '304L不锈钢（低碳）')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('316', 1, 3, '316不锈钢')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('316L', 1, 4, '316L不锈钢（低碳）')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('铜材', NULL, 2, '铜及铜合金材料')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('T2 紫铜', 6, 1, 'T2紫铜')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('H62 黄铜', 6, 2, 'H62黄铜')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('磷铜', 6, 3, '磷青铜')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('铝材', NULL, 3, '铝及铝合金材料')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('6061 铝合金', 10, 1, '6061铝合金')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('6063 铝合金', 10, 2, '6063铝合金')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('碳钢', NULL, 4, '碳素结构钢')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('45# 碳钢', 13, 1, '45号碳钢')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('Q235 碳钢', 13, 2, 'Q235碳钢')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('合金钢', NULL, 5, '合金钢材料')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('40Cr', 16, 1, '40Cr合金钢')");
+  db.run("INSERT INTO material_categories (name, parent_id, sort_order, description) VALUES ('其他辅料', NULL, 6, '辅助材料')");
 
   // 示例产品
   db.run("INSERT INTO products (code, name, specification, unit, category, unit_price) VALUES ('P001', '成品A', '规格A', '件', '成品', 100)");

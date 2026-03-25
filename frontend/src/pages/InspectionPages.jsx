@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
@@ -267,7 +268,7 @@ const PatrolInspection = () => {
               </select>
             </div>
             <div><label className="block text-sm font-medium mb-1">不良数量</label><input name="defect_count" type="number" className="w-full border rounded-lg px-3 py-2" /></div>
-            <div><label className="block text-sm font-medium mb-1">检验员</label><input name="inspector" className="w-full border rounded-lg px-3 py-2" /></div>
+            <div><label className="block text-sm font-medium mb-1">检验员</label><OperatorSelect name="inspector" /></div>
           </div>
           <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
           <div className="flex justify-end gap-2 pt-4">

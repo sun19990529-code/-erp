@@ -7,15 +7,38 @@ router.get('/', (req, res) => {
     const pendingOrders = req.db.get("SELECT COUNT(*) as count FROM orders WHERE status = 'pending'");
     const processingOrders = req.db.get("SELECT COUNT(*) as count FROM production_orders WHERE status = 'processing'");
     const pendingInspections = req.db.get("SELECT COUNT(*) as count FROM final_inspections WHERE result IS NULL");
-    // 【联动#7】质检暂停告警
     const qualityHoldOrders = req.db.get("SELECT COUNT(*) as count FROM production_orders WHERE status = 'quality_hold'");
     const lowStock = req.db.all(`
-      SELECT p.name, p.code, p.min_stock as alert_threshold, SUM(COALESCE(i.quantity, 0)) as quantity 
+      SELECT p.name, p.code, p.unit, p.min_stock as alert_threshold, SUM(COALESCE(i.quantity, 0)) as quantity 
       FROM products p 
       LEFT JOIN inventory i ON i.product_id = p.id 
       WHERE p.status = 1
       GROUP BY p.id 
       HAVING p.min_stock > 0 AND quantity < p.min_stock
+    `);
+
+    // 进行中工单进度列表
+    const productionProgress = req.db.all(`
+      SELECT po.id, po.order_no, po.quantity, po.completed_quantity, po.status,
+             p.name as product_name, p.unit as product_unit,
+             CASE WHEN po.quantity > 0 THEN ROUND(po.completed_quantity * 100.0 / po.quantity, 1) ELSE 0 END as progress
+      FROM production_orders po
+      JOIN products p ON po.product_id = p.id
+      WHERE po.status IN ('processing', 'pending')
+      ORDER BY po.status DESC, po.created_at DESC
+      LIMIT 10
+    `);
+
+    // 交期预警：3天内到期且未完成的订单
+    const deliveryAlerts = req.db.all(`
+      SELECT o.id, o.order_no, o.customer_name, o.delivery_date, o.status, o.progress,
+             CAST(julianday(o.delivery_date) - julianday('now', 'localtime') AS INTEGER) as days_left
+      FROM orders o
+      WHERE o.status NOT IN ('completed', 'cancelled')
+        AND o.delivery_date IS NOT NULL
+        AND julianday(o.delivery_date) - julianday('now', 'localtime') <= 3
+      ORDER BY o.delivery_date ASC
+      LIMIT 20
     `);
     
     res.json({
@@ -25,7 +48,9 @@ router.get('/', (req, res) => {
         processingOrders: processingOrders?.count || 0,
         pendingInspections: pendingInspections?.count || 0,
         qualityHoldOrders: qualityHoldOrders?.count || 0,
-        lowStock: lowStock
+        lowStock,
+        productionProgress,
+        deliveryAlerts
       }
     });
   } catch (error) {
@@ -67,7 +92,6 @@ router.get('/charts', (req, res) => {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      // 兼容时区处理，避免本地产生跨天误差
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
@@ -83,18 +107,78 @@ router.get('/charts', (req, res) => {
       });
     }
 
+    // 3. 损耗率 TOP5（最近完工工单）
+    const wasteTop5 = req.db.all(`
+      SELECT po.order_no, p.name as product_name,
+             po.quantity as planned,
+             po.completed_quantity as actual,
+             CASE WHEN po.quantity > 0 
+               THEN ROUND((po.quantity - po.completed_quantity) * 100.0 / po.quantity, 1) 
+               ELSE 0 END as waste_rate
+      FROM production_orders po
+      JOIN products p ON po.product_id = p.id
+      WHERE po.status = 'completed' AND po.completed_quantity > 0
+      ORDER BY waste_rate DESC
+      LIMIT 5
+    `);
+
     res.json({
       success: true,
       data: {
         orderStatus,
-        trendData
+        trendData,
+        wasteTop5
       }
     });
 
   } catch (error) {
-   console.error(`[dashboard.js]`, error.message);
-    console.error("Charts API Error:", error);
+    console.error('[dashboard.js] charts error:', error.message);
     res.status(500).json({ success: false, message: '获取图表数据失败' });
+  }
+});
+
+// 车间大屏专用 API
+router.get('/workshop', (req, res) => {
+  try {
+    // 工单实时进度（全部进行中）
+    const liveOrders = req.db.all(`
+      SELECT po.id, po.order_no, po.quantity, po.completed_quantity, po.current_process,
+             p.name as product_name, p.unit as product_unit,
+             CASE WHEN po.quantity > 0 THEN ROUND(po.completed_quantity * 100.0 / po.quantity, 1) ELSE 0 END as progress
+      FROM production_orders po
+      JOIN products p ON po.product_id = p.id
+      WHERE po.status = 'processing'
+      ORDER BY po.start_time DESC
+    `);
+
+    // 今日报工动态（最新20条）
+    const todayRecords = req.db.all(`
+      SELECT ppr.id, ppr.output_quantity, ppr.operator, ppr.created_at,
+             po.order_no, pr.name as process_name, p.name as product_name, p.unit as product_unit
+      FROM production_process_records ppr
+      JOIN production_orders po ON ppr.production_order_id = po.id
+      JOIN products p ON po.product_id = p.id
+      JOIN processes pr ON ppr.process_id = pr.id
+      WHERE ppr.status = 'completed' AND date(ppr.created_at) = date('now', 'localtime')
+      ORDER BY ppr.created_at DESC
+      LIMIT 20
+    `);
+
+    // 工序负荷（每个工序当前有多少在制工单）
+    const processLoad = req.db.all(`
+      SELECT pr.name, COUNT(DISTINCT po.id) as active_count
+      FROM production_process_records ppr
+      JOIN production_orders po ON ppr.production_order_id = po.id
+      JOIN processes pr ON ppr.process_id = pr.id
+      WHERE po.status = 'processing' AND ppr.status IN ('pending', 'in_progress')
+      GROUP BY pr.id
+      ORDER BY pr.sequence
+    `);
+
+    res.json({ success: true, data: { liveOrders, todayRecords, processLoad } });
+  } catch (error) {
+    console.error('[dashboard.js]', error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
 

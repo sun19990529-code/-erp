@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ProductionTrackingPanel } from './ProductionTracking';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -56,24 +57,18 @@ const PickMaterialManager = () => {
       return;
     }
     
-    // 汇总所有工序需要的材料
+    // 汇总所有工序需要的材料（去重）
     const materialMap = new Map();
     processMaterials.forEach(pm => {
-      const key = pm.material_id;
-      if (materialMap.has(key)) {
-        materialMap.set(key, {
-          ...materialMap.get(key),
-          quantity: materialMap.get(key).quantity + pm.quantity * quantity
-        });
-      } else {
-        materialMap.set(key, {
+      if (!materialMap.has(pm.material_id)) {
+        materialMap.set(pm.material_id, {
           material_id: pm.material_id,
           material_name: pm.material_name,
           material_code: pm.material_code,
           material_unit: pm.material_unit,
-          quantity: pm.quantity * quantity,
-          input_quantity: pm.quantity * quantity,
-          input_unit: pm.unit || '公斤'
+          quantity: '',
+          input_quantity: '',
+          input_unit: pm.material_unit || '公斤'
         });
       }
     });
@@ -82,7 +77,7 @@ const PickMaterialManager = () => {
     setModal({ 
       open: true, 
       item: { product_id: product.id, product_name: product.name }, 
-      items: items.length ? items : [{ material_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }], 
+      items: items.length ? items : [{ material_id: '', quantity: '', input_quantity: '', input_unit: '公斤' }], 
       mode: 'create' 
     });
   };
@@ -470,7 +465,7 @@ const PickMaterialManager = () => {
                     </div>
                   );
                 })}
-                <button type="button" onClick={addRow} className="w-full py-2.5 border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2"><i className="fas fa-plus-circle"></i> 继续添加明料</button>
+                <button type="button" onClick={addRow} className="w-full py-2.5 border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2"><i className="fas fa-plus-circle"></i> 继续添加明细</button>
               </div>
             </div>
             <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
@@ -492,6 +487,7 @@ const ProductionOrderManager = () => {
   const [products, setProducts] = useState([]);
   const [processes, setProcesses] = useState([]);
   const [modal, setModal] = useState({ open: false, item: null, mode: 'list' });
+  const [viewTab, setViewTab] = useState('detail');
   
   const processNames = { 
     ROLLING: '轧机', STRAIGHTENING: '校直', POLISHING: '抛光', CORRECTING: '矫直', CUTTING: '切割',
@@ -508,6 +504,7 @@ const ProductionOrderManager = () => {
   
   const openView = async (item) => {
     const res = await api.get(`/production/${item.id}`);
+    setViewTab('detail');
     setModal({ open: true, item: res.data, mode: 'view' });
   };
   
@@ -601,6 +598,14 @@ const ProductionOrderManager = () => {
       <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? '生产工单详情' : modal.mode === 'edit' ? '编辑生产工单' : '新增生产工单'} size="max-w-3xl">
         {modal.mode === 'view' ? (
           <div className="space-y-4">
+            {/* Tab 切换 */}
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
+              <button onClick={() => setViewTab('detail')} className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewTab === 'detail' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><i className="fas fa-info-circle mr-1"></i>工单详情</button>
+              <button onClick={() => setViewTab('tracking')} className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewTab === 'tracking' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><i className="fas fa-chart-line mr-1"></i>生产追踪</button>
+            </div>
+            {viewTab === 'tracking' ? (
+              <ProductionTrackingPanel productionId={modal.item?.id} />
+            ) : (<>
             <div className="grid grid-cols-3 gap-4 text-sm bg-gray-50 p-3 rounded-lg">
               <div><strong>生产工单：</strong>{modal.item?.order_no}</div>
               <div><strong>产品：</strong>{modal.item?.product_name}</div>
@@ -729,6 +734,7 @@ const ProductionOrderManager = () => {
               </div>
             )}
             
+            </>)}
           </div>
         ) : (
           <form onSubmit={save} className="space-y-4">
