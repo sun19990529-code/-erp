@@ -215,4 +215,248 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), (req, res) =
   }
 });
 
+// ==================== 批次维度溯源 ====================
+
+/**
+ * 批次号模糊搜索 — 返回匹配的批次号列表
+ * GET /batch?keyword=xxx&limit=20
+ */
+router.get('/batch', requirePermission('warehouse_view'), (req, res) => {
+  try {
+    const { keyword, limit = 20 } = req.query;
+    if (!keyword || keyword.trim().length < 1) {
+      return res.json({ success: true, data: [] });
+    }
+    const like = `%${keyword.trim()}%`;
+    const maxResults = Math.min(parseInt(limit) || 20, 100);
+
+    // 从 4 张明细表中搜索不重复的 batch_no
+    const batches = req.db.all(`
+      SELECT DISTINCT batch_no, source, product_name, created_at FROM (
+        SELECT ii.batch_no, '入库' as source, p.name as product_name, io.created_at
+        FROM inbound_items ii
+        JOIN inbound_orders io ON ii.inbound_id = io.id
+        JOIN products p ON ii.product_id = p.id
+        WHERE ii.batch_no LIKE ? AND ii.batch_no != 'DEFAULT_BATCH'
+        UNION
+        SELECT oi.batch_no, '出库' as source, p.name as product_name, ob.created_at
+        FROM outbound_items oi
+        JOIN outbound_orders ob ON oi.outbound_id = ob.id
+        JOIN products p ON oi.product_id = p.id
+        WHERE oi.batch_no LIKE ? AND oi.batch_no != 'DEFAULT_BATCH'
+        UNION
+        SELECT pi.batch_no, '领料' as source, p.name as product_name, pk.created_at
+        FROM pick_items pi
+        JOIN pick_orders pk ON pi.pick_order_id = pk.id
+        JOIN products p ON pi.material_id = p.id
+        WHERE pi.batch_no LIKE ? AND pi.batch_no != 'DEFAULT_BATCH'
+        UNION
+        SELECT inv.batch_no, '库存' as source, p.name as product_name, inv.updated_at as created_at
+        FROM inventory inv
+        JOIN products p ON inv.product_id = p.id
+        WHERE inv.batch_no LIKE ? AND inv.batch_no != 'DEFAULT_BATCH'
+      )
+      ORDER BY created_at DESC
+      LIMIT ?
+    `, [like, like, like, like, maxResults]);
+
+    // 去重（同一 batch_no 可能出现在多个表）
+    const seen = new Set();
+    const unique = batches.filter(b => {
+      if (seen.has(b.batch_no)) return false;
+      seen.add(b.batch_no);
+      return true;
+    });
+
+    res.json({ success: true, data: unique });
+  } catch (error) {
+    console.error('[tracking/batch]', error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+/**
+ * 批次全链路溯源 — 追踪一个批次号从入库到出库的完整生命周期
+ * GET /batch/:batchNo
+ */
+router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) => {
+  try {
+    const batchNo = decodeURIComponent(req.params.batchNo);
+
+    // 1. 入库记录
+    const inboundRecords = req.db.all(`
+      SELECT ii.id, ii.quantity, ii.unit_price, ii.batch_no,
+             io.order_no, io.type, io.status, io.operator, io.created_at,
+             p.code as product_code, p.name as product_name, p.unit, p.specification,
+             s.name as supplier_name,
+             w.name as warehouse_name
+      FROM inbound_items ii
+      JOIN inbound_orders io ON ii.inbound_id = io.id
+      JOIN products p ON ii.product_id = p.id
+      LEFT JOIN suppliers s ON io.supplier_id = s.id
+      LEFT JOIN warehouses w ON io.warehouse_id = w.id
+      WHERE ii.batch_no = ?
+      ORDER BY io.created_at ASC
+    `, [batchNo]);
+
+    // 2. 当前库存
+    const inventoryRecords = req.db.all(`
+      SELECT inv.quantity, inv.batch_no, inv.updated_at,
+             p.code as product_code, p.name as product_name, p.unit,
+             w.name as warehouse_name, w.type as warehouse_type
+      FROM inventory inv
+      JOIN products p ON inv.product_id = p.id
+      JOIN warehouses w ON inv.warehouse_id = w.id
+      WHERE inv.batch_no = ?
+    `, [batchNo]);
+
+    // 3. 领料记录
+    const pickRecords = req.db.all(`
+      SELECT pi.quantity, pi.batch_no,
+             pk.order_no, pk.status, pk.operator, pk.created_at,
+             p.code as material_code, p.name as material_name, p.unit,
+             po.order_no as production_order_no, po.id as production_order_id,
+             pp.name as production_product_name,
+             w.name as warehouse_name
+      FROM pick_items pi
+      JOIN pick_orders pk ON pi.pick_order_id = pk.id
+      JOIN products p ON pi.material_id = p.id
+      LEFT JOIN production_orders po ON pk.production_order_id = po.id
+      LEFT JOIN products pp ON po.product_id = pp.id
+      LEFT JOIN warehouses w ON pk.warehouse_id = w.id
+      WHERE pi.batch_no = ?
+      ORDER BY pk.created_at ASC
+    `, [batchNo]);
+
+    // 4. 出库记录
+    const outboundRecords = req.db.all(`
+      SELECT oi.quantity, oi.unit_price, oi.batch_no,
+             ob.order_no, ob.type, ob.status, ob.operator, ob.created_at,
+             p.code as product_code, p.name as product_name, p.unit,
+             w.name as warehouse_name,
+             ord.order_no as sales_order_no, ord.customer_name
+      FROM outbound_items oi
+      JOIN outbound_orders ob ON oi.outbound_id = ob.id
+      JOIN products p ON oi.product_id = p.id
+      LEFT JOIN warehouses w ON ob.warehouse_id = w.id
+      LEFT JOIN orders ord ON ob.order_id = ord.id
+      WHERE oi.batch_no = ?
+      ORDER BY ob.created_at ASC
+    `, [batchNo]);
+
+    // 5. 关联生产工单（通过领料关联）
+    const productionIds = [...new Set(pickRecords.filter(r => r.production_order_id).map(r => r.production_order_id))];
+    let productionRecords = [];
+    if (productionIds.length > 0) {
+      productionRecords = req.db.all(`
+        SELECT po.id, po.order_no, po.status, po.quantity, po.completed_quantity,
+               po.current_process, po.start_time, po.end_time, po.created_at,
+               p.code as product_code, p.name as product_name, p.unit
+        FROM production_orders po
+        JOIN products p ON po.product_id = p.id
+        WHERE po.id IN (${productionIds.map(() => '?').join(',')})
+      `, productionIds);
+    }
+
+    // 6. 关联质检记录
+    const inboundIds = inboundRecords.map(r => r.id);
+    let inspectionRecords = [];
+    if (inboundIds.length > 0) {
+      // 从 inbound_items.id 回查 inbound_id
+      const inboundOrderIds = [...new Set(req.db.all(`
+        SELECT DISTINCT inbound_id FROM inbound_items WHERE batch_no = ?
+      `, [batchNo]).map(r => r.inbound_id))];
+      if (inboundOrderIds.length > 0) {
+        inspectionRecords = req.db.all(`
+          SELECT ii.inspection_no, ii.quantity, ii.pass_quantity, ii.fail_quantity,
+                 ii.inspector, ii.result, ii.remark, ii.created_at,
+                 p.name as product_name
+          FROM inbound_inspections ii
+          JOIN products p ON ii.product_id = p.id
+          WHERE ii.inbound_id IN (${inboundOrderIds.map(() => '?').join(',')})
+        `, inboundOrderIds);
+      }
+    }
+
+    // 7. 构建时间线
+    const timeline = [];
+    inboundRecords.forEach(r => timeline.push({
+      time: r.created_at, type: 'inbound', title: '入库',
+      description: `${r.warehouse_name} · ${r.order_no}`,
+      detail: `${r.product_name} ${r.quantity} ${r.unit || '件'}`,
+      extra: r.supplier_name ? `供应商: ${r.supplier_name}` : null,
+      status: r.status
+    }));
+    inspectionRecords.forEach(r => timeline.push({
+      time: r.created_at, type: 'inspection', title: '质检',
+      description: `${r.inspection_no}`,
+      detail: `合格 ${r.pass_quantity} / 不合格 ${r.fail_quantity}`,
+      extra: r.inspector ? `检验员: ${r.inspector}` : null,
+      status: r.result === 'pass' ? 'approved' : (r.result === 'fail' ? 'rejected' : 'pending')
+    }));
+    pickRecords.forEach(r => timeline.push({
+      time: r.created_at, type: 'pick', title: '领料',
+      description: `${r.warehouse_name || ''} · ${r.order_no}`,
+      detail: `${r.material_name} ${r.quantity} ${r.unit || '件'}`,
+      extra: r.production_order_no ? `生产工单: ${r.production_order_no}` : null,
+      status: r.status
+    }));
+    outboundRecords.forEach(r => timeline.push({
+      time: r.created_at, type: 'outbound', title: '出库',
+      description: `${r.warehouse_name || ''} · ${r.order_no}`,
+      detail: `${r.product_name} ${r.quantity} ${r.unit || '件'}`,
+      extra: r.customer_name ? `客户: ${r.customer_name}` : null,
+      status: r.status
+    }));
+    // 按时间正序
+    timeline.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+    // 8. 统计摘要
+    const totalInbound = inboundRecords.reduce((s, r) => s + (r.quantity || 0), 0);
+    const totalPicked = pickRecords.filter(r => r.status === 'completed').reduce((s, r) => s + (r.quantity || 0), 0);
+    const totalOutbound = outboundRecords.filter(r => r.status === 'completed').reduce((s, r) => s + (r.quantity || 0), 0);
+    const currentStock = inventoryRecords.reduce((s, r) => s + (r.quantity || 0), 0);
+
+    // 产品信息（从入库记录取第一条）
+    const product = inboundRecords[0] || outboundRecords[0] || pickRecords[0] || {};
+
+    const hasData = inboundRecords.length > 0 || inventoryRecords.length > 0 || pickRecords.length > 0 || outboundRecords.length > 0;
+
+    if (!hasData) {
+      return res.json({ success: true, data: null, message: '未找到该批次号的相关记录' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        batch_no: batchNo,
+        product: {
+          code: product.product_code || product.material_code,
+          name: product.product_name || product.material_name,
+          unit: product.unit,
+          specification: product.specification
+        },
+        summary: {
+          total_inbound: totalInbound,
+          total_picked: totalPicked,
+          total_outbound: totalOutbound,
+          current_stock: currentStock
+        },
+        timeline,
+        details: {
+          inbound: inboundRecords,
+          inventory: inventoryRecords,
+          pick: pickRecords,
+          outbound: outboundRecords,
+          production: productionRecords,
+          inspection: inspectionRecords
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[tracking/batch]', error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
 module.exports = router;

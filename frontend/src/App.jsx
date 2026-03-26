@@ -34,6 +34,7 @@ const BackupSettings = React.lazy(() => import('./pages/SettingsPages').then(m =
 const AboutSystem = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.AboutSystem })));
 const ScanStation = React.lazy(() => import('./components/ScanStation'));
 const WorkshopMonitor = React.lazy(() => import('./pages/WorkshopMonitor'));
+const TrackingPage = React.lazy(() => import('./pages/TrackingPage'));
 const AUTH_KEY = 'erp_user_auth';
 
 // 路由 ↔ 菜单 映射表
@@ -69,6 +70,7 @@ const MENU_ROUTES = {
   'settings-backup': '/settings/backup',
   'settings-about': '/settings/about',
   'workshop-monitor': '/monitor',
+  'batch-tracking': '/tracking',
 };
 
 // 反向映射：path → menuKey
@@ -154,6 +156,7 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/settings/backup" element={<BackupSettings />} />
                 <Route path="/settings/about" element={<AboutSystem />} />
                 <Route path="/monitor" element={<WorkshopMonitor onExit={() => setActiveMenu('dashboard')} />} />
+                <Route path="/tracking" element={<TrackingPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               </Suspense>

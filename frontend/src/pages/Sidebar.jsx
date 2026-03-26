@@ -11,6 +11,7 @@ const menuConfig = [
       { key: 'inventory', label: '全局库存台账' },
       { key: 'inbound', label: '统一入库调度' },
       { key: 'outbound', label: '统一出库调度' },
+      { key: 'batch-tracking', label: '批次溯源查询' },
     ]
   },
   { key: 'order-hub', label: '销售单据中心', icon: 'fa-file-alt' },
@@ -72,6 +73,7 @@ const menuPermissions = {
   'scan-station': null,
   // 仓库管理：查看库存只需 warehouse_view，入库/出库操作需要 warehouse_create
   'inventory': 'warehouse_view', 'inbound': 'warehouse_create', 'outbound': 'warehouse_create',
+  'batch-tracking': 'warehouse_view',
   // 订单管理
   'order-hub': 'order_view',
   // 生产管理
