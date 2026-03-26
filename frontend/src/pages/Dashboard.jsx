@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { api } from '../api';
-import StatusBadge from '../components/StatusBadge';
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);

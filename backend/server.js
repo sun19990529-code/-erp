@@ -21,7 +21,7 @@ app.use(cors({
       // 放行 localhost / 127.x / 局域网 / 任意 IP 直接访问（外网通过 IP 访问本机属合法同主机场景）
       const isLocalhost = /^(localhost|127\.\d+\.\d+\.\d+)$/.test(hostname);
       const isLAN      = /^(192\.168\.|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
-      const isTrusted  = /(^|\.)suncraft\.site$/.test(hostname);
+      const isTrusted  = /(^|\.)suncraft\.site$|(^|\.)msgy\.asia$/.test(hostname);
       // 开发环境放行所有 IP，生产环境仅放行局域网+可信域名
       const isProd = process.env.NODE_ENV === 'production';
       const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);

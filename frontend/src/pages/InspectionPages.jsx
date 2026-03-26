@@ -1,17 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
-import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
-import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
-import SimpleCRUDManager from '../components/SimpleCRUDManager';
-import PrintableQRCode from '../components/PrintableQRCode';
 import InspectionFormFields from '../components/InspectionFormFields';
 
 const InboundInspection = () => {
@@ -214,7 +205,7 @@ const PatrolInspection = () => {
   const load = () => {
     api.get('/inspection/patrol').then(res => res.success && setData(res.data));
     api.get('/production?status=processing').then(res => res.success && setProductions(res.data));
-    api.get('/processes').then(res => res.success && setProcesses(res.data));
+    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
     api.get('/products').then(res => res.success && setProducts(res.data));
   };
   useEffect(() => { load(); }, []);

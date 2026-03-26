@@ -1,16 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
-import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
 const OutsourcingManager = () => {
   const [data, setData] = useState([]);
@@ -26,13 +20,16 @@ const OutsourcingManager = () => {
     DRAWING: '拉拔', CLEANING: '清洗', WIRE_CUTTING: '线切割', LASER_CUTTING: '激光切割', HEAT_TREATMENT: '热处理'
   };
   
-  const load = () => {
-    api.get('/outsourcing').then(res => res.success && setData(res.data));
+  // 初始化数据只加载一次
+  useEffect(() => {
     api.get('/suppliers').then(res => res.success && setSuppliers(res.data));
     api.get('/products').then(res => res.success && setProducts(res.data));
+    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
+  }, []);
+
+  const load = () => {
+    api.get('/outsourcing').then(res => res.success && setData(res.data));
     api.get('/production?status=processing').then(res => res.success && setProductions(res.data));
-    api.get('/processes').then(res => res.success && setProcesses(res.data));
-    // 获取待委外的工序
     api.get('/outsourcing/pending').then(res => res.success && setPendingOutsourcing(res.data));
   };
   useEffect(() => { load(); }, []);
@@ -54,6 +51,7 @@ const OutsourcingManager = () => {
 
   const openView = async (item) => {
     const res = await api.get(`/outsourcing/${item.id}`);
+    if (!res.success) { window.__toast?.error(res.message || '获取委外详情失败'); return; }
     setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'view' });
   };
   
@@ -63,7 +61,6 @@ const OutsourcingManager = () => {
   
   // 从待委外列表快速创建
   const openFromPending = (item) => {
-    const product = products.find(p => p.id == item.product_id);
     setModal({ 
       open: true, 
       item: null, 

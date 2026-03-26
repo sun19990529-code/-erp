@@ -250,56 +250,220 @@
 <blockquote>
 <p><strong>系统版本:</strong> v1.5.2<br><strong>更新要点:</strong> v1.5.2 为代码质量优化版，完成了 ProcessConfigPanel 共享组件抽取（消除三处重复）、CSP 安全策略配置、产品编码唯一性校验、buildTree O(n) 优化、竞态修复、版本号自动注入等改进。前序版本已完成材质分类管理、材质匹配过滤、工序物料绑定与首道工序自动扣减库存、双 Token 认证、Helmet 安全头、Zod Schema 校验、全景看板、批次追溯等功能。</p>
 </blockquote>
-<p>如果您需要将本旗舰版系统纯离线或在其他局域网服务器/开发机上全新部署，请严格遵循以下执行流：</p>
 <hr>
-<h2>1. 基础节点环境准备 (Node.js)</h2>
+<h2>第一部分：本地开发机部署</h2>
+<p>如果您需要将本旗舰版系统纯离线或在其他局域网服务器/开发机上全新部署，请严格遵循以下执行流：</p>
+<h3>1. 基础节点环境准备 (Node.js)</h3>
 <p>新电脑或服务器必须具备基础的 JavaScript 运行引擎：</p>
 <ul>
 <li>访问 Node 官方下载站并安装 <a href="https://nodejs.org/zh-cn/">Node.js</a>（推荐下载 v18.x 或 v20.x 的 LTS 长期支持版）。</li>
-<li>安装过程中请一直点击“下一步”，<strong>切勿更改</strong>默认环境变量的注入配置。</li>
+<li>安装过程中请一直点击&quot;下一步&quot;，<strong>切勿更改</strong>默认环境变量的注入配置。</li>
 </ul>
-<p><img src="https://via.placeholder.com/600x120.png?text=Verify+Installation:+node+-v" alt="示意图: Node环境检查">
-✅ 验证步骤：按下 <code>Win + R</code> 键，输入 <code>cmd</code> 打开终端终端，敲入如下指令：</p>
+<p>✅ 验证步骤：按下 <code>Win + R</code> 键，输入 <code>cmd</code> 打开终端，敲入如下指令：</p>
 <pre><code class="language-bash">node -v
 # 若输出版本号如 v18.17.0 等字样则环境绿灯放行。
 </code></pre>
-<h2>2. 工程文件迁移与装载</h2>
+<h3>2. 工程文件迁移与装载</h3>
 <ul>
-<li>将您本机的整个 <code>erp-mes-system</code> 工程文件夹通过 U 盘、坚果云、FTP 或网络传输等手段完整拷贝到目标电脑中。</li>
-<li>⚡ <strong>性能向提示</strong>：为了极速地完成传输，可以在拷贝前<strong>先删去</strong>原有项目后端 <code>backend/node_modules</code> 与前端 <code>frontend/node_modules</code> 这两大依赖黑洞文件夹，体积可直降 90% 以上。</li>
+<li>将整个 <code>erp-mes-system</code> 工程文件夹通过 U 盘、坚果云、FTP 或网络传输等手段完整拷贝到目标电脑中。</li>
+<li>⚡ <strong>性能向提示</strong>：拷贝前<strong>先删去</strong> <code>backend/node_modules</code> 与 <code>frontend/node_modules</code>，体积可直降 90% 以上。</li>
 </ul>
-<hr>
-<h2>3. 全局总装与初始化（核心）</h2>
-<p>在目标机存好的项目根目录（例如 <code>D:\项目\erp-mes-system</code>）下：</p>
-<p><img src="https://via.placeholder.com/600x250.png?text=One-Click+Installation:+install.bat" alt="示意图: 一键执行安装卡片"></p>
+<h3>3. 全局总装与初始化（核心）</h3>
 <ul>
 <li>找到并双击运行 <strong><code>install.bat</code></strong> 引导器文件。</li>
-<li>该装配脚本将如同自动驾驶般完成以下工作，并伴有进度反馈：<ol>
+<li>该装配脚本将自动完成以下工作：<ol>
 <li>拦截并检测本机 Node 环境。</li>
-<li>潜入 <code>backend</code> 目录，通过 <code>npm install</code> 为 Sqlite3 等本地持久层以及加解密引擎重新拉取编译对应的 Windows 二进制依赖。</li>
-<li>潜入 <code>frontend</code> 目录拉取依赖，并无情触发 Vite 的树摇压缩编译流水线（<code>npm run build</code>）。</li>
+<li>潜入 <code>backend</code> 目录拉取编译 Windows 二进制依赖。</li>
+<li>潜入 <code>frontend</code> 目录拉取依赖并触发 Vite 编译（<code>npm run build</code>）。</li>
 </ol>
 </li>
-<li>静待黑色命令窗提示绿色的 <strong>“[√] 安装完成！”</strong> 字样，即可按任意键全身而退。</li>
+<li>静待提示 <strong>&quot;安装完成！&quot;</strong> 字样即可。</li>
 </ul>
-<hr>
-<h2>4. 点火运行服务端</h2>
+<h3>4. 点火运行服务端</h3>
 <ul>
 <li>双击运行 <strong><code>start.bat</code></strong> 启动文件。</li>
-<li>随即会唤醒一个常驻的黑色网关控制台进程，并在 3 秒内自动为您从默认浏览器弹开系统首页工作台。</li>
+<li>随即会唤醒常驻控制台进程，并自动打开浏览器。</li>
 <li>🔗 默认路由为：<code>http://localhost:3198</code></li>
 </ul>
 <blockquote>
-<p>⚠️ <strong>警告</strong>：该控制台承载了所有 Node.js 业务接口、扫码监听、与轻量级 SQLite 数据落盘的线程，<strong>请绝对不要关闭该黑窗口！如果将其叉掉，前台网页立刻宕机变“板砖”。</strong></p>
+<p>⚠️ <strong>警告</strong>：该控制台承载了所有业务接口和数据库线程，<strong>请绝对不要关闭该黑窗口！</strong></p>
 </blockquote>
-<p><img src="https://via.placeholder.com/600x300.png?text=Sever+Running...+%5B%E5%8B%BF%E5%85%B3%E9%97%AD%E6%AD%A4%E7%AA%97%E5%8F%A3%5D" alt="示意图: 成功运行截图"></p>
-<hr>
-<h2>5. 优雅熄火与清理</h2>
+<h3>5. 优雅熄火与清理</h3>
 <ul>
-<li>当全天产能工作结束，或您想要关机、打扫环境时，请勿粗暴拔电。</li>
-<li>双击项目目录下的 <strong><code>stop.bat</code></strong>。</li>
-<li>它就像一把安全锁，能一键平滑寻址并终止相关 Node 监听端口，防止底层轻型数据库处于热更正被意外锁表，从而安稳地停止所有进程。</li>
+<li>双击项目目录下的 <strong><code>stop.bat</code></strong>，平滑终止所有进程。</li>
 </ul>
+<hr>
+<h2>第二部分：远程服务器部署</h2>
+<p>适用于将系统部署到外网服务器（Windows Server / Windows 主机），实现从开发机一键推送更新。</p>
+<h3>1. 服务器首次准备</h3>
+<h4>1.1 安装 Node.js</h4>
+<p>同上述第一部分步骤 1。</p>
+<h4>1.2 初始化服务器环境</h4>
+<p>将 <code>deploy</code> 文件夹拷贝到服务器项目目录后，以 <strong>管理员身份</strong> 打开 PowerShell 运行：</p>
+<pre><code class="language-powershell"># 允许执行脚本（仅需一次）
+Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
+
+# 运行初始化脚本（安装 OpenSSH Server + PM2 + 配置防火墙）
+.\deploy\server-init.ps1
+</code></pre>
+<p>该脚本自动完成：</p>
+<ul>
+<li>✅ 安装 OpenSSH Server（远程部署通道）</li>
+<li>✅ 启动 SSH 服务并设为开机自启</li>
+<li>✅ 防火墙放行 22 端口</li>
+<li>✅ 安装 PM2 进程管理器</li>
+</ul>
+<h4>1.3 首次部署与启动</h4>
+<pre><code class="language-powershell"># 安装后端依赖
+cd F:\erp-mes-system\backend
+npm install --production
+
+# 初始化数据库
+node -e &quot;require(&#39;./database&#39;)&quot;
+
+# 构建前端（首次需要）
+cd ..\frontend
+npm install
+npm run build
+
+# 用 PM2 启动服务
+cd ..\backend
+pm2 start server.js --name erp
+pm2 save
+</code></pre>
+<h4>1.4 验证</h4>
+<ul>
+<li>浏览器访问 <code>http://localhost:3198</code></li>
+<li>默认账号：<code>admin</code> / 密码：<code>admin123</code></li>
+</ul>
+<h3>2. 开发机一键部署（日常更新）</h3>
+<p>在开发机改完代码后，只需一行命令即可自动同步到服务器：</p>
+<pre><code class="language-powershell">.\deploy\deploy.ps1
+</code></pre>
+<p>脚本自动完成 7 个步骤：</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>[1/7] Build frontend</td>
+<td>本地构建前端</td>
+</tr>
+<tr>
+<td>[2/7] Package</td>
+<td>打包（自动排除数据库/node_modules/.git）</td>
+</tr>
+<tr>
+<td>[3/7] Upload</td>
+<td>SCP 加密传输到服务器</td>
+</tr>
+<tr>
+<td>[4/7] Extract</td>
+<td>服务器端解压覆盖代码</td>
+</tr>
+<tr>
+<td>[5/7] Install deps</td>
+<td>远程安装后端依赖</td>
+</tr>
+<tr>
+<td>[6/7] Restart</td>
+<td>PM2 自动重启服务</td>
+</tr>
+<tr>
+<td>[7/7] Check updates</td>
+<td>检查依赖更新</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>安全保障</strong>：数据库文件（<code>*.db</code> / <code>*.db-shm</code> / <code>*.db-wal</code>）<strong>永远不会被覆盖</strong>，服务器生产数据完全安全。</p>
+</blockquote>
+<h3>3. PM2 常用命令</h3>
+<p>在服务器 PowerShell 中使用：</p>
+<table>
+<thead>
+<tr>
+<th>命令</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>pm2 status</code></td>
+<td>查看服务运行状态</td>
+</tr>
+<tr>
+<td><code>pm2 restart erp</code></td>
+<td>重启服务</td>
+</tr>
+<tr>
+<td><code>pm2 stop erp</code></td>
+<td>停止服务</td>
+</tr>
+<tr>
+<td><code>pm2 logs erp</code></td>
+<td>查看运行日志</td>
+</tr>
+<tr>
+<td><code>pm2 logs erp --lines 50</code></td>
+<td>查看最近 50 行日志</td>
+</tr>
+</tbody></table>
+<h3>4. 数据库备份与恢复</h3>
+<h4>备份</h4>
+<pre><code class="language-powershell">copy F:\erp-mes-system\backend\mes.db &quot;F:\备份\mes-$(Get-Date -Format &#39;yyyyMMdd&#39;).db&quot;
+</code></pre>
+<h4>恢复</h4>
+<pre><code class="language-powershell"># 1. 必须先停服务！
+pm2 stop erp
+
+# 2. 替换数据库
+copy &quot;F:\备份\mes-20260326.db&quot; &quot;F:\erp-mes-system\backend\mes.db&quot; -Force
+
+# 3. 删除 WAL 残留（关键！否则数据会被旧缓存覆盖）
+del F:\erp-mes-system\backend\mes.db-shm -ErrorAction SilentlyContinue
+del F:\erp-mes-system\backend\mes.db-wal -ErrorAction SilentlyContinue
+
+# 4. 重启服务
+pm2 start erp
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>切记</strong>：恢复数据库时<strong>必须先停服务</strong>，否则 SQLite 文件锁定导致恢复无效。</p>
+</blockquote>
+<h3>5. 服务器配置速查</h3>
+<table>
+<thead>
+<tr>
+<th>配置项</th>
+<th>当前值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>SSH 用户名</td>
+<td><code>MSGY</code></td>
+</tr>
+<tr>
+<td>服务器域名</td>
+<td><code>msgy.asia</code></td>
+</tr>
+<tr>
+<td>项目路径</td>
+<td><code>F:\erp-mes-system</code></td>
+</tr>
+<tr>
+<td>服务端口</td>
+<td><code>3198</code></td>
+</tr>
+<tr>
+<td>进程名称</td>
+<td><code>erp</code>（PM2 管理）</td>
+</tr>
+<tr>
+<td>允许域名</td>
+<td><code>suncraft.site</code> / <code>msgy.asia</code></td>
+</tr>
+</tbody></table>
 
 <div class="footer">铭晟管理系统 v1.5.1 &mdash; 本文件由 generate.bat 自动生成</div>
 </body>

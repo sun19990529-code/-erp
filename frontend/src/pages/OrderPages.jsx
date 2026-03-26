@@ -1,16 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
 import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
-import SimpleCRUDManager from '../components/SimpleCRUDManager';
-import PrintableQRCode from '../components/PrintableQRCode';
 
 const OrderManager = () => {
   const { isAdmin } = useAuth();
@@ -21,9 +16,16 @@ const OrderManager = () => {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(''); // 表单中选中的客户
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   
+  // 初始化数据只加载一次
+  useEffect(() => {
+    api.get('/customers').then(res => res.success && setCustomers(res.data));
+    api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
+  }, []);
+
   const load = (page = 1) => {
     setLoading(true);
     const params = new URLSearchParams({ page, pageSize: 20 });
@@ -36,9 +38,6 @@ const OrderManager = () => {
         setPagination(res.pagination || { page: 1, pageSize: 20, total: res.data.length, totalPages: 1 });
       }
     }).finally(() => setLoading(false));
-    
-    api.get('/customers').then(res => res.success && setCustomers(res.data));
-    api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
   };
   
   useEffect(() => { load(1); }, [searchText, statusFilter]);
@@ -51,10 +50,14 @@ const OrderManager = () => {
   
   const openView = async (item) => {
     const res = await api.get(`/orders/${item.id}`);
+    if (!res.success) { window.__toast?.error(res.message || '获取订单详情失败'); return; }
     setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'view' });
   };
   
   const openCreate = () => {
+    setSelectedCustomerId('');
+    // 重置产品列表为全量
+    api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
     setModal({ open: true, item: null, items: [{ product_id: '', quantity: 1 }], mode: 'create' });
   };
   
@@ -83,6 +86,13 @@ const OrderManager = () => {
   const openEdit = async (item) => {
     const res = await api.get(`/orders/${item.id}`);
     if (res.success) {
+      setSelectedCustomerId(res.data.customer_id || '');
+      // 编辑时加载该客户关联产品
+      if (res.data.customer_id) {
+        api.get(`/products?category=成品&customer_id=${res.data.customer_id}`).then(r => {
+          if (r.success && r.data.length > 0) setProducts(r.data);
+        });
+      }
       setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'edit' });
     }
   };
@@ -171,6 +181,33 @@ const OrderManager = () => {
     const newItems = [...(modal.items || [])];
     newItems[index] = { ...newItems[index], [field]: value };
     setModal({ ...modal, items: newItems });
+  };
+
+  // 客户变更时加载关联产品
+  const handleCustomerChange = (customerId, form) => {
+    setSelectedCustomerId(customerId);
+    const c = customers.find(x => x.id == customerId);
+    if (c && form) {
+      form.customer_name.value = c.name;
+      form.customer_phone.value = c.phone || '';
+      form.customer_address.value = c.address || '';
+    }
+    if (customerId) {
+      api.get(`/products?category=成品&customer_id=${customerId}`).then(res => {
+        if (res.success) {
+          setProducts(res.data);
+        }
+      });
+    } else {
+      api.get('/products?category=成品').then(res => {
+        if (res.success) setProducts(res.data);
+      });
+    }
+    // 清空已选产品
+    setModal(prev => ({
+      ...prev,
+      items: prev.items.map(it => ({ ...it, product_id: '' }))
+    }));
   };
 
   const updateOrderStatus = async (orderId, newStatus) => {
@@ -371,7 +408,7 @@ const OrderManager = () => {
           <form onSubmit={save} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><label className="block text-sm font-medium mb-1">客户</label>
-                <select name="customer_id" defaultValue={modal.item?.customer_id || ''} onChange={e => { const c = customers.find(x => x.id == e.target.value); if (c) { e.target.form.customer_name.value = c.name; e.target.form.customer_phone.value = c.phone || ''; e.target.form.customer_address.value = c.address || ''; }}} className="w-full border rounded-lg px-3 py-2">
+                <select name="customer_id" defaultValue={modal.item?.customer_id || ''} onChange={e => handleCustomerChange(e.target.value, e.target.form)} className="w-full border rounded-lg px-3 py-2">
                   <option value="">选择客户</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -394,7 +431,9 @@ const OrderManager = () => {
                     <div className="w-full lg:flex-1 min-w-[200px]">
                       <select value={it.product_id} onChange={e => updateItem(i, 'product_id', e.target.value)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none bg-white">
                         <option value="">选择销售产品</option>
-                        {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
+                        {products.length > 0
+                          ? products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)
+                          : <option disabled>{selectedCustomerId ? '该客户无关联产品' : '请先选择客户'}</option>}
                       </select>
                     </div>
                     <div className="w-[45%] lg:w-32 flex items-center">

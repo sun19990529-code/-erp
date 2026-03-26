@@ -1,16 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
-import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
 const PurchaseManager = () => {
   const [data, setData] = useState([]);
@@ -20,11 +14,16 @@ const PurchaseManager = () => {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
   
-  const load = () => {
-    api.get('/purchase').then(res => res.success && setData(res.data));
+  // 初始化数据只加载一次
+  useEffect(() => {
     api.get('/suppliers').then(res => res.success && setSuppliers(res.data));
     api.get('/products?category=原材料').then(res => res.success && setProducts(res.data));
+  }, []);
+
+  const load = () => {
+    api.get('/purchase').then(res => res.success && setData(res.data));
   };
   useEffect(() => { load(); }, []);
   
@@ -45,6 +44,7 @@ const PurchaseManager = () => {
   };
   
   const openCreate = () => {
+    setSelectedSupplierId('');
     setModal({ open: true, item: null, items: [{ product_id: '', quantity: 1 }], mode: 'create' });
   };
   
@@ -82,6 +82,7 @@ const PurchaseManager = () => {
   const openEdit = async (item) => {
     const res = await api.get(`/purchase/${item.id}`);
     if (res.success) {
+      setSelectedSupplierId(res.data.supplier_id || '');
       setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'edit' });
     }
   };
@@ -106,6 +107,25 @@ const PurchaseManager = () => {
     const newItems = [...(modal.items || [])];
     newItems[index] = { ...newItems[index], [field]: value };
     setModal({ ...modal, items: newItems });
+  };
+
+  // 供应商变更时加载关联产品
+  const handleSupplierChange = (supplierId) => {
+    setSelectedSupplierId(supplierId);
+    if (supplierId) {
+      api.get(`/products?category=原材料&supplier_id=${supplierId}`).then(res => {
+        if (res.success) setProducts(res.data);
+      });
+    } else {
+      api.get('/products?category=原材料').then(res => {
+        if (res.success) setProducts(res.data);
+      });
+    }
+    // 清空已选产品（因为供应商变了，之前选的产品可能不属于新供应商）
+    setModal(prev => ({
+      ...prev,
+      items: prev.items.map(it => ({ ...it, product_id: '' }))
+    }));
   };
 
   const updatePurchaseStatus = async (purchaseId, newStatus) => {
@@ -212,12 +232,12 @@ const PurchaseManager = () => {
           <form onSubmit={save} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><label className="block text-sm font-medium mb-1">供应商 *</label>
-                <select name="supplier_id" className="w-full border rounded-lg px-3 py-2" required>
+                <select name="supplier_id" defaultValue={modal.item?.supplier_id || ''} className="w-full border rounded-lg px-3 py-2" required onChange={e => handleSupplierChange(e.target.value)}>
                   <option value="">请选择</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              <div><label className="block text-sm font-medium mb-1">预计到货日期</label><input name="expected_date" type="date" className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium mb-1">预计到货日期</label><input name="expected_date" type="date" defaultValue={modal.item?.expected_date || ''} className="w-full border rounded-lg px-3 py-2" /></div>
               <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect /></div>
             </div>
             <div>
@@ -228,7 +248,9 @@ const PurchaseManager = () => {
                     <div className="w-full lg:flex-1 min-w-[200px]">
                       <select value={it.product_id} onChange={e => updateItem(i, 'product_id', e.target.value)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none bg-white">
                         <option value="">选择采购产品</option>
-                        {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
+                        {products.length > 0
+                          ? products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)
+                          : <option disabled>{selectedSupplierId ? '该供应商无关联产品' : '请先选择供应商'}</option>}
                       </select>
                     </div>
                     <div className="w-[45%] lg:w-32 flex items-center">

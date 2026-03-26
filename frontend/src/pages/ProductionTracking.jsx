@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
-import Table from '../components/Table';
 
 /**
  * 损耗率颜色：≤5% 绿色, 5~15% 橙色, >15% 红色

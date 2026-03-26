@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import ProcessConfigPanel from '../components/ProcessConfigPanel';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
 import Table from '../components/Table';

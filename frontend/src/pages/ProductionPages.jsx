@@ -1,17 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProductionTrackingPanel } from './ProductionTracking';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
-import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
+import SearchSelect from '../components/SearchSelect';
 import Table from '../components/Table';
-import { TableSkeleton, Skeleton } from '../components/Skeleton';
-import { useDraftForm } from '../hooks/useDraftForm';
-import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import PrintableQRCode from '../components/PrintableQRCode';
 
 const PickMaterialManager = () => {
@@ -498,7 +494,7 @@ const ProductionOrderManager = () => {
     api.get('/production').then(res => res.success && setData(res.data));
     api.get('/orders?status=pending,processing').then(res => res.success && setOrders(res.data));
     api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
-    api.get('/processes').then(res => res.success && setProcesses(res.data));
+    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
   };
   useEffect(() => { load(); }, []);
   

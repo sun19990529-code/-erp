@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
 
 // 侧边栏菜单树（原定义在 App.jsx 中 Sidebar 之前）
 const menuConfig = [

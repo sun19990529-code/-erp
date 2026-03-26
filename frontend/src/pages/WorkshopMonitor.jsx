@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { api } from '../api';
 
 const WorkshopMonitor = ({ onExit }) => {

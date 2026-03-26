@@ -1,6 +1,6 @@
 # 铭晟 ERP-MES 管理系统
 
-> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.5.2**
+> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.5.3**
 
 ## 技术栈
 
@@ -115,6 +115,16 @@ erp-mes-system/
 - 📚 **Swagger API 文档** — 访问 `/api-docs`
 - 🔄 **GitHub Actions CI** — 推送自动运行 lint → test → build
 - 🗺️ **React Router** — 30 个 URL 路由，支持浏览器前进后退
+
+### v1.5.3 代码审查与部署自动化
+- 🧹 **全系统 import 清理** — 12 个页面共清理 93 个未使用 import
+- ⚡ **load() 拆分优化** — PurchasePages/OrderPages/OutsourcingPages/BasicDataPages 初始化数据与动态刷新分离，减少重复请求
+- 🔧 **API 路径修复** — `/processes` → `/production/processes`，修复委外/生产/质检页面 API 异常
+- 🛡️ **错误守卫** — openView/openEdit 添加 API 异常捕获，防止白屏
+- 🌐 **CORS 多域名** — 支持 `suncraft.site` 和 `msgy.asia` 双域名访问
+- 📦 **Patch 依赖更新** — react-router-dom/recharts/vite/vitest 更新至最新 patch
+- 🚀 **一键部署脚本** — `deploy/deploy.ps1` 支持 Windows→Windows 自动同步（构建→打包→上传→重启）
+- 📄 **部署文档更新** — 新增远程服务器部署、PM2 管理、数据库备份恢复指南
 
 ### v1.5.2 代码质量优化
 - 🧩 **ProcessConfigPanel 组件抽取** — 三处工序配置 UI 统一为共享组件，减少 260+ 行代码

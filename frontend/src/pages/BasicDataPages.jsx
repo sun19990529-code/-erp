@@ -177,9 +177,8 @@ const ProductManager = ({ category }) => {
   const categoryLabel = category === '原材料' ? '原材料' : category === '半成品' ? '半成品' : '成品';
   const title = `${categoryLabel}管理`;
   
-  const load = () => {
-    const params = category ? `?category=${encodeURIComponent(category)}` : '';
-    api.get(`/products${params}`).then(res => res.success && setData(res.data));
+  // 初始化静态数据只加载一次（按 category 变化重新加载）
+  useEffect(() => {
     api.get('/production/processes').then(res => res.success && setProcesses(res.data));
     api.get('/suppliers').then(res => res.success && setAllSuppliers(res.data));
     api.get('/customers').then(res => res.success && setAllCustomers(res.data));
@@ -188,6 +187,11 @@ const ProductManager = ({ category }) => {
       api.get('/products?category=原材料').then(res => res.success && setRawMaterials(res.data));
       api.get('/products?category=半成品').then(res => res.success && setSemiProducts(res.data));
     }
+  }, [category]);
+
+  const load = () => {
+    const params = category ? `?category=${encodeURIComponent(category)}` : '';
+    api.get(`/products${params}`).then(res => res.success && setData(res.data));
   };
   useEffect(() => { load(); }, [category]);
   
