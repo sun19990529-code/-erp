@@ -92,7 +92,14 @@ router.put('/config', requireAdmin, (req, res) => {
   const { autoBackup, intervalHours, backupPath, maxBackups, enabled } = req.body;
   if (typeof autoBackup === 'boolean') config.autoBackup = autoBackup;
   if (intervalHours && intervalHours > 0) config.intervalHours = intervalHours;
-  if (backupPath) config.backupPath = backupPath;
+  if (backupPath) {
+    // 路径安全：禁止目录穿越，限制在项目范围内
+    const resolved = path.resolve(backupPath);
+    if (resolved.includes('..') || resolved.includes('system32')) {
+      return res.status(400).json({ success: false, message: '备份路径不合法' });
+    }
+    config.backupPath = resolved;
+  }
   if (maxBackups && maxBackups > 0) config.maxBackups = maxBackups;
   if (typeof enabled === 'boolean') config.enabled = enabled;
   if (saveBackupConfig(config)) {

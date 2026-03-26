@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
@@ -10,6 +11,8 @@ import Table from '../components/Table';
 const OrderManager = () => {
   const { isAdmin } = useAuth();
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
@@ -104,14 +107,14 @@ const OrderManager = () => {
         window.__toast?.warning('只能删除待处理状态的订单，如需删除请联系管理员');
         return;
       }
-      if (!confirm('⚠️ 警告：此订单已开始处理！\n\n删除后将同时删除关联的生产工单等数据。\n\n确定要强制删除吗？')) return;
+      if (!await confirm('⚠️ 警告：此订单已开始处理！\n\n删除后将同时删除关联的生产工单等数据。\n\n确定要强制删除吗？')) return;
       const res = await api.del(`/orders/${item.id}?force=true`);
       if (res.success) load();
       else window.__toast?.error(res.message);
       return;
     }
     
-    if (!confirm('确定删除该订单？')) return;
+    if (!await confirm('确定删除该订单？')) return;
     const res = await api.del(`/orders/${item.id}`);
     if (res.success) load();
     else window.__toast?.error(res.message);
@@ -212,7 +215,7 @@ const OrderManager = () => {
 
   const updateOrderStatus = async (orderId, newStatus) => {
     const statusLabels = { confirmed: '确认订单', processing: '开始生产', completed: '完成订单', cancelled: '取消订单' };
-    if (!confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
+    if (!await confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
     const res = await api.put(`/orders/${orderId}/status`, { status: newStatus });
     if (res.success) { closeModal(); load(); }
     else window.__toast?.error(res.message);

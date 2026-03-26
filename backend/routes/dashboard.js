@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const { requirePermission } = require('../middleware/permission');
 
 // 仪表盘
-router.get('/', (req, res) => {
+router.get('/', requirePermission('dashboard_view'), (req, res) => {
   try {
     const pendingOrders = req.db.get("SELECT COUNT(*) as count FROM orders WHERE status = 'pending'");
     const processingOrders = req.db.get("SELECT COUNT(*) as count FROM production_orders WHERE status = 'processing'");
@@ -60,7 +61,7 @@ router.get('/', (req, res) => {
 });
 
 // 获取图表聚合数据
-router.get('/charts', (req, res) => {
+router.get('/charts', requirePermission('dashboard_view'), (req, res) => {
   try {
     // 1. 订单状态分布
     const orderStatusStr = req.db.all("SELECT status, COUNT(*) as value FROM orders GROUP BY status");
@@ -138,7 +139,7 @@ router.get('/charts', (req, res) => {
 });
 
 // 车间大屏专用 API
-router.get('/workshop', (req, res) => {
+router.get('/workshop', requirePermission('dashboard_view'), (req, res) => {
   try {
     // 工单实时进度（全部进行中）
     const liveOrders = req.db.all(`
@@ -183,7 +184,7 @@ router.get('/workshop', (req, res) => {
 });
 
 // 【联动#8】采购建议：根据订单材料需求 + 当前库存计算缺口
-router.get('/purchase-suggestions', (req, res) => {
+router.get('/purchase-suggestions', requirePermission('dashboard_view'), (req, res) => {
   try {
     // 获取所有未完成订单的材料需求缺口
     const suggestions = req.db.all(`

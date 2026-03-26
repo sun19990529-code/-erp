@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import ProcessConfigPanel from '../components/ProcessConfigPanel';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
 import Table from '../components/Table';
 
 const ProcessConfigManager = () => {
   const [products, setProducts] = useState([]);
+
   const [processes, setProcesses] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]);
   const [modal, setModal] = useState({ open: false, product: null, productProcesses: [] });
@@ -133,6 +135,7 @@ const ProcessConfigManager = () => {
 
 const ProcessManager = ({ processCode }) => {
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
   const [processNames, setProcessNames] = useState({});
   const [processes, setProcesses] = useState([]);
   const [outsourcings, setOutsourcings] = useState([]);
@@ -188,7 +191,7 @@ const ProcessManager = ({ processCode }) => {
     const completedQty = modal.item?.completed_quantity || 0;
     const remainingQty = planQuantity - completedQty;
     if (outputQuantity + defectQuantity > remainingQty && remainingQty > 0) {
-      if (!confirm(`本次报工数量(${outputQuantity + defectQuantity}) 超过剩余待完成量(${remainingQty})，确定继续吗？`)) return;
+      if (!await confirm(`本次报工数量(${outputQuantity + defectQuantity}) 超过剩余待完成量(${remainingQty})，确定继续吗？`)) return;
     }
     
     const obj = { 
@@ -246,8 +249,8 @@ const ProcessManager = ({ processCode }) => {
         const confirmMsg = `工序完成！\n\n${messages.join('\n')}\n\n是否立即前往查看？`;
         setModal({ ...closeState, pendingActions: actions, pendingMessage: confirmMsg }); 
         load();
-        setTimeout(() => {
-          if (actions.length > 0 && confirm(confirmMsg)) {
+        setTimeout(async () => {
+          if (actions.length > 0 && await confirm(confirmMsg)) {
             window.location.hash = actions[0].menu;
             window.location.reload();
           }

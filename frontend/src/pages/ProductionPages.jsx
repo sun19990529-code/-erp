@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProductionTrackingPanel } from './ProductionTracking';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
@@ -13,6 +14,8 @@ import PrintableQRCode from '../components/PrintableQRCode';
 const PickMaterialManager = () => {
   const { isAdmin } = useAuth();
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [orders, setOrders] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [materials, setMaterials] = useState([]); // 原材料
@@ -195,14 +198,14 @@ const PickMaterialManager = () => {
         window.__toast?.warning('已完成的领料单不能删除，如需删除请联系管理员');
         return;
       }
-      if (!confirm('⚠️ 警告：此领料单已完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
+      if (!await confirm('⚠️ 警告：此领料单已完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
       const res = await api.del(`/pick/${item.id}?force=true`);
       if (res.success) load();
       else window.__toast?.error(res.message);
       return;
     }
     
-    if (!confirm('确定删除该领料单？')) return;
+    if (!await confirm('确定删除该领料单？')) return;
     const res = await api.del(`/pick/${item.id}`);
     if (res.success) load();
     else window.__toast?.error(res.message);
@@ -378,7 +381,7 @@ const PickMaterialManager = () => {
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
                 <button type="button" onClick={async () => {
-                  if (!confirm('确认审批通过并扣减库存？')) return;
+                  if (!await confirm('确认审批通过并扣减库存？')) return;
                   const res = await api.put(`/pick/${modal.item.id}/status`, { status: 'completed' });
                   if (res.success) { closeModal(); load(); }
                   else alert(res.message || '审批失败');
@@ -548,14 +551,14 @@ const ProductionOrderManager = () => {
         window.__toast?.warning('只能删除待处理状态的工单，如需删除请联系管理员');
         return;
       }
-      if (!confirm('⚠️ 警告：此工单已开始处理！\n\n此操作不可恢复。\n\n确定要强制删除吗？')) return;
+      if (!await confirm('⚠️ 警告：此工单已开始处理！\n\n此操作不可恢复。\n\n确定要强制删除吗？')) return;
       const res = await api.del(`/production/${item.id}?force=true`);
       if (res.success) load();
       else window.__toast?.error(res.message);
       return;
     }
     
-    if (!confirm('确定删除该生产工单？此操作不可恢复。')) return;
+    if (!await confirm('确定删除该生产工单？此操作不可恢复。')) return;
     const res = await api.del(`/production/${item.id}`);
     if (res.success) load();
     else window.__toast?.error(res.message);

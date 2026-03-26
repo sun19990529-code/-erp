@@ -1,6 +1,6 @@
 # 铭晟 ERP-MES 管理系统
 
-> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.5.3**
+> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.5.4**
 
 ## 技术栈
 
@@ -115,6 +115,13 @@ erp-mes-system/
 - 📚 **Swagger API 文档** — 访问 `/api-docs`
 - 🔄 **GitHub Actions CI** — 推送自动运行 lint → test → build
 - 🗺️ **React Router** — 30 个 URL 路由，支持浏览器前进后退
+
+### v1.5.4 安全加固与代码重构
+- 🔒 **Dashboard 权限补全** — 4 个仪表盘路由添加 `requirePermission('dashboard_view')`
+- 🛡️ **Backup 路径注入修复** — `backupPath` 参数增加 `path.resolve()` + 穿越检测
+- ♻️ **outsourcing.js 拆分** — PUT /:id/status 107 行 God Function → 4 个独立辅助函数
+- 🎨 **confirm() → ConfirmModal** — 10 个文件 29 处原生 `confirm()` 替换为统一样式 `useConfirm` Hook
+- 🗄️ **权限迁移机制** — `ensurePermissionExists()` 确保新增权限自动补充到现有数据库
 
 ### v1.5.3 代码审查与部署自动化
 - 🧹 **全系统 import 清理** — 12 个页面共清理 93 个未使用 import

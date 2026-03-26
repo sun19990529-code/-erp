@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import Modal from '../components/Modal';
 import Table from '../components/Table';
 import SearchFilter from '../components/SearchFilter';
@@ -87,6 +88,8 @@ const DepartmentManager = () => (
 
 const ProductManager = ({ category }) => {
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [processes, setProcesses] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]); // 原材料列表（用于工序材料配置）
   const [semiProducts, setSemiProducts] = useState([]); // 半成品列表（用于工序材料配置）
@@ -274,7 +277,7 @@ const ProductManager = ({ category }) => {
   };
   
   const del = async (item) => {
-    if (!confirm('确定删除？')) return;
+    if (!await confirm('确定删除？')) return;
     const res = await api.del(`/products/${item.id}`);
     res.success ? load() : window.__toast?.error(res.message);
   };
@@ -577,6 +580,7 @@ const ProductManager = ({ category }) => {
 const MaterialCategoryManager = () => {
   const [tree, setTree] = useState([]);
   const [flat, setFlat] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
   const [modal, setModal] = useState({ open: false, item: null });
 
   const load = () => {
@@ -604,7 +608,7 @@ const MaterialCategoryManager = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('确定删除该分类？')) return;
+    if (!await confirm('确定删除该分类？')) return;
     const res = await api.del(`/material-categories/${id}`);
     if (!res.success) alert(res.message);
     load();

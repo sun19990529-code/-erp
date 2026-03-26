@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
 import SearchFilter from '../components/SearchFilter';
@@ -8,6 +9,8 @@ import Table from '../components/Table';
 
 const OutsourcingManager = () => {
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [productions, setProductions] = useState([]);
@@ -118,7 +121,7 @@ const OutsourcingManager = () => {
   };
   
   const del = async (item) => {
-    if (!confirm('确定删除该委外单？')) return;
+    if (!await confirm('确定删除该委外单？')) return;
     const res = await api.del(`/outsourcing/${item.id}`);
     if (res.success) load();
     else window.__toast?.error(res.message);
@@ -142,9 +145,9 @@ const OutsourcingManager = () => {
   const updateOutsourcingStatus = async (outsourcingId, newStatus) => {
     const statusLabels = { confirmed: '确认委外', processing: '开始加工', received: '确认收货', cancelled: '取消委外' };
     if (newStatus === 'received') {
-      if (!confirm('确认收货？将自动创建入库单并更新库存。')) return;
+      if (!await confirm('确认收货？将自动创建入库单并更新库存。')) return;
     } else {
-      if (!confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
+      if (!await confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
     }
     const res = await api.put(`/outsourcing/${outsourcingId}/status`, { status: newStatus });
     if (res.success) { 

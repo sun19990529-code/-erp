@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-
+import { useConfirm } from '../components/ConfirmModal';
 const BackupSettings = () => {
   const [config, setConfig] = useState({
     enabled: true,
@@ -12,6 +12,8 @@ const BackupSettings = () => {
     nextBackup: null
   });
   const [backupList, setBackupList] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [loading, setLoading] = useState(false);
   const [backupNow, setBackupNow] = useState(false);
   const [customPath, setCustomPath] = useState('');
@@ -52,7 +54,7 @@ const BackupSettings = () => {
   };
 
   const executeBackup = async () => {
-    if (!confirm('确定要立即执行备份吗？')) return;
+    if (!await confirm('确定要立即执行备份吗？')) return;
     setLoading(true);
     const res = await api.post('/backup/execute', { backupPath: customPath });
     setLoading(false);
@@ -66,7 +68,7 @@ const BackupSettings = () => {
   };
 
   const deleteBackup = async (filename) => {
-    if (!confirm(`确定删除备份文件 ${filename}？`)) return;
+    if (!await confirm(`确定删除备份文件 ${filename}？`)) return;
     const res = await api.del(`/backup/file/${encodeURIComponent(filename)}`);
     if (res.success) {
       window.__toast?.warning('删除成功');
@@ -77,7 +79,7 @@ const BackupSettings = () => {
   };
 
   const restoreBackup = async (filename) => {
-    if (!confirm(`确定要从备份 ${filename} 恢复数据库吗？\n当前数据将被备份后覆盖！`)) return;
+    if (!await confirm(`确定要从备份 ${filename} 恢复数据库吗？\n当前数据将被备份后覆盖！`)) return;
     const res = await api.post('/backup/restore', { filename });
     if (res.success) {
       window.__toast?.warning(`恢复成功！\n原数据已备份到: ${res.previousBackup}\n请刷新页面重新登录。`);

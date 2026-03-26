@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
@@ -11,6 +12,8 @@ import PrintableQRCode from '../components/PrintableQRCode';
 
 const InventoryView = ({ defaultType = 'raw', title = '全局库存总账' }) => {
   const [activeType, setActiveType] = useState(defaultType);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [data, setData] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
@@ -254,7 +257,7 @@ const WarehouseOrderManager = ({ orderType }) => {
         window.__toast?.warning('已出库的单据不能删除，如需删除请联系管理员');
         return;
       }
-      if (!confirm('⚠️ 警告：此单据已出库完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
+      if (!await confirm('⚠️ 警告：此单据已出库完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
       const res = await api.del(`/${apiPath}/${item.id}?force=true`);
       if (res.success) load();
       else window.__toast?.error(res.message);
@@ -267,14 +270,14 @@ const WarehouseOrderManager = ({ orderType }) => {
         window.__toast?.warning('已入库的单据不能删除，如需删除请联系管理员');
         return;
       }
-      if (!confirm('⚠️ 警告：此单据已入库完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
+      if (!await confirm('⚠️ 警告：此单据已入库完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
       const res = await api.del(`/${apiPath}/${item.id}?force=true`);
       if (res.success) load();
       else window.__toast?.error(res.message);
       return;
     }
     
-    if (!confirm('确定删除该单据？')) return;
+    if (!await confirm('确定删除该单据？')) return;
     const res = await api.del(`/${apiPath}/${item.id}`);
     if (res.success) load();
     else window.__toast?.error(res.message);
@@ -410,7 +413,7 @@ const WarehouseOrderManager = ({ orderType }) => {
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
                 <button type="button" onClick={async () => {
-                  if (!confirm('确认审批通过并扣减库存？')) return;
+                  if (!await confirm('确认审批通过并扣减库存？')) return;
                   const res = await api.put(`/${apiPath}/${modal.item.id}/status`, { status: 'completed' });
                   if (res.success) { closeModal(); load(); }
                   else alert(res.message || '审批失败');

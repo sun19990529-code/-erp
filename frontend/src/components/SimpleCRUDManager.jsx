@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from './Modal';
+import { useConfirm } from './ConfirmModal';
 import SearchFilter from './SearchFilter';
 import Table from './Table';
 
@@ -20,6 +21,7 @@ const SimpleCRUDManager = ({
   const [modal, setModal] = useState({ open: false, item: null });
   const [searchText, setSearchText] = useState('');
   const [filterValues, setFilterValues] = useState({});
+  const [confirm, ConfirmDialog] = useConfirm();
   
   const load = () => api.get(`/${apiPath}`).then(res => res.success && setData(res.data));
   useEffect(() => { load(); }, [apiPath]);
@@ -45,7 +47,7 @@ const SimpleCRUDManager = ({
   };
   
   const del = async (item) => {
-    if (!confirm('确定删除？')) return;
+    if (!await confirm('确定删除？')) return;
     const res = await api.del(`/${apiPath}/${item.id}`);
     res.success ? load() : window.__toast?.error(res.message);
   };
@@ -103,6 +105,7 @@ const SimpleCRUDManager = ({
   ) : null;
 
   return (
+    <>
     <div className="fade-in h-full flex flex-col">
       <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
         <h2 className="text-lg sm:text-xl font-bold text-gray-800">{title}管理</h2>
@@ -137,6 +140,8 @@ const SimpleCRUDManager = ({
         </form>
       </Modal>
     </div>
+    {ConfirmDialog}
+    </>
   );
 };
 

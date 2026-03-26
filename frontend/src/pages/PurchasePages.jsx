@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
 import SearchFilter from '../components/SearchFilter';
@@ -8,6 +9,8 @@ import Table from '../components/Table';
 
 const PurchaseManager = () => {
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
@@ -88,7 +91,7 @@ const PurchaseManager = () => {
   };
   
   const del = async (item) => {
-    if (!confirm('确定删除该采购单？')) return;
+    if (!await confirm('确定删除该采购单？')) return;
     const res = await api.del(`/purchase/${item.id}`);
     if (res.success) load();
     else window.__toast?.error(res.message);
@@ -131,9 +134,9 @@ const PurchaseManager = () => {
   const updatePurchaseStatus = async (purchaseId, newStatus) => {
     const statusLabels = { confirmed: '确认采购', received: '确认收货', cancelled: '取消采购' };
     if (newStatus === 'received') {
-      if (!confirm('确认收货？将自动创建原材料入库单并更新库存。')) return;
+      if (!await confirm('确认收货？将自动创建原材料入库单并更新库存。')) return;
     } else {
-      if (!confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
+      if (!await confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
     }
     const res = await api.put(`/purchase/${purchaseId}/status`, { status: newStatus });
     if (res.success) { 

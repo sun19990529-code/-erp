@@ -28,6 +28,9 @@ function initDatabase(db) {
   
   // 插入初始数据
   insertInitialData(db);
+
+  // 权限补充迁移（不受 insertInitialData 的 early return 影响）
+  ensurePermissionExists(db);
   
   console.log('数据库结构初始化完成！(WAL 模式已启用)');
   return db;
@@ -278,7 +281,9 @@ function insertInitialData(db) {
     { name: '基础数据-查看', code: 'basic_data_view', module: '基础数据' },
     { name: '基础数据-新增', code: 'basic_data_create', module: '基础数据' },
     { name: '基础数据-编辑', code: 'basic_data_edit', module: '基础数据' },
-    { name: '基础数据-删除', code: 'basic_data_delete', module: '基础数据' }
+    { name: '基础数据-删除', code: 'basic_data_delete', module: '基础数据' },
+    // 仪表盘模块
+    { name: '仪表盘-查看', code: 'dashboard_view', module: '仪表盘' }
   ];
   
   permissions.forEach(p => {
@@ -351,6 +356,21 @@ function insertInitialData(db) {
   db.run("INSERT INTO products (code, name, specification, unit, category, unit_price) VALUES ('M001', '原材料X', '规格X', 'kg', '原材料', 50)");
   db.run("INSERT INTO products (code, name, specification, unit, category, unit_price) VALUES ('M002', '原材料Y', '规格Y', 'kg', '原材料', 80)");
   db.run("INSERT INTO products (code, name, specification, unit, category, unit_price) VALUES ('S001', '半成品A', '规格SA', '件', '半成品', 70)");
+}
+
+// 权限补充迁移：确保新增权限在现有数据库中也存在
+function ensurePermissionExists(db) {
+  const required = [
+    { name: '仪表盘-查看', code: 'dashboard_view', module: '仪表盘' }
+  ];
+  required.forEach(p => {
+    const exists = db.prepare('SELECT id FROM permissions WHERE code = ?').get(p.code);
+    if (!exists) {
+      db.run('INSERT INTO permissions (name, code, module, description) VALUES (?, ?, ?, ?)',
+        [p.name, p.code, p.module, p.name + '权限']);
+      console.log(`[迁移] 添加权限: ${p.code}`);
+    }
+  });
 }
 
 // 导出初始化函数

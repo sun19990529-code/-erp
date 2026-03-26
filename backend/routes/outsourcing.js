@@ -122,10 +122,158 @@ router.post('/', requirePermission('outsourcing_create'), validate(outsourcingCr
   }
 });
 
+// ==================== 辅助函数 ====================
+
+/**
+ * 委外完成 → 自动创建入库单并更新库存
+ */
+function handleOutsourcingInbound(db, outsourcing, items) {
+  const warehouse = db.get("SELECT id FROM warehouses WHERE type = 'semi' LIMIT 1");
+  if (!warehouse || items.length === 0) return;
+
+  const inboundNo = generateOrderNo('IN');
+  let totalAmount = 0;
+  items.forEach(item => { totalAmount += (item.quantity || 0) * (item.unit_price || 0); });
+
+  const inboundResult = db.run(
+    `INSERT INTO inbound_orders (order_no, type, warehouse_id, supplier_id, total_amount, operator, remark, status) VALUES (?, 'semi', ?, ?, ?, ?, ?, 'approved')`,
+    [inboundNo, warehouse.id, outsourcing.supplier_id, totalAmount, '委外入库', `委外单: ${outsourcing.order_no}`]
+  );
+  const inboundId = inboundResult.lastInsertRowid;
+
+  items.forEach((item, index) => {
+    const batchNo = `${inboundNo}-${index + 1}`;
+    db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, ?)',
+      [inboundId, item.product_id, batchNo, item.returned_quantity || item.quantity, item.unit_price || 0]);
+    const existing = db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+      [warehouse.id, item.product_id, batchNo]);
+    if (existing) {
+      db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [item.returned_quantity || item.quantity, existing.id]);
+    } else {
+      db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
+        [warehouse.id, item.product_id, batchNo, item.returned_quantity || item.quantity]);
+    }
+  });
+}
+
+/**
+ * 委外完成 → 自动推进生产工序 / 触发完工入库
+ */
+function advanceProductionProcess(db, outsourcing) {
+  if (!outsourcing.production_order_id || !outsourcing.process_id) return;
+
+  const production = db.get('SELECT * FROM production_orders WHERE id = ?', [outsourcing.production_order_id]);
+  if (!production || production.status === 'completed') return;
+
+  // 标记该工序为完成
+  const processRecord = db.get('SELECT * FROM production_process_records WHERE production_order_id = ? AND process_id = ?',
+    [production.id, outsourcing.process_id]);
+  if (processRecord && processRecord.status !== 'completed') {
+    db.run(`UPDATE production_process_records SET status = 'completed', operator = '委外完成', end_time = CURRENT_TIMESTAMP, outsourcing_id = ? WHERE id = ?`,
+      [outsourcing.id, processRecord.id]);
+  }
+
+  // 查找工序列表
+  const productProcesses = db.all(
+    `SELECT pp.*, p.code as process_code, p.name as process_name FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`,
+    [production.product_id]
+  );
+  const currentIndex = productProcesses.findIndex(pp => pp.process_id == outsourcing.process_id);
+  if (currentIndex < 0) return;
+
+  if (currentIndex < productProcesses.length - 1) {
+    // 还有下一道工序
+    const nextProcess = productProcesses[currentIndex + 1];
+    db.run('UPDATE production_orders SET current_process = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [nextProcess.process_code, production.id]);
+    // 如果下一道也是委外，自动创建委外单
+    if (nextProcess.is_outsourced === 1) {
+      const existingNext = db.get('SELECT * FROM outsourcing_orders WHERE production_order_id = ? AND process_id = ?',
+        [production.id, nextProcess.process_id]);
+      if (!existingNext) {
+        const defaultSupplier = db.get('SELECT id FROM suppliers LIMIT 1');
+        if (defaultSupplier) {
+          const wwNo = generateOrderNo('WW');
+          const wwResult = db.run(
+            `INSERT INTO outsourcing_orders (order_no, supplier_id, production_order_id, process_id, total_amount, operator, remark, status) VALUES (?, ?, ?, ?, 0, '系统自动', ?, 'pending')`,
+            [wwNo, defaultSupplier.id, production.id, nextProcess.process_id, `自动创建 - 工序: ${nextProcess.process_name}`]
+          );
+          db.run('INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, 0)',
+            [wwResult.lastInsertRowid, production.product_id, production.quantity]);
+        }
+      }
+    }
+  } else {
+    // 最后一道工序完成 → 触发生产完成 + 成品入库
+    handleProductionComplete(db, production, outsourcing.process_id);
+  }
+
+  // 更新订单进度
+  if (production.order_id) {
+    updateOrderProgress(db, production.order_id, production.id);
+  }
+}
+
+/**
+ * 生产工单完成 → 成品自动入库
+ */
+function handleProductionComplete(db, production, processId) {
+  const currentProcessInfo = db.get('SELECT * FROM processes WHERE id = ?', [processId]);
+  db.run('UPDATE production_orders SET current_process = ?, status = ?, end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [currentProcessInfo?.code || '', 'completed', production.id]);
+
+  const existingInbound = db.get(`SELECT * FROM inbound_orders WHERE production_order_id = ? AND type = 'finished'`, [production.id]);
+  if (existingInbound) return;
+
+  const finishedWarehouse = db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
+  if (!finishedWarehouse) return;
+
+  const inNo = generateOrderNo('IN');
+  const inResult = db.run(
+    `INSERT INTO inbound_orders (order_no, type, warehouse_id, production_order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
+    [inNo, finishedWarehouse.id, production.id, `生产完成自动入库 - 生产工单: ${production.order_no}`]
+  );
+  db.run(`INSERT INTO inbound_items (inbound_id, product_id, quantity, unit_price) VALUES (?, ?, ?, 0)`,
+    [inResult.lastInsertRowid, production.product_id, production.quantity]);
+
+  const inv = db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ?',
+    [finishedWarehouse.id, production.product_id]);
+  if (inv) {
+    db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [production.quantity, inv.id]);
+  } else {
+    db.run('INSERT INTO inventory (warehouse_id, product_id, quantity) VALUES (?, ?, ?)',
+      [finishedWarehouse.id, production.product_id, production.quantity]);
+  }
+}
+
+/**
+ * 更新订单整体进度
+ */
+function updateOrderProgress(db, orderId, completedProductionId) {
+  const productionOrders = db.all('SELECT * FROM production_orders WHERE order_id = ?', [orderId]);
+  let totalProgress = 0;
+  productionOrders.forEach(po => {
+    if (po.id === completedProductionId || po.status === 'completed') {
+      totalProgress += 100;
+    } else {
+      const pp = db.all(`SELECT pp.id FROM product_processes pp WHERE pp.product_id = ?`, [po.product_id]);
+      const cp = db.all(`SELECT ppr.process_id FROM production_process_records ppr WHERE ppr.production_order_id = ? AND ppr.status = 'completed'`, [po.id]);
+      if (pp.length > 0) totalProgress += Math.round((cp.length / pp.length) * 100);
+    }
+  });
+  const avgProgress = Math.round(totalProgress / productionOrders.length);
+  const newStatus = avgProgress >= 100 ? 'completed' : avgProgress > 0 ? 'processing' : 'pending';
+  db.run('UPDATE orders SET progress = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [avgProgress, newStatus, orderId]);
+}
+
+// ==================== 路由 ====================
+
 router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), (req, res) => {
   try {
     const { status } = req.body;
-    // 【安全】状态值白名单校验
     const validStatuses = ['pending', 'confirmed', 'processing', 'completed', 'received', 'inspection_passed', 'inspection_failed', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
@@ -133,101 +281,14 @@ router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), (re
     
     req.db.transaction(() => {
       const outsourcing = req.db.get(`SELECT oo.*, s.name as supplier_name FROM outsourcing_orders oo LEFT JOIN suppliers s ON oo.supplier_id = s.id WHERE oo.id = ?`, [req.params.id]);
-      // 【防重复】只有从非完成状态变为 completed/received 时才执行入库联动
       const alreadyProcessed = outsourcing && (outsourcing.status === 'completed' || outsourcing.status === 'received');
+
       if ((status === 'completed' || status === 'received') && !alreadyProcessed) {
         const items = req.db.all('SELECT * FROM outsourcing_items WHERE outsourcing_order_id = ?', [req.params.id]);
-        if (items.length > 0) {
-          const warehouse = req.db.get("SELECT id FROM warehouses WHERE type = 'semi' LIMIT 1");
-          if (warehouse) {
-            const inboundNo = generateOrderNo('IN');
-            let totalAmount = 0;
-            items.forEach(item => { totalAmount += (item.quantity || 0) * (item.unit_price || 0); });
-            const inboundResult = req.db.run(`INSERT INTO inbound_orders (order_no, type, warehouse_id, supplier_id, total_amount, operator, remark, status) VALUES (?, 'semi', ?, ?, ?, ?, ?, 'approved')`,
-              [inboundNo, warehouse.id, outsourcing.supplier_id, totalAmount, '委外入库', `委外单: ${outsourcing.order_no}`]);
-            const inboundId = inboundResult.lastInsertRowid;
-            items.forEach((item, index) => {
-              const batchNo = `${inboundNo}-${index + 1}`;
-              req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, ?)', [inboundId, item.product_id, batchNo, item.returned_quantity || item.quantity, item.unit_price || 0]);
-              const existing = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse.id, item.product_id, batchNo]);
-              if (existing) { req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.returned_quantity || item.quantity, existing.id]); }
-              else { req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [warehouse.id, item.product_id, batchNo, item.returned_quantity || item.quantity]); }
-            });
-          }
-        }
-        
-        // 【联动#1】委外完成后自动推进生产工序
-        if (outsourcing && outsourcing.production_order_id && outsourcing.process_id) {
-          const production = req.db.get('SELECT * FROM production_orders WHERE id = ?', [outsourcing.production_order_id]);
-          if (production && production.status !== 'completed') {
-            // 标记该工序为完成
-            const processRecord = req.db.get('SELECT * FROM production_process_records WHERE production_order_id = ? AND process_id = ?',
-              [production.id, outsourcing.process_id]);
-            if (processRecord && processRecord.status !== 'completed') {
-              req.db.run(`UPDATE production_process_records SET status = 'completed', operator = '委外完成', end_time = CURRENT_TIMESTAMP, outsourcing_id = ? WHERE id = ?`,
-                [req.params.id, processRecord.id]);
-            }
-            // 推进到下一个工序
-            const productProcesses = req.db.all(`SELECT pp.*, p.code as process_code, p.name as process_name FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [production.product_id]);
-            const currentIndex = productProcesses.findIndex(pp => pp.process_id == outsourcing.process_id);
-            if (currentIndex >= 0 && currentIndex < productProcesses.length - 1) {
-              // 还有下一道工序
-              const nextProcess = productProcesses[currentIndex + 1];
-              req.db.run('UPDATE production_orders SET current_process = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                [nextProcess.process_code, production.id]);
-              // 如果下一道也是委外，自动创建委外单
-              if (nextProcess.is_outsourced === 1) {
-                const existingNext = req.db.get('SELECT * FROM outsourcing_orders WHERE production_order_id = ? AND process_id = ?', [production.id, nextProcess.process_id]);
-                if (!existingNext) {
-                  const defaultSupplier = req.db.get('SELECT id FROM suppliers LIMIT 1');
-                  if (defaultSupplier) {
-                    const wwNo = generateOrderNo('WW');
-                    const wwResult = req.db.run(`INSERT INTO outsourcing_orders (order_no, supplier_id, production_order_id, process_id, total_amount, operator, remark, status) VALUES (?, ?, ?, ?, 0, '系统自动', ?, 'pending')`,
-                      [wwNo, defaultSupplier.id, production.id, nextProcess.process_id, `自动创建 - 工序: ${nextProcess.process_name}`]);
-                    req.db.run('INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, 0)',
-                      [wwResult.lastInsertRowid, production.product_id, production.quantity]);
-                  }
-                }
-              }
-            } else if (currentIndex === productProcesses.length - 1) {
-              // 最后一道工序完成，触发生产完成链
-              const currentProcessInfo = req.db.get('SELECT * FROM processes WHERE id = ?', [outsourcing.process_id]);
-              req.db.run('UPDATE production_orders SET current_process = ?, status = ?, end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                [currentProcessInfo?.code || '', 'completed', production.id]);
-              // 自动创建成品入库单
-              const existingInbound = req.db.get(`SELECT * FROM inbound_orders WHERE production_order_id = ? AND type = 'finished'`, [production.id]);
-              if (!existingInbound) {
-                const finishedWarehouse = req.db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
-                if (finishedWarehouse) {
-                  const inNo = generateOrderNo('IN');
-                  const inResult = req.db.run(`INSERT INTO inbound_orders (order_no, type, warehouse_id, production_order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
-                    [inNo, finishedWarehouse.id, production.id, `生产完成自动入库 - 生产工单: ${production.order_no}`]);
-                  req.db.run(`INSERT INTO inbound_items (inbound_id, product_id, quantity, unit_price) VALUES (?, ?, ?, 0)`, [inResult.lastInsertRowid, production.product_id, production.quantity]);
-                  const inv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ?', [finishedWarehouse.id, production.product_id]);
-                  if (inv) { req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [production.quantity, inv.id]); }
-                  else { req.db.run('INSERT INTO inventory (warehouse_id, product_id, quantity) VALUES (?, ?, ?)', [finishedWarehouse.id, production.product_id, production.quantity]); }
-                }
-              }
-              // 更新订单进度
-              if (production.order_id) {
-                const productionOrders = req.db.all('SELECT * FROM production_orders WHERE order_id = ?', [production.order_id]);
-                let totalProgress = 0;
-                productionOrders.forEach(po => {
-                  if (po.id === production.id || po.status === 'completed') { totalProgress += 100; }
-                  else {
-                    const pp = req.db.all(`SELECT pp.id FROM product_processes pp WHERE pp.product_id = ?`, [po.product_id]);
-                    const cp = req.db.all(`SELECT ppr.process_id FROM production_process_records ppr WHERE ppr.production_order_id = ? AND ppr.status = 'completed'`, [po.id]);
-                    if (pp.length > 0) totalProgress += Math.round((cp.length / pp.length) * 100);
-                  }
-                });
-                const avgProgress = Math.round(totalProgress / productionOrders.length);
-                let newStatus = avgProgress >= 100 ? 'completed' : avgProgress > 0 ? 'processing' : 'pending';
-                req.db.run('UPDATE orders SET progress = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [avgProgress, newStatus, production.order_id]);
-              }
-            }
-          }
-        }
+        handleOutsourcingInbound(req.db, outsourcing, items);
+        advanceProductionProcess(req.db, outsourcing);
       }
+
       req.db.run('UPDATE outsourcing_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
     });
     writeLog(req.db, req.user?.id, '委外状态变更', 'outsourcing', req.params.id, `状态: ${status}`);

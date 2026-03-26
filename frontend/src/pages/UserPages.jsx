@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 import Modal from '../components/Modal';
 import SearchFilter from '../components/SearchFilter';
 import SearchSelect from '../components/SearchSelect';
@@ -7,6 +8,8 @@ import Table from '../components/Table';
 
 const RoleManager = () => {
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
+
   const [permissions, setPermissions] = useState([]);
   const [modal, setModal] = useState({ open: false, item: null, permissionIds: [] });
   const [searchText, setSearchText] = useState('');
@@ -47,7 +50,7 @@ const RoleManager = () => {
   };
   
   const del = async (item) => {
-    if (!confirm('确定删除？')) return;
+    if (!await confirm('确定删除？')) return;
     const res = await api.del(`/roles/${item.id}`);
     res.success ? load() : window.__toast?.error(res.message);
   };
@@ -101,6 +104,7 @@ const RoleManager = () => {
 
 const PermissionManager = () => {
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
   const [modal, setModal] = useState({ open: false, item: null });
   const [searchText, setSearchText] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
@@ -130,7 +134,7 @@ const PermissionManager = () => {
   };
   
   const del = async (item) => {
-    if (!confirm('确定删除该权限？')) return;
+    if (!await confirm('确定删除该权限？')) return;
     const res = await api.del(`/permissions/${item.id}`);
     res.success ? load() : window.__toast?.error(res.message);
   };
@@ -192,6 +196,7 @@ const PermissionManager = () => {
 
 const UserManager = ({ userType }) => {
   const [data, setData] = useState([]);
+  const [confirm, ConfirmDialog] = useConfirm();
   const [departments, setDepartments] = useState([]);
   const [roles, setRoles] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -249,7 +254,7 @@ const UserManager = ({ userType }) => {
   };
   
   const del = async (item) => {
-    if (!confirm('确定删除？')) return;
+    if (!await confirm('确定删除？')) return;
     const res = await api.del(`/users/${item.id}`);
     res.success ? load() : window.__toast?.error(res.message);
   };
