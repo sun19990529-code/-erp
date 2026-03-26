@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import Modal from '../components/Modal';
 import Table from '../components/Table';
+import SearchFilter from '../components/SearchFilter';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import ProcessConfigPanel from '../components/ProcessConfigPanel';
 

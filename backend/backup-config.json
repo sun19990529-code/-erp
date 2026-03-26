@@ -5,6 +5,6 @@
   "intervalHours": 6,
   "backupPath": "D:\\项目\\erp-mes-system\\backups",
   "maxBackups": 15,
-  "lastBackup": "2026-03-25T14:37:36.476Z",
-  "nextBackup": "2026-03-25T20:37:36.476Z"
+  "lastBackup": "2026-03-25T21:02:14.271Z",
+  "nextBackup": "2026-03-26T03:02:14.271Z"
 }
