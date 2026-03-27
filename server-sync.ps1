@@ -33,29 +33,16 @@ npm install --production
 Set-Location ..
 
 Write-Host "(5/5) Restarting service..." -ForegroundColor Yellow
-
-# Stop any running node server
-Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-
-# Try PM2 first
-$pm2OK = $true
-try {
+pm2 restart erp 2>$null
+if ($LASTEXITCODE -ne 0) {
     Remove-Item -Recurse -Force "$env:USERPROFILE\.pm2" -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
     Set-Location F:\erp-mes-system\backend
-    pm2 start server.js --name erp 2>$null
-    if ($LASTEXITCODE -ne 0) { $pm2OK = $false }
-    else { pm2 save 2>$null }
+    pm2 start server.js --name erp
+    pm2 save
     Set-Location ..
-} catch {
-    $pm2OK = $false
-}
-
-# Fallback: start node directly
-if (-not $pm2OK) {
-    Write-Host "  PM2 unavailable, starting node directly..." -ForegroundColor Yellow
-    Start-Process -FilePath "node" -ArgumentList "server.js" -WorkingDirectory "F:\erp-mes-system\backend" -WindowStyle Hidden
+} else {
+    pm2 save 2>$null
 }
 
 Write-Host ""
