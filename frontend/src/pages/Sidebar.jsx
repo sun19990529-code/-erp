@@ -23,6 +23,7 @@ const menuConfig = [
       { key: 'pick-material', label: '领料管理' },
       { key: 'process-config', label: '工序流转配置' },
       { key: 'process-hub', label: '车间报工大厅' },
+      { key: 'cost-card', label: '工单成本卡' },
     ]
   },
   {
@@ -35,6 +36,7 @@ const menuConfig = [
     ]
   },
   { key: 'purchase-hub', label: '采购单据中心', icon: 'fa-shopping-cart' },
+  { key: 'purchase-suggestion', label: '智能采购建议', icon: 'fa-lightbulb' },
   { key: 'outsourcing-hub', label: '委外单据中心', icon: 'fa-truck' },
   {
     key: 'product', label: '产品档案', icon: 'fa-box',
@@ -80,11 +82,13 @@ const menuPermissions = {
   'production-schedule': 'production_view', 'production-orders': 'production_view',
   'pick-material': 'production_create', 'process-config': 'production_edit',
   'process-hub': 'production_edit',
+  'cost-card': 'production_view',
   // 质量检验
   'inspection-inbound': 'inspection_view', 'inspection-patrol': 'inspection_view',
   'inspection-outsourcing': 'inspection_view', 'inspection-final': 'inspection_view',
   // 采购管理
   'purchase-hub': 'purchase_view',
+  'purchase-suggestion': 'purchase_view',
   // 委外加工
   'outsourcing-hub': 'outsourcing_view',
   // 产品档案（属于基础数据模块）

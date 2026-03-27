@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { api } from '../api';
 
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.5.5';
+
 const LoginPage = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -48,7 +50,7 @@ const LoginPage = ({ onLogin }) => {
         {/* 居中核心信息 */}
         <div className="relative z-10 my-auto pt-10">
           <div className="inline-block px-4 py-1.5 rounded-full border border-teal-400/30 bg-teal-400/10 backdrop-blur-sm text-teal-200 text-sm font-medium mb-8 fade-in" style={{animationDelay: '0.1s'}}>
-            <i className="fas fa-rocket mr-2"></i> 全新一代制造执行系统 v1.5.1
+            <i className="fas fa-rocket mr-2"></i> 全新一代制造执行系统 v{APP_VERSION}
           </div>
           <h1 className="text-5xl lg:text-6xl font-extrabold text-white mb-6 leading-[1.1] tracking-tight fade-in" style={{animationDelay: '0.2s'}}>
             智能化制造 <br/>

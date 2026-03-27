@@ -35,6 +35,8 @@ const AboutSystem = React.lazy(() => import('./pages/SettingsPages').then(m => (
 const ScanStation = React.lazy(() => import('./components/ScanStation'));
 const WorkshopMonitor = React.lazy(() => import('./pages/WorkshopMonitor'));
 const TrackingPage = React.lazy(() => import('./pages/TrackingPage'));
+const PurchaseSuggestionPage = React.lazy(() => import('./pages/PurchaseSuggestionPage'));
+const CostCardPage = React.lazy(() => import('./pages/CostCardPage'));
 const AUTH_KEY = 'erp_user_auth';
 
 // 路由 ↔ 菜单 映射表
@@ -71,6 +73,8 @@ const MENU_ROUTES = {
   'settings-about': '/settings/about',
   'workshop-monitor': '/monitor',
   'batch-tracking': '/tracking',
+  'purchase-suggestion': '/purchase/suggestions',
+  'cost-card': '/production/cost',
 };
 
 // 反向映射：path → menuKey
@@ -157,6 +161,8 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/settings/about" element={<AboutSystem />} />
                 <Route path="/monitor" element={<WorkshopMonitor onExit={() => setActiveMenu('dashboard')} />} />
                 <Route path="/tracking" element={<TrackingPage />} />
+                <Route path="/purchase/suggestions" element={<PurchaseSuggestionPage />} />
+                <Route path="/production/cost" element={<CostCardPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               </Suspense>

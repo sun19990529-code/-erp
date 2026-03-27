@@ -790,14 +790,13 @@ const ProductionScheduleGantt = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [statusFilter, setStatusFilter] = useState('active'); // active|all|completed
+  const [hoveredOrder, setHoveredOrder] = useState(null);
   
   const load = () => {
     setLoading(true);
     api.get('/production').then(res => {
-      if (res.success) {
-        const activeOrders = res.data.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
-        setData(activeOrders);
-      }
+      if (res.success) setData(res.data || []);
       setLoading(false);
     });
   };
@@ -805,10 +804,32 @@ const ProductionScheduleGantt = () => {
   useEffect(() => { load(); }, []);
   
   if (loading) return <div className="text-center p-10"><i className="fas fa-spinner fa-spin text-3xl text-teal-500"></i></div>;
-  if (data.length === 0) return <div className="text-center p-10 bg-white rounded-xl shadow mt-4 text-gray-500">暂无待定或生产中的订单记录</div>;
+
+  // 按状态过滤
+  const filteredData = data.filter(o => {
+    if (statusFilter === 'active') return o.status !== 'completed' && o.status !== 'cancelled';
+    if (statusFilter === 'completed') return o.status === 'completed';
+    return true;
+  });
+
+  if (filteredData.length === 0) return (
+    <div className="fade-in">
+      <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
+        <h2 className="text-xl font-bold">APS 全局生产排程推演板</h2>
+        <div className="flex items-center gap-2">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="text-xs border rounded px-2 py-1">
+            <option value="active">进行中</option>
+            <option value="completed">已完成</option>
+            <option value="all">全部</option>
+          </select>
+        </div>
+      </div>
+      <div className="text-center p-10 bg-white rounded-xl shadow mt-4 text-gray-500">暂无工单记录</div>
+    </div>
+  );
   
   const now = new Date().getTime();
-  const sortedData = [...data].sort((a, b) => {
+  const sortedData = [...filteredData].sort((a, b) => {
     const tA = a.start_time ? new Date(a.start_time).getTime() : new Date(a.created_at).getTime();
     const tB = b.start_time ? new Date(b.start_time).getTime() : new Date(b.created_at).getTime();
     return tA - tB;
@@ -840,11 +861,23 @@ const ProductionScheduleGantt = () => {
     { label: '全部', getDates: () => ({ start: '', end: '' }) },
   ];
 
+  const statusColors = {
+    processing: { bar: 'from-teal-500 to-cyan-500', progress: 'bg-teal-300/40' },
+    pending:    { bar: 'from-gray-400 to-gray-500', progress: 'bg-gray-300/40' },
+    completed:  { bar: 'from-green-500 to-emerald-500', progress: 'bg-green-300/40' },
+    cancelled:  { bar: 'from-red-400 to-red-500', progress: 'bg-red-300/40' },
+  };
+
   return (
     <div className="fade-in">
       <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
         <h2 className="text-xl font-bold">APS 全局生产排程推演板</h2>
         <div className="flex flex-wrap items-center gap-2">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="text-xs border rounded px-2 py-1">
+            <option value="active">进行中</option>
+            <option value="completed">已完成</option>
+            <option value="all">全部</option>
+          </select>
           {quickRanges.map(r => (
             <button key={r.label} onClick={() => setDateRange(r.getDates())}
               className="text-xs px-3 py-1 border border-teal-300 text-teal-700 rounded-full hover:bg-teal-50 transition-colors">
@@ -861,12 +894,19 @@ const ProductionScheduleGantt = () => {
         <div className="w-64 border-r border-gray-200 bg-white z-20 relative flex-shrink-0">
           <div className="h-12 border-b border-gray-200 bg-gray-50 flex items-center px-4 font-bold text-gray-700 text-sm">生产工单</div>
           <div>
-            {sortedData.map(order => (
-              <div key={order.id} className="h-14 border-b border-gray-100 flex flex-col justify-center px-4 hover:bg-teal-50 cursor-pointer group">
-                <span className="font-semibold text-sm text-gray-800 truncate group-hover:text-teal-700">{order.order_no}</span>
-                <span className="text-xs text-gray-500 truncate">{order.product_name}</span>
-              </div>
-            ))}
+            {sortedData.map(order => {
+              const progress = order.quantity > 0 ? Math.min(100, Math.round((order.completed_quantity || 0) / order.quantity * 100)) : 0;
+              return (
+                <div key={order.id} className="h-14 border-b border-gray-100 flex items-center px-4 hover:bg-teal-50 cursor-pointer group gap-3"
+                  onMouseEnter={() => setHoveredOrder(order.id)} onMouseLeave={() => setHoveredOrder(null)}>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-sm text-gray-800 truncate group-hover:text-teal-700 block">{order.order_no}</span>
+                    <span className="text-xs text-gray-500 truncate block">{order.product_name}</span>
+                  </div>
+                  <span className={`text-xs font-bold ${progress === 100 ? 'text-green-600' : progress > 0 ? 'text-teal-600' : 'text-gray-400'}`}>{progress}%</span>
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="overflow-x-auto flex-1">
@@ -874,10 +914,11 @@ const ProductionScheduleGantt = () => {
             <div className="h-12 border-b border-gray-200 flex sticky top-0 bg-gray-50 z-10">
               {days.map((d, i) => {
                 const isToday = new Date().toDateString() === d.toDateString();
+                const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                 return (
-                  <div key={i} className={`flex-shrink-0 flex flex-col items-center justify-center border-r border-gray-200 ${isToday ? "bg-teal-100 font-bold" : ""}`} style={{ width: `${dayWidth}px` }}>
+                  <div key={i} className={`flex-shrink-0 flex flex-col items-center justify-center border-r border-gray-200 ${isToday ? "bg-teal-100 font-bold" : isWeekend ? "bg-gray-100/50" : ""}`} style={{ width: `${dayWidth}px` }}>
                     <span className="text-xs">{d.getMonth()+1}-{d.getDate()}</span>
-                    <span className="text-[10px] opacity-70">周{['日','一','二','三','四','五','六'][d.getDay()]}</span>
+                    <span className={`text-[10px] ${isWeekend ? 'text-red-400' : 'opacity-70'}`}>周{['日','一','二','三','四','五','六'][d.getDay()]}</span>
                   </div>
                 );
               })}
@@ -891,14 +932,35 @@ const ProductionScheduleGantt = () => {
                 let eT = order.end_time ? new Date(order.end_time).getTime() : sT + 3*24*3600*1000;
                 if (eT < sT) eT = sT + 24*3600*1000;
                 const left = (sT - minDate) / (24*3600*1000) * dayWidth;
-                const width = Math.max((eT - sT) / (24*3600*1000) * dayWidth, 20);
-                const isActive = order.status === 'processing';
+                const width = Math.max((eT - sT) / (24*3600*1000) * dayWidth, 30);
+                const progress = order.quantity > 0 ? Math.min(100, (order.completed_quantity || 0) / order.quantity * 100) : 0;
+                const colors = statusColors[order.status] || statusColors.pending;
+                const isHovered = hoveredOrder === order.id;
                 return (
-                  <div key={order.id} className="h-14 border-b border-transparent relative flex items-center">
-                    <div className={`absolute h-8 rounded-md shadow flex items-center px-3 text-xs text-white font-medium cursor-pointer hover:-translate-y-0.5 transition-all ${isActive ? "bg-gradient-to-r from-teal-500 to-cyan-500" : "bg-gradient-to-r from-gray-400 to-gray-500"}`}
+                  <div key={order.id} className="h-14 border-b border-transparent relative flex items-center"
+                    onMouseEnter={() => setHoveredOrder(order.id)} onMouseLeave={() => setHoveredOrder(null)}>
+                    <div className={`absolute h-8 rounded-md shadow-sm overflow-hidden flex items-center text-xs text-white font-medium cursor-pointer transition-all ${isHovered ? '-translate-y-0.5 shadow-md' : ''}`}
                       style={{ left: `${left}px`, width: `${width}px` }}>
-                      <span className="truncate">{order.quantity} {order.unit||'件'} - {order.operator||'未派工'}</span>
+                      {/* 背景渐变 */}
+                      <div className={`absolute inset-0 bg-gradient-to-r ${colors.bar}`}></div>
+                      {/* 进度条 */}
+                      {progress > 0 && progress < 100 && (
+                        <div className={`absolute inset-y-0 left-0 ${colors.progress}`} style={{ width: `${progress}%` }}></div>
+                      )}
+                      <span className="relative truncate px-3 z-10">{order.quantity} {order.unit||'件'} - {order.operator||'未派工'}</span>
                     </div>
+                    {/* Tooltip */}
+                    {isHovered && (
+                      <div className="absolute z-30 bg-gray-900 text-white p-3 rounded-lg shadow-xl text-xs max-w-xs pointer-events-none"
+                        style={{ left: `${left + width / 2}px`, top: '-8px', transform: 'translateX(-50%) translateY(-100%)' }}>
+                        <div className="font-bold mb-1">{order.order_no}</div>
+                        <div>产品: {order.product_name}</div>
+                        {order.customer_name && <div>客户: {order.customer_name}</div>}
+                        <div>进度: {order.completed_quantity || 0}/{order.quantity} ({Math.round(progress)}%)</div>
+                        {order.current_process && <div>工序: {order.current_process}</div>}
+                        <div className="absolute left-1/2 -bottom-1 w-2 h-2 bg-gray-900 transform -translate-x-1/2 rotate-45"></div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -906,9 +968,11 @@ const ProductionScheduleGantt = () => {
           </div>
         </div>
       </div>
-      <div className="mt-4 flex gap-4 text-sm text-gray-500 justify-end">
+      <div className="mt-4 flex gap-4 text-sm text-gray-500 justify-end flex-wrap">
         <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-gradient-to-r from-teal-500 to-cyan-500"></div> 生产中</div>
         <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-gradient-to-r from-gray-400 to-gray-500"></div> 待处理</div>
+        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-gradient-to-r from-green-500 to-emerald-500"></div> 已完成</div>
+        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-gradient-to-r from-red-400 to-red-500"></div> 已取消</div>
       </div>
     </div>
   );

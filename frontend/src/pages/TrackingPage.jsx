@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
+import { exportMultiSheet } from '../utils/export';
 
 const TrackingPage = () => {
   const [keyword, setKeyword] = useState('');
@@ -61,6 +62,45 @@ const TrackingPage = () => {
           </h2>
           <p className="text-sm text-gray-500 mt-1">追踪批次从原材料入库到成品出库的完整生命周期</p>
         </div>
+        {result && (
+          <button onClick={() => exportMultiSheet(
+            `批次溯源_${result.batch_no}_${new Date().toISOString().slice(0,10)}`,
+            [
+              { sheetName: '时间线', columns: [
+                { header: '时间', key: 'time', width: 18 },
+                { header: '类型', key: 'title', width: 8 },
+                { header: '描述', key: 'description', width: 25 },
+                { header: '详情', key: 'detail', width: 25 },
+                { header: '备注', key: r => r.extra || '', width: 20 },
+              ], data: result.timeline },
+              { sheetName: '入库记录', columns: [
+                { header: '单号', key: 'order_no', width: 18 },
+                { header: '仓库', key: 'warehouse_name', width: 12 },
+                { header: '产品', key: 'product_name', width: 18 },
+                { header: '数量', key: 'quantity', width: 10 },
+                { header: '单价', key: 'unit_price', width: 10 },
+                { header: '供应商', key: r => r.supplier_name || '', width: 15 },
+                { header: '时间', key: 'created_at', width: 18 },
+              ], data: result.details.inbound },
+              { sheetName: '领料记录', columns: [
+                { header: '单号', key: 'order_no', width: 18 },
+                { header: '物料', key: 'material_name', width: 18 },
+                { header: '数量', key: 'quantity', width: 10 },
+                { header: '生产工单', key: r => r.production_order_no || '', width: 18 },
+                { header: '时间', key: 'created_at', width: 18 },
+              ], data: result.details.pick },
+              { sheetName: '出库记录', columns: [
+                { header: '单号', key: 'order_no', width: 18 },
+                { header: '产品', key: 'product_name', width: 18 },
+                { header: '数量', key: 'quantity', width: 10 },
+                { header: '客户', key: r => r.customer_name || '', width: 15 },
+                { header: '时间', key: 'created_at', width: 18 },
+              ], data: result.details.outbound },
+            ]
+          )} className="px-3 py-2 border rounded-lg hover:bg-gray-50 text-sm flex items-center gap-1">
+            <i className="fas fa-file-excel text-green-600"></i>导出Excel
+          </button>
+        )}
       </div>
 
       {/* 搜索栏 */}
@@ -125,7 +165,7 @@ const TrackingPage = () => {
           {/* 产品信息 + 统计摘要 */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
             {/* 产品信息 */}
-            <div className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:-translate-y-1 hover:shadow-md transition-all duration-300">
               <div className="text-xs text-gray-400 uppercase tracking-wider mb-2">批次信息</div>
               <div className="font-bold text-lg text-teal-700 mb-2 break-all">{result.batch_no}</div>
               <div className="space-y-1 text-sm text-gray-600">
@@ -143,7 +183,7 @@ const TrackingPage = () => {
               { label: '已出库', value: result.summary.total_outbound, unit: result.product?.unit || '件', icon: 'fa-arrow-up', color: 'text-red-600', bg: 'bg-red-50' },
               { label: '当前库存', value: result.summary.current_stock, unit: result.product?.unit || '件', icon: 'fa-warehouse', color: 'text-blue-600', bg: 'bg-blue-50' },
             ].map((card, i) => (
-              <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+              <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:-translate-y-1 hover:shadow-md transition-all duration-300">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-gray-400 uppercase tracking-wider">{card.label}</span>
                   <div className={`w-8 h-8 rounded-lg ${card.bg} flex items-center justify-center`}>

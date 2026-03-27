@@ -35,8 +35,14 @@ const apiRequest = async (url, options = {}) => {
 
     const res = await fetch(API_BASE + url, options);
 
-    // Token 失效：尝试静默刷新
+    // Token 失效：尝试静默刷新（登录请求本身不走 refresh 流程）
     if (res.status === 401) {
+      // 登录/注册等认证请求：直接返回错误信息，不走 refresh
+      if (NO_CACHE_PATHS.some(p => url.includes(p))) {
+        const text = await res.text();
+        try { return JSON.parse(text); } catch { return { success: false, message: '账号或密码错误' }; }
+      }
+
       if (_isRefreshing) {
         return new Promise(resolve => {
           _refreshSubscribers.push(newToken => {

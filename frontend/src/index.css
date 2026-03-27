@@ -62,6 +62,16 @@ body {
 
 /* ================== 下方保留原有自定义类 ================== */
 
+/* 全局清除所有元素的焦点黑框 */
+*:focus {
+  outline: none !important;
+}
+/* 键盘 Tab 导航时回补柔和的焦点指示（无障碍兼容） */
+*:focus-visible {
+  outline: 2px solid rgba(20, 184, 166, 0.5) !important;
+  outline-offset: 2px;
+}
+
     ::-webkit-scrollbar-track { background: #f1f5f9; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
