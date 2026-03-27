@@ -27,21 +27,17 @@ npm install --production
 Set-Location ..
 
 Write-Host "(5/5) Restarting service..." -ForegroundColor Yellow
-
-# Stop old node processes running server.js
-Get-Process -Name "node" -ErrorAction SilentlyContinue | ForEach-Object {
-    $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-    if ($cmdLine -match "server\.js") {
-        Write-Host "  Stopping old process (PID: $($_.Id))..." -ForegroundColor Gray
-        Stop-Process -Id $_.Id -Force
-    }
+pm2 restart erp 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  PM2 restart failed, cleaning up..." -ForegroundColor Yellow
+    Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force "$env:USERPROFILE\.pm2" -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    Set-Location F:\erp-mes-system\backend
+    pm2 start server.js --name erp
+    pm2 save
+    Set-Location ..
 }
-Start-Sleep -Seconds 1
-
-# Start node in background (no PM2 needed)
-Set-Location F:\erp-mes-system\backend
-Start-Process -FilePath "node" -ArgumentList "server.js" -WorkingDirectory "F:\erp-mes-system\backend" -WindowStyle Hidden
-Set-Location ..
 
 Write-Host ""
 Write-Host "Sync complete! http://localhost:3198" -ForegroundColor Green
