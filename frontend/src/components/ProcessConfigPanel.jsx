@@ -16,6 +16,7 @@ const ProcessConfigPanel = ({
   processes = [],
   productProcesses = [],
   rawMaterials = [],
+  allProducts = [],
   materialCategoryId = '',
   materialCategories = [],
   onChange,
@@ -27,7 +28,7 @@ const ProcessConfigPanel = ({
   const addProcessRow = () => {
     updateProcesses([
       ...productProcesses,
-      { process_id: '', sequence: productProcesses.length + 1, is_outsourced: 0, remark: '', materials: [] }
+      { process_id: '', sequence: productProcesses.length + 1, is_outsourced: 0, remark: '', materials: [], output_product_id: '' }
     ]);
   };
 
@@ -112,6 +113,12 @@ const ProcessConfigPanel = ({
                     ? processes.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)
                     : <option disabled>未获取到工序数据</option>}
                 </select>
+                <select value={p.output_product_id || ''}
+                  onChange={e => updateProcessRow(i, 'output_product_id', e.target.value ? parseInt(e.target.value) : null)}
+                  className="w-40 border rounded px-2 py-1 text-sm" title="该工序完成后产出的半成品/成品">
+                  <option value="">输出产物(可选)</option>
+                  {allProducts.map(ap => <option key={ap.id} value={ap.id}>[{ap.category}] {ap.name}</option>)}
+                </select>
                 <label className="flex items-center gap-1 cursor-pointer text-sm whitespace-nowrap">
                   <input type="checkbox" checked={p.is_outsourced}
                     onChange={e => updateProcessRow(i, 'is_outsourced', e.target.checked ? 1 : 0)}
@@ -160,14 +167,20 @@ const ProcessConfigPanel = ({
                           <select value={m.material_id}
                             onChange={e => updateMaterialRow(i, mi, 'material_id', e.target.value)}
                             className="flex-1 border rounded px-2 py-1 text-sm">
-                            <option value="">选择原材料</option>
-                            {filteredMaterials.length > 0
-                              ? filteredMaterials.map(rm => (
-                                  <option key={rm.id} value={rm.id}>
-                                    [{rm.category}] {rm.name} ({rm.specification || rm.code})
-                                  </option>
-                                ))
-                              : <option disabled>{catName ? `无「${catName}」材质的原材料` : '无可用原材料'}</option>}
+                            <option value="">选择物料</option>
+                            {(() => {
+                              const raw = filteredMaterials.filter(m => m.category === '原材料');
+                              const semi = filteredMaterials.filter(m => m.category === '半成品');
+                              const fmtMat = (rm) => {
+                                const prefix = rm.suppliers?.length ? `[${rm.suppliers.map(s => s.supplier_name).join('/')}] ` : '';
+                                return `${prefix}${rm.name} (${rm.specification || rm.code})`;
+                              };
+                              if (filteredMaterials.length === 0) return <option disabled>{catName ? `无「${catName}」材质的物料` : '无可用物料'}</option>;
+                              return (<>
+                                {raw.length > 0 && <optgroup label="原材料">{raw.map(rm => <option key={rm.id} value={rm.id}>{fmtMat(rm)}</option>)}</optgroup>}
+                                {semi.length > 0 && <optgroup label="半成品">{semi.map(rm => <option key={rm.id} value={rm.id}>{fmtMat(rm)}</option>)}</optgroup>}
+                              </>);
+                            })()}
                           </select>
                           <button type="button" onClick={() => removeMaterialRow(i, mi)}
                             className="text-red-400 hover:text-red-600">

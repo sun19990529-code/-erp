@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ProductionTrackingPanel } from './ProductionTracking';
 import OperatorSelect from '../components/OperatorSelect';
 import { api } from '../api';
@@ -21,21 +21,48 @@ const PickMaterialManager = () => {
   const [materials, setMaterials] = useState([]); // 原材料
   const [semiProducts, setSemiProducts] = useState([]); // 半成品
   const [finishedProducts, setFinishedProducts] = useState([]); // 成品（用于工序材料配置）
-  const [inventory, setInventory] = useState({});
   const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
   
-  const load = () => {
-    api.get('/pick').then(res => res.success && setData(res.data));
-    api.get('/orders?status=pending,processing').then(res => res.success && setOrders(res.data));
-    api.get('/warehouses?type=raw').then(res => res.success && setWarehouses(res.data));
-    api.get('/products?category=原材料').then(res => res.success && setMaterials(res.data));
-    api.get('/products?category=半成品').then(res => res.success && setSemiProducts(res.data));
-    api.get('/products?category=成品').then(res => res.success && setFinishedProducts(res.data));
+  const load = async () => {
+    const [pickRes, orderRes, whRes, rawRes, semiRes, finRes] = await Promise.all([
+      api.get('/pick'),
+      api.get('/orders?status=pending,processing'),
+      api.get('/warehouses?type=raw'),
+      api.get('/products?category=原材料'),
+      api.get('/products?category=半成品'),
+      api.get('/products?category=成品'),
+    ]);
+    if (pickRes.success) setData(pickRes.data);
+    if (orderRes.success) setOrders(orderRes.data);
+    if (whRes.success) setWarehouses(whRes.data);
+    if (rawRes.success) setMaterials(rawRes.data);
+    if (semiRes.success) setSemiProducts(semiRes.data);
+    if (finRes.success) setFinishedProducts(finRes.data);
   };
   useEffect(() => { load(); }, []);
   
   // 所有可用材料（原材料 + 半成品）
   const allMaterials = [...materials, ...semiProducts];
+  
+  // 下拉显示格式：[供应商/客户] 产品名
+  const fmtProduct = (p) => {
+    const prefix = p.suppliers?.length ? `[${p.suppliers.map(s => s.supplier_name).join('/')}] ` : '';
+    return `${prefix}${p.name} (${p.code})`;
+  };
+  const fmtFinished = (p) => {
+    const prefix = p.customers?.length ? `[${p.customers.map(c => c.customer_name).join('/')}] ` : '';
+    return `${prefix}${p.name} (${p.code})`;
+  };
+
+  // 按绑定关系过滤的物料列表（缓存避免每次渲染重复过滤）
+  const filteredRawForPick = useMemo(() => {
+    const bm = modal.boundMaterialIds;
+    return bm ? materials.filter(m => bm.includes(m.id)) : materials;
+  }, [modal.boundMaterialIds, materials]);
+  const filteredSemiForPick = useMemo(() => {
+    const bm = modal.boundMaterialIds;
+    return bm ? semiProducts.filter(m => bm.includes(m.id)) : semiProducts;
+  }, [modal.boundMaterialIds, semiProducts]);
   
   const openView = async (item) => {
     const res = await api.get(`/pick/${item.id}`);
@@ -73,11 +100,14 @@ const PickMaterialManager = () => {
     });
     
     const items = Array.from(materialMap.values());
+    // 获取成品绑定的物料ID列表用于过滤下拉
+    const boundIds = (product.bound_materials || []).map(m => m.material_id);
     setModal({ 
       open: true, 
       item: { product_id: product.id, product_name: product.name }, 
       items: items.length ? items : [{ material_id: '', quantity: '', input_quantity: '', input_unit: '公斤' }], 
-      mode: 'create' 
+      mode: 'create',
+      boundMaterialIds: boundIds.length > 0 ? boundIds : null
     });
   };
   
@@ -226,7 +256,7 @@ const PickMaterialManager = () => {
     if (unit === '吨') return quantity * 1000;
     if (unit === '支') {
       // 获取物料尺寸信息
-      const material = materials.find(m => String(m.id) === String(materialId));
+      const material = allMaterials.find(m => String(m.id) === String(materialId));
       if (material && material.outer_diameter && material.wall_thickness && material.length) {
         const outerDiameter = parseFloat(material.outer_diameter) || 0;
         const wallThickness = parseFloat(material.wall_thickness) || 0;
@@ -248,7 +278,7 @@ const PickMaterialManager = () => {
     // 如果修改了输入数量或物料，重新计算公斤数量
     const item = newItems[index];
     if (field === 'input_quantity' || field === 'material_id') {
-      const material = materials.find(m => String(m.id) === String(item.material_id));
+      const material = allMaterials.find(m => String(m.id) === String(item.material_id));
       const unit = material?.unit || '公斤';
       const inputQuantity = item.input_quantity || item.quantity || 0;
       item.quantity = convertToKg(inputQuantity, unit, item.material_id);
@@ -310,7 +340,7 @@ const PickMaterialManager = () => {
               <label className="block text-sm font-medium text-green-700 mb-1">选择成品</label>
               <select id="productSelect" className="w-full border border-green-300 rounded-lg px-3 py-2">
                 <option value="">请选择成品</option>
-                {finishedProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
+                {finishedProducts.map(p => <option key={p.id} value={p.id}>{fmtFinished(p)}</option>)}
               </select>
             </div>
             <div className="w-32">
@@ -429,12 +459,8 @@ const PickMaterialManager = () => {
                       <div className="w-full lg:flex-1 min-w-[200px]">
                         <select value={it.material_id} onChange={e => updateItem(i, 'material_id', e.target.value)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none bg-white">
                           <option value="">请选择物料</option>
-                          <optgroup label="原材料">
-                            {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.code})</option>)}
-                          </optgroup>
-                          <optgroup label="半成品">
-                            {semiProducts.map(m => <option key={m.id} value={m.id}>{m.name} ({m.code})</option>)}
-                          </optgroup>
+                          {filteredRawForPick.length > 0 && <optgroup label="原材料">{filteredRawForPick.map(m => <option key={m.id} value={m.id}>{fmtProduct(m)}</option>)}</optgroup>}
+                          {filteredSemiForPick.length > 0 && <optgroup label="半成品">{filteredSemiForPick.map(m => <option key={m.id} value={m.id}>{fmtProduct(m)}</option>)}</optgroup>}
                         </select>
                       </div>
                       <div className="w-[30%] lg:w-32">
@@ -493,11 +519,17 @@ const ProductionOrderManager = () => {
     DRAWING: '拉拔', CLEANING: '清洗', WIRE_CUTTING: '线切割', LASER_CUTTING: '激光切割', HEAT_TREATMENT: '热处理'
   };
   
-  const load = () => {
-    api.get('/production').then(res => res.success && setData(res.data));
-    api.get('/orders?status=pending,processing').then(res => res.success && setOrders(res.data));
-    api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
-    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
+  const load = async () => {
+    const [prodRes, orderRes, productRes, procRes] = await Promise.all([
+      api.get('/production'),
+      api.get('/orders?status=pending,processing'),
+      api.get('/products?category=成品'),
+      api.get('/production/processes'),
+    ]);
+    if (prodRes.success) setData(prodRes.data);
+    if (orderRes.success) setOrders(orderRes.data);
+    if (productRes.success) setProducts(productRes.data);
+    if (procRes.success) setProcesses(procRes.data);
   };
   useEffect(() => { load(); }, []);
   
@@ -749,7 +781,10 @@ const ProductionOrderManager = () => {
                 <label className="block text-sm font-medium mb-1">产品 *</label>
                 <select name="product_id" className="w-full border rounded-lg px-3 py-2" required defaultValue={modal.item?.product_id || ''}>
                   <option value="">请选择</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code}) - {p.unit}</option>)}
+                  {products.map(p => {
+                    const prefix = p.customers?.length ? `[${p.customers.map(c => c.customer_name).join('/')}] ` : '';
+                    return <option key={p.id} value={p.id}>{prefix}{p.name} ({p.code}) - {p.unit}</option>;
+                  })}
                 </select>
               </div>
               <div>

@@ -3,6 +3,17 @@ const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
 const { validateId } = require('../middleware/validate');
 
+// 产品字段列表（避免 POST/PUT 各写一遍）
+const PRODUCT_FIELDS = [
+  'code', 'name', 'specification', 'unit', 'category', 'unit_price',
+  'min_stock', 'max_stock', 'outer_diameter', 'inner_diameter',
+  'wall_thickness', 'length', 'supplier_id', 'material_category_id',
+  'tolerance_od', 'tolerance_id', 'tolerance_wt', 'tolerance_len',
+  'tolerance_od_lower', 'tolerance_id_lower', 'tolerance_wt_lower', 'tolerance_len_lower'
+];
+const pickFields = (body) => PRODUCT_FIELDS.map(f => body[f] !== undefined ? (body[f] || null) : null);
+const mergeFields = (body, existing) => PRODUCT_FIELDS.map(f => body[f] !== undefined ? body[f] : existing[f]);
+
 // 产品管理
 router.get('/', requirePermission('basic_data_view'), (req, res) => {
   try {
@@ -60,6 +71,21 @@ router.get('/', requirePermission('basic_data_view'), (req, res) => {
         p.suppliers = supplierMap.get(p.id) || [];
         p.customers = customerMap.get(p.id) || [];
       });
+      // 批量查询绑定物料
+      const allBoundMats = req.db.all(`
+        SELECT pbm.product_id, pbm.material_id, p.name as material_name, p.code as material_code, p.category as material_category
+        FROM product_bound_materials pbm
+        JOIN products p ON pbm.material_id = p.id
+        WHERE pbm.product_id IN (${ph})
+      `, pids);
+      const boundMatMap = new Map();
+      allBoundMats.forEach(m => {
+        if (!boundMatMap.has(m.product_id)) boundMatMap.set(m.product_id, []);
+        boundMatMap.get(m.product_id).push(m);
+      });
+      products.forEach(p => {
+        p.bound_materials = boundMatMap.get(p.id) || [];
+      });
     }
     res.json({ success: true, data: products });
   } catch (error) {
@@ -70,11 +96,7 @@ router.get('/', requirePermission('basic_data_view'), (req, res) => {
 
 router.post('/', requirePermission('basic_data_create'), (req, res) => {
   try {
-    const {
-      code, name, specification, unit, category, unit_price,
-      min_stock, max_stock, outer_diameter, inner_diameter,
-      wall_thickness, length, supplier_id, material_category_id
-    } = req.body;
+    const { code, name } = req.body;
     if (!code || !name) {
       return res.status(400).json({ success: false, message: '产品编码和名称为必填项' });
     }
@@ -82,18 +104,9 @@ router.post('/', requirePermission('basic_data_create'), (req, res) => {
     if (dup) {
       return res.status(400).json({ success: false, message: `产品编码「${code}」已存在` });
     }
-    const result = req.db.run(`
-      INSERT INTO products
-        (code, name, specification, unit, category, unit_price,
-         min_stock, max_stock, outer_diameter, inner_diameter,
-         wall_thickness, length, supplier_id, material_category_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      code, name, specification, unit, category, unit_price,
-      min_stock || 0, max_stock || 0, outer_diameter || null,
-      inner_diameter || null, wall_thickness || null,
-      length || null, supplier_id || null, material_category_id || null
-    ]);
+    const ph = PRODUCT_FIELDS.map(() => '?').join(', ');
+    const cols = PRODUCT_FIELDS.join(', ');
+    const result = req.db.run(`INSERT INTO products (${cols}) VALUES (${ph})`, pickFields(req.body));
     res.json({ success: true, data: { id: result.lastInsertRowid } });
   } catch (error) {
     console.error(`[products.js]`, error.message);
@@ -103,46 +116,15 @@ router.post('/', requirePermission('basic_data_create'), (req, res) => {
 
 router.put('/:id', validateId, requirePermission('basic_data_edit'), (req, res) => {
   try {
-    const {
-      code, name, specification, unit, category, unit_price, status,
-      min_stock, max_stock, outer_diameter, inner_diameter,
-      wall_thickness, length, supplier_id, material_category_id
-    } = req.body;
-    
     const existing = req.db.get('SELECT * FROM products WHERE id = ?', [req.params.id]);
     if (!existing) {
       return res.status(404).json({ success: false, message: '产品不存在' });
     }
-    
-    req.db.run(`
-      UPDATE products
-      SET code = ?, name = ?, specification = ?, unit = ?,
-          category = ?, unit_price = ?, status = ?,
-          min_stock = ?, max_stock = ?,
-          outer_diameter = ?, inner_diameter = ?,
-          wall_thickness = ?, length = ?, supplier_id = ?,
-          material_category_id = ?,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-      [
-        code || existing.code,
-        name || existing.name,
-        specification !== undefined ? specification : existing.specification,
-        unit || existing.unit,
-        category || existing.category,
-        unit_price !== undefined ? unit_price : existing.unit_price,
-        status !== undefined ? status : existing.status,
-        min_stock !== undefined ? min_stock : existing.min_stock,
-        max_stock !== undefined ? max_stock : existing.max_stock,
-        outer_diameter !== undefined ? outer_diameter : existing.outer_diameter,
-        inner_diameter !== undefined ? inner_diameter : existing.inner_diameter,
-        wall_thickness !== undefined ? wall_thickness : existing.wall_thickness,
-        length !== undefined ? length : existing.length,
-        supplier_id !== undefined ? (supplier_id || null) : existing.supplier_id,
-        material_category_id !== undefined ? (material_category_id || null) : existing.material_category_id,
-        req.params.id
-      ]);
+    const sets = PRODUCT_FIELDS.map(f => `${f} = ?`).join(', ');
+    req.db.run(
+      `UPDATE products SET ${sets}, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [...mergeFields(req.body, existing), req.body.status !== undefined ? req.body.status : existing.status, req.params.id]
+    );
     res.json({ success: true });
   } catch (error) {
     console.error(`[products.js]`, error.message);
@@ -160,6 +142,7 @@ router.delete('/:id', validateId, requirePermission('basic_data_delete'), (req, 
     req.db.transaction(() => {
       req.db.run('DELETE FROM product_suppliers WHERE product_id = ?', [req.params.id]);
       req.db.run('DELETE FROM product_customers WHERE product_id = ?', [req.params.id]);
+      req.db.run('DELETE FROM product_bound_materials WHERE product_id = ?', [req.params.id]);
       req.db.run('DELETE FROM process_materials WHERE product_process_id IN (SELECT id FROM product_processes WHERE product_id = ?)', [req.params.id]);
       req.db.run('DELETE FROM product_processes WHERE product_id = ?', [req.params.id]);
       req.db.run('DELETE FROM products WHERE id = ?', [req.params.id]);
@@ -175,9 +158,11 @@ router.delete('/:id', validateId, requirePermission('basic_data_delete'), (req, 
 router.get('/:id/processes', validateId, requirePermission('basic_data_view'), (req, res) => {
   try {
     const processes = req.db.all(`
-      SELECT pp.*, p.name as process_name, p.code as process_code, p.description
+      SELECT pp.*, p.name as process_name, p.code as process_code, p.description,
+        op.name as output_product_name, op.code as output_product_code
       FROM product_processes pp
       JOIN processes p ON pp.process_id = p.id
+      LEFT JOIN products op ON pp.output_product_id = op.id
       WHERE pp.product_id = ?
       ORDER BY pp.sequence
     `, [req.params.id]);
@@ -204,9 +189,9 @@ router.post('/:id/processes', validateId, requirePermission('basic_data_edit'), 
       const validProcesses = processes.filter(p => p.process_id);
       validProcesses.forEach((p, index) => {
         const result = req.db.run(`
-          INSERT INTO product_processes (product_id, process_id, sequence, is_outsourced, estimated_duration, remark)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `, [req.params.id, p.process_id, p.sequence || index + 1, p.is_outsourced || 0, p.estimated_duration || 0, p.remark]);
+          INSERT INTO product_processes (product_id, process_id, sequence, is_outsourced, estimated_duration, remark, output_product_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [req.params.id, p.process_id, p.sequence || index + 1, p.is_outsourced || 0, p.estimated_duration || 0, p.remark, p.output_product_id || null]);
         
         if (p.materials && p.materials.length > 0) {
           const productProcessId = result.lastInsertRowid;
@@ -347,6 +332,41 @@ router.put('/:id/customers', validateId, requirePermission('basic_data_edit'), (
       req.db.run('DELETE FROM product_customers WHERE product_id = ?', [req.params.id]);
       (customer_ids || []).forEach(cid => {
         req.db.run('INSERT INTO product_customers (product_id, customer_id) VALUES (?, ?)', [req.params.id, cid]);
+      });
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[products.js]', error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ==================== 成品-绑定物料 多对多管理 ====================
+router.get('/:id/bound-materials', validateId, requirePermission('basic_data_view'), (req, res) => {
+  try {
+    const materials = req.db.all(`
+      SELECT pbm.*, p.name as material_name, p.code as material_code, p.category as material_category, p.specification
+      FROM product_bound_materials pbm
+      JOIN products p ON pbm.material_id = p.id
+      WHERE pbm.product_id = ?
+    `, [req.params.id]);
+    res.json({ success: true, data: materials });
+  } catch (error) {
+    console.error('[products.js]', error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.put('/:id/bound-materials', validateId, requirePermission('basic_data_edit'), (req, res) => {
+  try {
+    const { material_ids } = req.body;
+    if (material_ids && !Array.isArray(material_ids)) {
+      return res.status(400).json({ success: false, message: 'material_ids 必须为数组' });
+    }
+    req.db.transaction(() => {
+      req.db.run('DELETE FROM product_bound_materials WHERE product_id = ?', [req.params.id]);
+      (material_ids || []).forEach(mid => {
+        req.db.run('INSERT INTO product_bound_materials (product_id, material_id) VALUES (?, ?)', [req.params.id, parseInt(mid)]);
       });
     });
     res.json({ success: true });

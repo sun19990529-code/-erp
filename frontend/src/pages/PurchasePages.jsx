@@ -252,7 +252,10 @@ const PurchaseManager = () => {
                       <select value={it.product_id} onChange={e => updateItem(i, 'product_id', e.target.value)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none bg-white">
                         <option value="">选择采购产品</option>
                         {products.length > 0
-                          ? products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)
+                          ? products.map(p => {
+                            const prefix = p.suppliers?.length ? `[${p.suppliers.map(s => s.supplier_name).join('/')}] ` : '';
+                            return <option key={p.id} value={p.id}>{prefix}{p.name} ({p.code})</option>;
+                          })
                           : <option disabled>{selectedSupplierId ? '该供应商无关联产品' : '请先选择供应商'}</option>}
                       </select>
                     </div>

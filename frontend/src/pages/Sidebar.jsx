@@ -11,6 +11,7 @@ const menuConfig = [
       { key: 'inventory', label: '全局库存台账' },
       { key: 'inbound', label: '统一入库调度' },
       { key: 'outbound', label: '统一出库调度' },
+      { key: 'transfer', label: '仓库间调拨' },
       { key: 'batch-tracking', label: '批次溯源查询' },
     ]
   },

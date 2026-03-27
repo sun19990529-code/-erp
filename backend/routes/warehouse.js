@@ -466,4 +466,148 @@ router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete')
   }
 });
 
+// ==================== 仓库间调拨 ====================
+router.get('/transfer', requirePermission('warehouse_view'), (req, res) => {
+  try {
+    const { status, page = 1, pageSize = 20 } = req.query;
+    let sql = `
+      SELECT oo.*, w1.name as from_warehouse_name, w2.name as to_warehouse_name
+      FROM outbound_orders oo
+      JOIN warehouses w1 ON oo.warehouse_id = w1.id
+      LEFT JOIN warehouses w2 ON oo.target_warehouse_id = w2.id
+      WHERE oo.type = 'transfer'
+    `;
+    const params = [];
+    if (status) { sql += ' AND oo.status = ?'; params.push(status); }
+    sql += ' ORDER BY oo.created_at DESC';
+    const result = req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+    res.json({ success: true, data: result.data, pagination: result.pagination });
+  } catch (error) {
+    console.error(`[warehouse.js transfer]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.get('/transfer/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
+  try {
+    const order = req.db.get(`
+      SELECT oo.*, w1.name as from_warehouse_name, w2.name as to_warehouse_name
+      FROM outbound_orders oo
+      JOIN warehouses w1 ON oo.warehouse_id = w1.id
+      LEFT JOIN warehouses w2 ON oo.target_warehouse_id = w2.id
+      WHERE oo.id = ? AND oo.type = 'transfer'
+    `, [req.params.id]);
+    if (!order) return res.status(404).json({ success: false, message: '调拨单不存在' });
+    const items = req.db.all(`
+      SELECT oi.*, p.code, p.name, p.specification, p.unit
+      FROM outbound_items oi
+      JOIN products p ON oi.product_id = p.id
+      WHERE oi.outbound_id = ?
+    `, [req.params.id]);
+    res.json({ success: true, data: { ...order, items } });
+  } catch (error) {
+    console.error(`[warehouse.js transfer]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/transfer', requirePermission('warehouse_create'), (req, res) => {
+  try {
+    const { from_warehouse_id, to_warehouse_id, items, operator, remark } = req.body;
+    if (!from_warehouse_id || !to_warehouse_id) return res.status(400).json({ success: false, message: '请选择源仓库和目标仓库' });
+    if (String(from_warehouse_id) === String(to_warehouse_id)) return res.status(400).json({ success: false, message: '源仓库和目标仓库不能相同' });
+    if (!items || items.length === 0) return res.status(400).json({ success: false, message: '请至少选择一个产品' });
+
+    const orderNo = generateOrderNo('DB');
+    let transferId;
+
+    req.db.transaction(() => {
+      // 创建调拨出库单
+      const result = req.db.run(`
+        INSERT INTO outbound_orders (order_no, type, warehouse_id, target_warehouse_id, operator, remark, status)
+        VALUES (?, 'transfer', ?, ?, ?, ?, 'pending')
+      `, [orderNo, from_warehouse_id, to_warehouse_id, operator, remark]);
+      transferId = result.lastInsertRowid;
+
+      items.forEach(item => {
+        const batchNo = item.batch_no || 'DEFAULT_BATCH';
+        req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?, ?)',
+          [transferId, item.product_id, batchNo, item.quantity, item.input_quantity || item.quantity, item.input_unit || '公斤']);
+      });
+    })();
+
+    writeLog(req.db, req.user?.id, '创建调拨单', 'transfer', transferId, `调拨单号: ${orderNo}`);
+    res.json({ success: true, data: { id: transferId, order_no: orderNo } });
+  } catch (error) {
+    console.error(`[warehouse.js transfer]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.put('/transfer/:id/confirm', validateId, requirePermission('warehouse_edit'), (req, res) => {
+  try {
+    req.db.transaction(() => {
+      const order = req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ?', [req.params.id, 'transfer']);
+      if (!order) throw new Error('调拨单不存在');
+      if (order.status === 'completed') throw new Error('该调拨单已完成');
+
+      const items = req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+
+      items.forEach(item => {
+        const batch = item.batch_no || 'DEFAULT_BATCH';
+        // 扣减源仓库
+        const inv = req.db.get('SELECT quantity FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+          [order.warehouse_id, item.product_id, batch]);
+        if (!inv || inv.quantity < item.quantity) {
+          const p = req.db.get('SELECT name FROM products WHERE id = ?', [item.product_id]);
+          throw new Error(`${p?.name || '产品'} (批次: ${batch}) 源仓库库存不足`);
+        }
+        req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+          [item.quantity, order.warehouse_id, item.product_id, batch]);
+
+        // 增加目标仓库
+        const targetInv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+          [order.target_warehouse_id, item.product_id, batch]);
+        if (targetInv) {
+          req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [item.quantity, targetInv.id]);
+        } else {
+          req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
+            [order.target_warehouse_id, item.product_id, batch, item.quantity]);
+        }
+      });
+
+      req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', req.params.id]);
+    })();
+
+    writeLog(req.db, req.user?.id, '确认调拨', 'transfer', req.params.id, '调拨完成');
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[warehouse.js transfer]`, error.message);
+    if (error.message.includes('库存不足') || error.message.includes('不存在') || error.message.includes('已完成')) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.delete('/transfer/:id', validateId, requirePermission('warehouse_delete'), (req, res) => {
+  try {
+    const order = req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ?', [req.params.id, 'transfer']);
+    if (!order) return res.status(404).json({ success: false, message: '调拨单不存在' });
+    if (order.status === 'completed') return res.status(400).json({ success: false, message: '已完成的调拨单不能删除' });
+
+    req.db.transaction(() => {
+      req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      req.db.run('DELETE FROM outbound_orders WHERE id = ?', [req.params.id]);
+    })();
+
+    writeLog(req.db, req.user?.id, '删除调拨单', 'transfer', req.params.id, `调拨单号: ${order.order_no}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[warehouse.js transfer]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
 module.exports = router;

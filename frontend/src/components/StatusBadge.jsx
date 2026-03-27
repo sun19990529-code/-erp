@@ -19,8 +19,10 @@ const StatusBadge = ({ status, type }) => {
     if (status === 'completed') {
       if (type === 'outbound' || type === 'pick') return '已出库';
       if (type === 'inbound') return '已入库';
+      if (type === 'transfer') return '已调拨';
       return '已完成';
     }
+    if (status === 'pending' && type === 'transfer') return '待确认';
     const labels = { 
       pending: '待处理', 
       confirmed: '已确认',

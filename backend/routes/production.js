@@ -280,6 +280,55 @@ router.post('/:id/process', validateId, requirePermission('production_edit'), (r
       const totalCompleted = req.db.get('SELECT COALESCE(SUM(output_quantity), 0) as total FROM production_process_records WHERE production_order_id = ? AND process_id = (SELECT process_id FROM product_processes WHERE product_id = ? ORDER BY sequence DESC LIMIT 1)', [productionId, production.product_id]);
       req.db.run('UPDATE production_orders SET completed_quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [totalCompleted?.total || 0, productionId]);
       
+      // ========== 半成品库存联动 ==========
+      const currentPP = productProcesses[currentIndex];
+      const actualOutput = output_quantity || 0;
+      const semiWarehouse = req.db.get("SELECT id FROM warehouses WHERE type = 'semi' LIMIT 1");
+      const finishedWarehouse = req.db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
+      
+      // 非首道工序：扣减上一道工序的输出产物库存
+      if (currentIndex > 0 && actualOutput > 0) {
+        const prevPP = productProcesses[currentIndex - 1];
+        if (prevPP.output_product_id) {
+          if (semiWarehouse) {
+            const prevProduct = req.db.get('SELECT name FROM products WHERE id = ?', [prevPP.output_product_id]);
+            const inv = req.db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [semiWarehouse.id, prevPP.output_product_id]);
+            const available = inv?.total || 0;
+            if (available < actualOutput) {
+              throw new Error(`半成品「${prevProduct?.name || prevPP.output_product_id}」库存不足！需要 ${actualOutput}，当前 ${available}`);
+            }
+            let remaining = actualOutput;
+            const batches = req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [semiWarehouse.id, prevPP.output_product_id]);
+            for (const batch of batches) {
+              if (remaining <= 0) break;
+              const deduct = Math.min(remaining, batch.quantity);
+              req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
+              remaining -= deduct;
+            }
+          }
+        }
+      }
+      
+      // 当前工序有输出产物：入库半成品仓
+      if (currentPP.output_product_id && actualOutput > 0) {
+        const isLastProcess = currentIndex === productProcesses.length - 1;
+        const targetWarehouse = isLastProcess ? finishedWarehouse : semiWarehouse;
+        if (targetWarehouse) {
+          const batchNo = `PRD-${production.order_no}`;
+          const existingInv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [targetWarehouse.id, currentPP.output_product_id, batchNo]);
+          if (existingInv) {
+            req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [actualOutput, existingInv.id]);
+          } else {
+            req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [targetWarehouse.id, currentPP.output_product_id, batchNo, actualOutput]);
+          }
+          responseData.semiProductInbound = {
+            product_id: currentPP.output_product_id,
+            quantity: actualOutput,
+            warehouse_type: isLastProcess ? 'finished' : 'semi'
+          };
+        }
+      }
+      
       if (cumulativeOutput >= targetQty) {
         // 该工序累计完成目标 → 判断是否流转
         if (currentIndex < productProcesses.length - 1) {
@@ -291,9 +340,12 @@ router.post('/:id/process', validateId, requirePermission('production_edit'), (r
         } else {
           // 最后一道工序且累计完成 → 工单完工
           req.db.run('UPDATE production_orders SET current_process = ?, status = ?, completed_quantity = ?, end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [currentProcess.code, 'completed', cumulativeOutput, productionId]);
-          const inboundOrder = createFinishedProductInbound(req.db, production, cumulativeOutput);
+          // 如果没有设置 output_product_id，走旧的成品入库逻辑
+          if (!currentPP.output_product_id) {
+            const inboundOrder = createFinishedProductInbound(req.db, production, cumulativeOutput);
+            responseData.inboundOrder = inboundOrder;
+          }
           if (production.order_id) { updateOrderProgress(req.db, production.order_id); }
-          responseData.inboundOrder = inboundOrder;
         }
       }
       
@@ -311,7 +363,7 @@ router.post('/:id/process', validateId, requirePermission('production_edit'), (r
     res.json(responseData);
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    if (error.message && (error.message.includes('库存不足') || error.message.includes('未找到'))) {
+    if (error.message && (error.message.includes('库存不足') || error.message.includes('未找到') || error.message.includes('半成品'))) {
       return res.status(400).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: '服务器错误' });

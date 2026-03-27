@@ -506,4 +506,203 @@ const WarehouseOrderManager = ({ orderType }) => {
   );
 };
 
-export { InventoryView, WarehouseOrderManager };
+const TransferManager = () => {
+  const [data, setData] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [confirm, ConfirmDialog] = useConfirm();
+
+  const load = () => {
+    api.get('/transfer').then(res => res.success && setData(res.data));
+    api.get('/warehouses').then(res => res.success && setWarehouses(res.data));
+    api.get('/products').then(res => res.success && setProducts(res.data));
+  };
+  useEffect(() => { load(); }, []);
+
+  const filteredData = data.filter(item => {
+    const matchSearch = !searchText ||
+      (item.order_no || '').toLowerCase().includes(searchText.toLowerCase()) ||
+      (item.from_warehouse_name || '').toLowerCase().includes(searchText.toLowerCase()) ||
+      (item.to_warehouse_name || '').toLowerCase().includes(searchText.toLowerCase());
+    const matchStatus = !statusFilter || item.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const resetFilters = () => { setSearchText(''); setStatusFilter(''); };
+
+  const openCreate = () => {
+    setModal({ open: true, item: null, items: [{ product_id: '', quantity: 1 }], mode: 'create' });
+  };
+
+  const openView = async (item) => {
+    const res = await api.get(`/transfer/${item.id}`);
+    if (res.success) setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'view' });
+  };
+
+  const closeModal = () => setModal({ open: false, item: null, items: [], mode: 'list' });
+
+  const save = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const fromId = fd.get('from_warehouse_id');
+    const toId = fd.get('to_warehouse_id');
+    const items = (modal.items || []).filter(i => i.product_id);
+
+    if (!fromId) { window.__toast?.warning('请选择源仓库'); return; }
+    if (!toId) { window.__toast?.warning('请选择目标仓库'); return; }
+    if (fromId === toId) { window.__toast?.warning('源仓库和目标仓库不能相同'); return; }
+    if (items.length === 0) { window.__toast?.warning('请至少选择一个产品'); return; }
+    for (const item of items) {
+      if (!item.quantity || item.quantity <= 0) { window.__toast?.warning('数量必须大于0'); return; }
+    }
+
+    const res = await api.post('/transfer', {
+      from_warehouse_id: fromId,
+      to_warehouse_id: toId,
+      items,
+      operator: fd.get('operator'),
+      remark: fd.get('remark')
+    });
+    if (res.success) { closeModal(); load(); window.__toast?.success('调拨单创建成功'); }
+    else window.__toast?.error(res.message || '创建失败');
+  };
+
+  const confirmTransfer = async (item) => {
+    if (!await confirm('确认执行调拨？\n\n将从源仓库扣减库存并增加到目标仓库。')) return;
+    const res = await api.put(`/transfer/${item.id}/confirm`);
+    if (res.success) { closeModal(); load(); window.__toast?.success('调拨完成'); }
+    else window.__toast?.error(res.message || '调拨失败');
+  };
+
+  const del = async (item) => {
+    if (!await confirm('确定删除该调拨单？')) return;
+    const res = await api.del(`/transfer/${item.id}`);
+    if (res.success) load();
+    else window.__toast?.error(res.message || '删除失败');
+  };
+
+  const addRow = () => setModal({ ...modal, items: [...(modal.items || []), { product_id: '', quantity: 1 }] });
+  const removeRow = (index) => {
+    const newItems = (modal.items || []).filter((_, i) => i !== index);
+    setModal({ ...modal, items: newItems.length ? newItems : [{ product_id: '', quantity: 1 }] });
+  };
+  const updateItem = (index, field, value) => {
+    const newItems = [...(modal.items || [])];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setModal({ ...modal, items: newItems });
+  };
+
+  return (
+    <div className="fade-in">
+      {ConfirmDialog}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+        <h2 className="text-xl font-bold">仓库间调拨</h2>
+        <button onClick={openCreate} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 shadow-sm"><i className="fas fa-exchange-alt mr-2"></i>新建调拨</button>
+      </div>
+      <SearchFilter
+        searchPlaceholder="搜索单号/仓库..."
+        searchValue={searchText}
+        onSearchChange={setSearchText}
+        filters={[
+          { key: 'status', label: '状态', value: statusFilter, options: [{ value: 'pending', label: '待确认' }, { value: 'completed', label: '已完成' }] }
+        ]}
+        onFilterChange={(key, val) => key === 'status' && setStatusFilter(val)}
+        onReset={resetFilters}
+      />
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <Table columns={[
+          { key: 'order_no', title: '调拨单号' },
+          { key: 'from_warehouse_name', title: '源仓库', render: v => <span className="bg-orange-50 text-orange-700 px-2 py-1 rounded text-xs font-medium">{v}</span> },
+          { key: 'to_warehouse_name', title: '目标仓库', render: v => <span className="bg-teal-50 text-teal-700 px-2 py-1 rounded text-xs font-medium">{v}</span> },
+          { key: 'operator', title: '操作员' },
+          { key: 'status', title: '状态', render: v => <StatusBadge status={v} type="transfer" /> },
+          { key: 'created_at', title: '创建时间', render: v => v?.slice(0, 10) }
+        ]} data={filteredData} onView={openView} onDelete={del} deletePermission="warehouse_delete" />
+      </div>
+
+      <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? '调拨单详情' : '新建调拨单'} size="max-w-3xl">
+        {modal.mode === 'view' ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+              <div><strong>单号：</strong>{modal.item?.order_no}</div>
+              <div><strong>源仓库：</strong><span className="text-orange-600 font-medium">{modal.item?.from_warehouse_name}</span></div>
+              <div><strong>目标仓库：</strong><span className="text-teal-600 font-medium">{modal.item?.to_warehouse_name}</span></div>
+              <div><strong>状态：</strong><StatusBadge status={modal.item?.status} type="transfer" /></div>
+              <div><strong>操作员：</strong>{modal.item?.operator || '-'}</div>
+              <div className="col-span-2 sm:col-span-3"><strong>备注：</strong>{modal.item?.remark || '-'}</div>
+            </div>
+            <table className="w-full border">
+              <thead className="bg-gray-50"><tr>
+                <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
+                <th className="px-3 py-2 text-left text-xs">规格</th><th className="px-3 py-2 text-left text-xs">批次号</th>
+                <th className="px-3 py-2 text-left text-xs">数量(公斤)</th>
+              </tr></thead>
+              <tbody>
+                {(modal.item?.items || []).map((it, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-3 py-2 text-sm">{it.code}</td>
+                    <td className="px-3 py-2 text-sm">{it.name}</td>
+                    <td className="px-3 py-2 text-sm text-gray-500">{it.specification || '-'}</td>
+                    <td className="px-3 py-2 text-sm text-teal-700 font-medium">{it.batch_no || 'DEFAULT_BATCH'}</td>
+                    <td className="px-3 py-2 text-sm font-bold">{it.quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
+              {modal.item?.status === 'pending' && (
+                <button type="button" onClick={() => confirmTransfer(modal.item)} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">
+                  <i className="fas fa-check mr-2"></i>确认调拨
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={save} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="block text-sm font-medium mb-1">源仓库 *</label>
+                <SearchSelect name="from_warehouse_id" options={warehouses} placeholder="从哪个仓库调出" required />
+              </div>
+              <div><label className="block text-sm font-medium mb-1">目标仓库 *</label>
+                <SearchSelect name="to_warehouse_id" options={warehouses} placeholder="调入到哪个仓库" required />
+              </div>
+              <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect /></div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">调拨明细</label>
+              <div className="border rounded-lg p-3 space-y-2">
+                {(modal.items || []).map((it, i) => (
+                  <div key={i} className="flex gap-3 items-center bg-gray-50 p-2.5 rounded-lg border border-gray-100 hover:border-teal-200 transition-colors">
+                    <div className="flex-1 min-w-[200px]">
+                      <SearchSelect options={products} value={it.product_id} onChange={val => updateItem(i, 'product_id', val)} placeholder="搜索选择产品" />
+                    </div>
+                    <div className="w-28">
+                      <input type="text" value={it.batch_no || ''} onChange={e => updateItem(i, 'batch_no', e.target.value)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm shadow-sm outline-none" placeholder="批次(选填)" />
+                    </div>
+                    <div className="w-24">
+                      <input type="number" value={it.quantity} onChange={e => updateItem(i, 'quantity', parseFloat(e.target.value) || 0)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm shadow-sm outline-none" placeholder="数量" />
+                    </div>
+                    <span className="text-xs text-gray-500">公斤</span>
+                    <button type="button" onClick={() => removeRow(i)} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors" title="移除"><i className="fas fa-trash-alt"></i></button>
+                  </div>
+                ))}
+                <button type="button" onClick={addRow} className="w-full py-2.5 border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2"><i className="fas fa-plus-circle"></i> 继续添加</button>
+              </div>
+            </div>
+            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
+            <div className="flex justify-end gap-2 pt-4">
+              <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">提交</button>
+            </div>
+          </form>
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+export { InventoryView, WarehouseOrderManager, TransferManager };

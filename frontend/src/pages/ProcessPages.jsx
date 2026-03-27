@@ -9,22 +9,28 @@ import Table from '../components/Table';
 
 const ProcessConfigManager = () => {
   const [products, setProducts] = useState([]);
-
+  const [allProducts, setAllProducts] = useState([]);
   const [processes, setProcesses] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]);
-  const [modal, setModal] = useState({ open: false, product: null, productProcesses: [] });
+  const [modal, setModal] = useState({ open: false, product: null, productProcesses: [], boundMaterialIds: [] });
   
   const load = async () => {
-    api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
-    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
-    // 并行加载原材料和半成品，避免竞态
-    const [rawRes, semiRes] = await Promise.all([
+    const [prodRes, procRes, rawRes, semiRes] = await Promise.all([
+      api.get('/products?category=成品'),
+      api.get('/production/processes'),
       api.get('/products?category=原材料'),
       api.get('/products?category=半成品'),
     ]);
+    const finishedProducts = prodRes.success ? prodRes.data : [];
+    setProducts(finishedProducts);
+    if (procRes.success) setProcesses(procRes.data);
     setRawMaterials([
       ...(rawRes.success ? rawRes.data : []),
       ...(semiRes.success ? semiRes.data : []),
+    ]);
+    setAllProducts([
+      ...(semiRes.success ? semiRes.data : []),
+      ...finishedProducts,
     ]);
   };
   useEffect(() => { load(); }, []);
@@ -40,11 +46,11 @@ const ProcessConfigManager = () => {
       const mats = allMaterials.filter(m => m.process_id === p.process_id);
       return { ...p, materials: mats.length > 0 ? mats.map(m => ({ material_id: m.material_id, quantity: m.quantity, unit: m.unit || '公斤', remark: m.remark || '' })) : [] };
     });
-    setModal({ open: true, product, productProcesses: enriched });
+    setModal({ open: true, product, productProcesses: enriched, boundMaterialIds: (product.bound_materials || []).map(m => m.material_id) });
   };
   
   const closeModal = () => {
-    setModal({ open: false, product: null, productProcesses: [] });
+    setModal({ open: false, product: null, productProcesses: [], boundMaterialIds: [] });
   };
   
   // 工序配置更新回调
@@ -118,7 +124,11 @@ const ProcessConfigManager = () => {
           <ProcessConfigPanel
               processes={processes}
               productProcesses={modal.productProcesses}
-              rawMaterials={rawMaterials}
+              rawMaterials={modal.boundMaterialIds.length > 0
+                ? rawMaterials.filter(m => modal.boundMaterialIds.includes(m.id))
+                : rawMaterials
+              }
+              allProducts={allProducts}
               materialCategoryId={modal.product?.material_category_id}
               materialCategories={[]}
               onChange={handleProcessChange}
@@ -227,6 +237,12 @@ const ProcessManager = ({ processCode }) => {
       if (res.consumedMaterials && res.consumedMaterials.length > 0) {
         const matMsg = res.consumedMaterials.map(m => `${m.name}: -${m.quantity} ${m.unit}`).join('、');
         window.__toast?.success(`原材料已自动扣减：${matMsg}`);
+      }
+      
+      // 半成品/成品自动入库提示
+      if (res.semiProductInbound) {
+        const whType = res.semiProductInbound.warehouse_type === 'finished' ? '成品仓' : '半成品仓';
+        window.__toast?.success(`已自动入库 ${res.semiProductInbound.quantity} 件至${whType}`);
       }
       
       // 构建提示消息

@@ -10,6 +10,7 @@ import Sidebar from './pages/Sidebar';
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const InventoryView = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.InventoryView })));
 const WarehouseOrderManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.WarehouseOrderManager })));
+const TransferManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.TransferManager })));
 const OrderManager = React.lazy(() => import('./pages/OrderPages').then(m => ({ default: m.OrderManager })));
 const ProductionScheduleGantt = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionScheduleGantt })));
 const ProductionOrderManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionOrderManager })));
@@ -46,6 +47,7 @@ const MENU_ROUTES = {
   'inventory': '/warehouse/inventory',
   'inbound': '/warehouse/inbound',
   'outbound': '/warehouse/outbound',
+  'transfer': '/warehouse/transfer',
   'order-hub': '/orders',
   'production-schedule': '/production/schedule',
   'production-orders': '/production/orders',
@@ -142,6 +144,7 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/warehouse/inventory" element={<InventoryView title="全局库存台账" />} />
                 <Route path="/warehouse/inbound" element={<WarehouseOrderManager orderType="inbound" title="入库调度中心" />} />
                 <Route path="/warehouse/outbound" element={<WarehouseOrderManager orderType="outbound" title="出库调度中心" />} />
+                <Route path="/warehouse/transfer" element={<TransferManager />} />
                 <Route path="/orders" element={<OrderManager />} />
                 <Route path="/production/schedule" element={<ProductionScheduleGantt />} />
                 <Route path="/production/orders" element={<ProductionOrderManager />} />

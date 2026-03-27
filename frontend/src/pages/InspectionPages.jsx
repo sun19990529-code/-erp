@@ -250,7 +250,18 @@ const PatrolInspection = () => {
             <div><label className="block text-sm font-medium mb-1">产品</label>
               <select name="product_id" className="w-full border rounded-lg px-3 py-2">
                 <option value="">选择产品</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {(() => {
+                  const raw = products.filter(p => p.category === '原材料');
+                  const semi = products.filter(p => p.category === '半成品');
+                  const fin = products.filter(p => p.category === '成品');
+                  const fmtS = (p) => { const s = p.suppliers?.length ? `[${p.suppliers.map(x => x.supplier_name).join('/')}] ` : ''; return `${s}${p.name}`; };
+                  const fmtC = (p) => { const c = p.customers?.length ? `[${p.customers.map(x => x.customer_name).join('/')}] ` : ''; return `${c}${p.name}`; };
+                  return (<>
+                    {raw.length > 0 && <optgroup label="原材料">{raw.map(p => <option key={p.id} value={p.id}>{fmtS(p)}</option>)}</optgroup>}
+                    {semi.length > 0 && <optgroup label="半成品">{semi.map(p => <option key={p.id} value={p.id}>{fmtS(p)}</option>)}</optgroup>}
+                    {fin.length > 0 && <optgroup label="成品">{fin.map(p => <option key={p.id} value={p.id}>{fmtC(p)}</option>)}</optgroup>}
+                  </>);
+                })()}
               </select>
             </div>
             <div><label className="block text-sm font-medium mb-1">检验结果</label>
@@ -454,7 +465,10 @@ const FinalInspection = () => {
               <select name="product_id" className="w-full border rounded-lg px-3 py-2" required
                 value={selectedProduction?.product_id || ''}>
                 <option value="">选择产品</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {products.map(p => {
+                  const prefix = p.customers?.length ? `[${p.customers.map(c => c.customer_name).join('/')}] ` : '';
+                  return <option key={p.id} value={p.id}>{prefix}{p.name}</option>;
+                })}
               </select>
             </div>
           </div>

@@ -50,6 +50,7 @@ function createTablesIfNotExist(db) {
     { name: 'products', sql: `CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, specification TEXT, unit TEXT, category TEXT NOT NULL, unit_price REAL, stock_threshold INTEGER DEFAULT 0, outer_diameter REAL, inner_diameter REAL, wall_thickness REAL, length REAL, supplier_id INTEGER, status INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (supplier_id) REFERENCES suppliers(id))` },
     { name: 'product_suppliers', sql: `CREATE TABLE IF NOT EXISTS product_suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, supplier_id INTEGER NOT NULL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE, FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE, UNIQUE(product_id, supplier_id))` },
     { name: 'product_customers', sql: `CREATE TABLE IF NOT EXISTS product_customers (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE, FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE, UNIQUE(product_id, customer_id))` },
+    { name: 'product_bound_materials', sql: `CREATE TABLE IF NOT EXISTS product_bound_materials (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, material_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE, FOREIGN KEY (material_id) REFERENCES products(id) ON DELETE CASCADE, UNIQUE(product_id, material_id))` },
     { name: 'warehouses', sql: `CREATE TABLE IF NOT EXISTS warehouses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, type TEXT NOT NULL, location TEXT, manager TEXT, status INTEGER DEFAULT 1)` },
     { name: 'inventory', sql: `CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL, product_id INTEGER NOT NULL, batch_no TEXT DEFAULT 'DEFAULT_BATCH', quantity INTEGER DEFAULT 0, locked_quantity INTEGER DEFAULT 0, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (warehouse_id) REFERENCES warehouses(id), FOREIGN KEY (product_id) REFERENCES products(id), UNIQUE(warehouse_id, product_id, batch_no))` },
     { name: 'inbound_orders', sql: `CREATE TABLE IF NOT EXISTS inbound_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT UNIQUE NOT NULL, type TEXT NOT NULL, warehouse_id INTEGER NOT NULL, supplier_id INTEGER, total_amount REAL DEFAULT 0, operator TEXT, inspector TEXT, inspection_result TEXT, status TEXT DEFAULT 'pending', remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (warehouse_id) REFERENCES warehouses(id), FOREIGN KEY (supplier_id) REFERENCES suppliers(id))` },
@@ -107,6 +108,23 @@ function createTablesIfNotExist(db) {
     checkAndAddCol('inbound_orders', 'purchase_order_id', "ALTER TABLE inbound_orders ADD COLUMN purchase_order_id INTEGER REFERENCES purchase_orders(id);");
     checkAndAddCol('production_orders', 'material_ready', "ALTER TABLE production_orders ADD COLUMN material_ready INTEGER DEFAULT 0;");
     checkAndAddCol('products', 'material_category_id', "ALTER TABLE products ADD COLUMN material_category_id INTEGER REFERENCES material_categories(id);");
+    
+    // 调拨功能：出库单增加目标仓库字段
+    checkAndAddCol('outbound_orders', 'target_warehouse_id', "ALTER TABLE outbound_orders ADD COLUMN target_warehouse_id INTEGER REFERENCES warehouses(id);");
+    
+    // 报工联动半成品：工序输出产物
+    checkAndAddCol('product_processes', 'output_product_id', "ALTER TABLE product_processes ADD COLUMN output_product_id INTEGER REFERENCES products(id);");
+    
+    // 公差参数（上偏差）
+    checkAndAddCol('products', 'tolerance_od', "ALTER TABLE products ADD COLUMN tolerance_od REAL;");
+    checkAndAddCol('products', 'tolerance_id', "ALTER TABLE products ADD COLUMN tolerance_id REAL;");
+    checkAndAddCol('products', 'tolerance_wt', "ALTER TABLE products ADD COLUMN tolerance_wt REAL;");
+    checkAndAddCol('products', 'tolerance_len', "ALTER TABLE products ADD COLUMN tolerance_len REAL;");
+    // 公差参数（下偏差，不填则与上偏差相同）
+    checkAndAddCol('products', 'tolerance_od_lower', "ALTER TABLE products ADD COLUMN tolerance_od_lower REAL;");
+    checkAndAddCol('products', 'tolerance_id_lower', "ALTER TABLE products ADD COLUMN tolerance_id_lower REAL;");
+    checkAndAddCol('products', 'tolerance_wt_lower', "ALTER TABLE products ADD COLUMN tolerance_wt_lower REAL;");
+    checkAndAddCol('products', 'tolerance_len_lower', "ALTER TABLE products ADD COLUMN tolerance_len_lower REAL;");
     
   } catch (e) {
     console.log('字段添加跳过（可能已存在）:', e.message);
