@@ -100,7 +100,12 @@ const Table = ({ columns, data, onEdit, onDelete, onView, editPermission, delete
         </thead>
         <tbody className="divide-y divide-gray-200">
           {data.map((row, idx) => renderRow(row, idx))}
-          {data.length === 0 && <tr><td colSpan={columns.length + 1} className="px-4 py-8 text-center text-gray-500">暂无数据</td></tr>}
+          {data.length === 0 && <tr><td colSpan={columns.length + 1} className="px-4 py-12 text-center text-gray-400">
+            <div className="flex flex-col items-center gap-2">
+              <i className="fas fa-inbox text-3xl text-gray-300"></i>
+              <span>暂无数据</span>
+            </div>
+          </td></tr>}
         </tbody>
       </table>
     </div>

@@ -121,11 +121,19 @@ const AppContent = ({ user, permissions, handleLogout }) => {
       <div className="flex min-h-screen bg-gray-50/50">
         <Sidebar activeMenu={activeMenu} setActiveMenu={setActiveMenu} user={user} permissions={permissions} onLogout={handleLogout} sidebarOpen={sidebarOpen} onCloseSidebar={() => setSidebarOpen(false)} />
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden overflow-y-auto w-full relative">
-          <div className="max-w-[1600px] mx-auto">
+          <div className="max-w-[1600px] mx-auto page-transition" key={location.pathname}>
             <ErrorBoundary>
               <Suspense fallback={
-                <div className="flex items-center justify-center h-64">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="space-y-4 animate-pulse">
+                  <div className="h-8 bg-gray-200 rounded-lg w-48"></div>
+                  <div className="h-4 bg-gray-100 rounded w-64"></div>
+                  <div className="grid grid-cols-4 gap-4 mt-6">
+                    <div className="h-24 bg-gray-100 rounded-xl"></div>
+                    <div className="h-24 bg-gray-100 rounded-xl"></div>
+                    <div className="h-24 bg-gray-100 rounded-xl"></div>
+                    <div className="h-24 bg-gray-100 rounded-xl"></div>
+                  </div>
+                  <div className="h-64 bg-gray-100 rounded-xl mt-4"></div>
                 </div>
               }>
               <Routes>

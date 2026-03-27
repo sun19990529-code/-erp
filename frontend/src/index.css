@@ -80,8 +80,25 @@ body {
     .submenu-item:hover { background: rgba(255,255,255,0.05); }
     .submenu-item.active { background: rgba(255,255,255,0.1); color: #fff; }
     .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
-    .fade-in { animation: fadeIn 0.3s ease-in-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    /* 页面切换淡入动画 */
+    .page-transition { animation: pageSlideIn 0.35s ease-out; }
+    @keyframes pageSlideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    /* 全局表格样式增强 */
+    table thead th {
+      font-weight: 600 !important;
+      color: #475569 !important;
+      background: linear-gradient(to bottom, #f8fafc, #f1f5f9) !important;
+      border-bottom: 2px solid #e2e8f0 !important;
+      letter-spacing: 0.02em;
+    }
+    table tbody tr {
+      transition: background-color 0.15s ease;
+    }
+    table tbody tr:hover {
+      background-color: #f0fdfa !important;
+    }
     /* 响应式设计 */
     .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
     .sidebar-overlay.active { display: block; }

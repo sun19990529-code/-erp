@@ -159,9 +159,10 @@ const Sidebar = ({ activeMenu, setActiveMenu, user, permissions, onLogout, sideb
         {filteredMenuConfig.map(item => (
           <div key={item.key} className="mb-1">
             <div 
-              className={`px-4 py-3 mx-3 rounded-xl cursor-pointer flex items-center justify-between transition-all font-medium text-sm border ${isParentActive(item.key) ? 'bg-teal-50 text-teal-700 border-teal-100/50 shadow-sm shadow-teal-500/5' : 'text-gray-600 hover:bg-gray-50 border-transparent hover:text-gray-900'}`}
+              className={`px-4 py-3 mx-3 rounded-xl cursor-pointer flex items-center justify-between transition-all font-medium text-sm border relative ${isParentActive(item.key) ? 'bg-teal-50 text-teal-700 border-teal-100/50 shadow-sm shadow-teal-500/5' : 'text-gray-600 hover:bg-gray-50 border-transparent hover:text-gray-900'}`}
               onClick={() => item.children ? toggleExpand(item.key) : handleMenuClick(item.key)}
             >
+              {isParentActive(item.key) && <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-teal-500" />}
               <div className="flex items-center gap-3">
                 <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${isParentActive(item.key) ? 'bg-teal-100/50 text-teal-600' : 'bg-transparent text-gray-400'}`}>
                   <i className={`fas ${item.icon} text-[15px]`}></i>
