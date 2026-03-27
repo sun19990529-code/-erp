@@ -1,6 +1,12 @@
 # server-sync.ps1 - ERP Server Sync Script
 # Run this on the server after code is pushed to GitHub
 
+# Auto-elevate to admin if not already
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Start-Process powershell.exe "-ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
 Write-Host "========== ERP Server Sync ==========" -ForegroundColor Cyan
 
 Set-Location F:\erp-mes-system
