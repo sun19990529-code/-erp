@@ -27,21 +27,20 @@ npm install --production
 Set-Location ..
 
 Write-Host "(5/5) Restarting service..." -ForegroundColor Yellow
-$pm2Home = "$env:USERPROFILE\.pm2"
 
-# Kill any existing node/pm2 processes for erp
-Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# Stop old node processes running server.js
+Get-Process -Name "node" -ErrorAction SilentlyContinue | ForEach-Object {
+    $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+    if ($cmdLine -match "server\.js") {
+        Write-Host "  Stopping old process (PID: $($_.Id))..." -ForegroundColor Gray
+        Stop-Process -Id $_.Id -Force
+    }
+}
 Start-Sleep -Seconds 1
 
-# Clean PM2 lock files to avoid EPERM
-Remove-Item "$pm2Home\rpc.sock" -Force -ErrorAction SilentlyContinue
-Remove-Item "$pm2Home\pub.sock" -Force -ErrorAction SilentlyContinue
-Remove-Item "$pm2Home\pm2.pid" -Force -ErrorAction SilentlyContinue
-
-# Start fresh
+# Start node in background (no PM2 needed)
 Set-Location F:\erp-mes-system\backend
-pm2 start server.js --name erp
-pm2 save
+Start-Process -FilePath "node" -ArgumentList "server.js" -WorkingDirectory "F:\erp-mes-system\backend" -WindowStyle Hidden
 Set-Location ..
 
 Write-Host ""
