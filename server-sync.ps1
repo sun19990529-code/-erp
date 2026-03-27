@@ -27,16 +27,22 @@ npm install --production
 Set-Location ..
 
 Write-Host "(5/5) Restarting service..." -ForegroundColor Yellow
-pm2 restart erp 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Restart failed, resetting PM2..." -ForegroundColor Yellow
-    pm2 kill 2>$null
-    Start-Sleep -Seconds 2
-    Set-Location F:\erp-mes-system\backend
-    pm2 start server.js --name erp
-    pm2 save
-    Set-Location ..
-}
+$pm2Home = "$env:USERPROFILE\.pm2"
+
+# Kill any existing node/pm2 processes for erp
+Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+
+# Clean PM2 lock files to avoid EPERM
+Remove-Item "$pm2Home\rpc.sock" -Force -ErrorAction SilentlyContinue
+Remove-Item "$pm2Home\pub.sock" -Force -ErrorAction SilentlyContinue
+Remove-Item "$pm2Home\pm2.pid" -Force -ErrorAction SilentlyContinue
+
+# Start fresh
+Set-Location F:\erp-mes-system\backend
+pm2 start server.js --name erp
+pm2 save
+Set-Location ..
 
 Write-Host ""
 Write-Host "Sync complete! http://localhost:3198" -ForegroundColor Green
