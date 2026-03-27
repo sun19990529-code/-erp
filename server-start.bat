@@ -21,31 +21,19 @@ echo.
 cd /d "%~dp0"
 
 :: ========================================
-:: 检查并安装依赖
+:: 检查前端是否已构建
 :: ========================================
-if not exist "backend\node_modules" (
-    echo [1/3] 安装后端依赖...
-    cd backend
-    call npm install --production
-    cd ..
-) else (
-    echo [1/3] 后端依赖已就绪 √
-)
-
 if not exist "frontend\dist" (
-    echo [2/3] 构建前端...
-    cd frontend
-    if not exist "node_modules" call npm install
-    call npm run build
-    cd ..
-) else (
-    echo [2/3] 前端已构建 √
+    echo [提示] 前端未构建，请先运行 install.bat 或手动执行 npm run build
+    echo.
+    pause
+    exit /b
 )
 
 :: ========================================
-:: 停止已有服务
+:: 停止已有服务并启动
 :: ========================================
-echo [3/3] 启动服务...
+echo [启动] 正在启动服务...
 
 :: 尝试用PM2管理
 where pm2 >nul 2>&1
