@@ -27,7 +27,16 @@ npm install --production
 Set-Location ..
 
 Write-Host "(5/5) Restarting service..." -ForegroundColor Yellow
-pm2 restart erp
+pm2 restart erp 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Restart failed, resetting PM2..." -ForegroundColor Yellow
+    pm2 kill 2>$null
+    Start-Sleep -Seconds 2
+    Set-Location F:\erp-mes-system\backend
+    pm2 start server.js --name erp
+    pm2 save
+    Set-Location ..
+}
 
 Write-Host ""
 Write-Host "Sync complete! http://localhost:3198" -ForegroundColor Green
