@@ -47,10 +47,12 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "blob:"],
       connectSrc: ["'self'"],
       frameAncestors: ["'none'"],
+      upgradeInsecureRequests: null,
     }
   },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
+  originAgentCluster: false,
   hsts: false,
 }));
 
