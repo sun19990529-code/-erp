@@ -101,6 +101,7 @@ const ProductManager = ({ category }) => {
   const [selectedSupplierIds, setSelectedSupplierIds] = useState([]);
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
   const [selectedBoundMaterialIds, setSelectedBoundMaterialIds] = useState([]);
+  const [materialSearchText, setMaterialSearchText] = useState('');
   const [modal, setModal] = useState({ open: false, item: null, mode: 'list', productProcesses: [] });
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -259,6 +260,7 @@ const ProductManager = ({ category }) => {
     setSelectedSupplierIds([]);
     setSelectedCustomerIds([]);
     setSelectedBoundMaterialIds([]);
+    setMaterialSearchText('');
   };
 
   const save = async (e) => {
@@ -674,34 +676,70 @@ const ProductManager = ({ category }) => {
                       ))}
                     </div>
                   )}
-                  {/* 搜索下拉 */}
-                  {allMats.length > 0 ? (
-                    <select
-                      value=""
-                      onChange={e => {
-                        const id = parseInt(e.target.value);
-                        if (id && !selectedBoundMaterialIds.includes(id)) {
-                          setSelectedBoundMaterialIds([...selectedBoundMaterialIds, id]);
-                        }
-                      }}
-                      className="w-full border rounded-lg px-3 py-2 text-sm"
-                    >
-                      <option value="">搜索并选择原材料/半成品...</option>
-                      {(() => {
-                        const available = allMats.filter(m => !selectedBoundMaterialIds.includes(m.id));
-                        const raw = available.filter(m => m.category === '原材料');
-                        const semi = available.filter(m => m.category === '半成品');
-                        const fmt = (m) => {
-                          const prefix = m.suppliers?.length ? `[${m.suppliers.map(s => s.supplier_name).join('/')}] ` : '';
-                          return `${prefix}${m.name}${m.specification ? ` (${m.specification})` : ''}`;
-                        };
-                        return (<>
-                          {raw.length > 0 && <optgroup label="原材料">{raw.map(m => <option key={m.id} value={m.id}>{fmt(m)}</option>)}</optgroup>}
-                          {semi.length > 0 && <optgroup label="半成品">{semi.map(m => <option key={m.id} value={m.id}>{fmt(m)}</option>)}</optgroup>}
-                        </>);
-                      })()}
-                    </select>
-                  ) : <span className="text-gray-400 text-sm">暂无原材料/半成品数据</span>}
+                  {/* 搜索选择 */}
+                  {allMats.length > 0 ? (() => {
+                    const available = allMats.filter(m => !selectedBoundMaterialIds.includes(m.id));
+                    const fmt = (m) => {
+                      const prefix = m.suppliers?.length ? `[${m.suppliers.map(s => s.supplier_name).join('/')}] ` : '';
+                      return `${prefix}${m.name}${m.specification ? ` (${m.specification})` : ''}`;
+                    };
+                    const search = (materialSearchText || '').toLowerCase();
+                    const filtered = search ? available.filter(m => 
+                      m.name.toLowerCase().includes(search) || 
+                      (m.specification || '').toLowerCase().includes(search) ||
+                      (m.code || '').toLowerCase().includes(search) ||
+                      (m.suppliers || []).some(s => s.supplier_name.toLowerCase().includes(search))
+                    ) : available;
+                    const raw = filtered.filter(m => m.category === '原材料');
+                    const semi = filtered.filter(m => m.category === '半成品');
+                    return (
+                      <div>
+                        <div className="relative">
+                          <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                          <input
+                            type="text"
+                            placeholder="搜索物料名称、规格、编码、供应商..."
+                            value={materialSearchText || ''}
+                            onChange={e => setMaterialSearchText(e.target.value)}
+                            className="w-full border rounded-lg pl-8 pr-3 py-2 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none"
+                          />
+                        </div>
+                        {search ? (
+                          filtered.length === 0 ? (
+                            <div className="text-center text-gray-400 text-sm py-3">无匹配结果</div>
+                          ) : (
+                            <div className="max-h-48 overflow-y-auto mt-2 border rounded-lg divide-y">
+                              {raw.length > 0 && (
+                                <div>
+                                  <div className="px-3 py-1.5 bg-gray-50 text-xs font-medium text-gray-500 sticky top-0">原材料 ({raw.length})</div>
+                                  {raw.map(m => (
+                                    <div key={m.id} onClick={() => { setSelectedBoundMaterialIds([...selectedBoundMaterialIds, m.id]); setMaterialSearchText(''); }} 
+                                      className="px-3 py-2 text-sm cursor-pointer hover:bg-teal-50 transition-colors flex items-center gap-2">
+                                      <i className="fas fa-plus-circle text-teal-400 text-xs"></i>
+                                      {fmt(m)}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {semi.length > 0 && (
+                                <div>
+                                  <div className="px-3 py-1.5 bg-gray-50 text-xs font-medium text-gray-500 sticky top-0">半成品 ({semi.length})</div>
+                                  {semi.map(m => (
+                                    <div key={m.id} onClick={() => { setSelectedBoundMaterialIds([...selectedBoundMaterialIds, m.id]); setMaterialSearchText(''); }}
+                                      className="px-3 py-2 text-sm cursor-pointer hover:bg-teal-50 transition-colors flex items-center gap-2">
+                                      <i className="fas fa-plus-circle text-teal-400 text-xs"></i>
+                                      {fmt(m)}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        ) : null}
+                        <div className="text-xs text-gray-400 mt-1">已选 {selectedBoundMaterialIds.length} 项，可选 {available.length} 项</div>
+                      </div>
+                    );
+                  })() : <span className="text-gray-400 text-sm">暂无原材料/半成品数据</span>}
                 </div>
               );
             })()}

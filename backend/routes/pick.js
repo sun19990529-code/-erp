@@ -47,6 +47,15 @@ router.post('/', requirePermission('warehouse_create'), (req, res) => {
     if (!warehouse_id) return res.status(400).json({ success: false, message: '请选择仓库' });
     if (!items || items.length === 0) return res.status(400).json({ success: false, message: '请至少选择一个物料' });
     const orderNo = generateOrderNo('PK');
+
+    // 预取产品信息（用于单位换算）
+    const materialIds = [...new Set(items.map(i => i.material_id).filter(Boolean))];
+    const productMap = new Map();
+    materialIds.forEach(id => {
+      const p = req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+      if (p) productMap.set(id, p);
+    });
+
     let pickId;
     req.db.transaction(() => {
       const result = req.db.run(`INSERT INTO pick_orders (order_no, order_id, production_order_id, warehouse_id, operator, remark, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
@@ -54,9 +63,10 @@ router.post('/', requirePermission('warehouse_create'), (req, res) => {
       pickId = result.lastInsertRowid;
       (items || []).forEach(item => {
         if (item.material_id && item.quantity > 0) {
+          const product = productMap.get(item.material_id);
           const inputQuantity = item.input_quantity || item.quantity;
           const inputUnit = item.input_unit || '公斤';
-          const quantityKg = convertToKg(inputQuantity, inputUnit);
+          const quantityKg = convertToKg(inputQuantity, inputUnit, product);
           req.db.run(`INSERT INTO pick_items (pick_order_id, material_id, quantity, input_quantity, input_unit, remark) VALUES (?, ?, ?, ?, ?, ?)`,
             [pickId, item.material_id, quantityKg, inputQuantity, inputUnit, item.remark || null]);
         }
@@ -72,6 +82,11 @@ router.post('/', requirePermission('warehouse_create'), (req, res) => {
 router.put('/:id/status', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { status } = req.body;
+    // 【安全】状态值白名单校验
+    const validStatuses = ['pending', 'completed', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
+    }
     
     req.db.transaction(() => {
       if (status === 'completed') {
@@ -135,14 +150,24 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), (req,
 router.put('/:id', validateId, requirePermission('warehouse_edit'), (req, res) => {
   try {
     const { order_id, production_order_id, warehouse_id, operator, remark, items } = req.body;
+
+    // 预取产品信息（用于单位换算）
+    const materialIds = [...new Set(items.map(i => i.material_id).filter(Boolean))];
+    const productMap = new Map();
+    materialIds.forEach(id => {
+      const p = req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+      if (p) productMap.set(id, p);
+    });
+
     req.db.transaction(() => {
       req.db.run('UPDATE pick_orders SET order_id = ?, production_order_id = ?, warehouse_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [order_id || null, production_order_id || null, warehouse_id, operator, remark, req.params.id]);
       req.db.run('DELETE FROM pick_items WHERE pick_order_id = ?', [req.params.id]);
       items.forEach(item => {
+        const product = productMap.get(item.material_id);
         const inputQuantity = item.input_quantity || item.quantity;
-          const inputUnit = item.input_unit || '公斤';
-          const quantityKg = convertToKg(inputQuantity, inputUnit);  // I6: 统一调用工具函数
+        const inputUnit = item.input_unit || '公斤';
+        const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         req.db.run('INSERT INTO pick_items (pick_order_id, material_id, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?)',
           [req.params.id, item.material_id, quantityKg, inputQuantity, inputUnit]);
       });

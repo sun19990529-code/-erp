@@ -36,6 +36,7 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 
 // 安全响应头（防 XSS、点击劫持、MIME 嗅探等）
+// HTTP 直连模式（电信封锁80/443，无 HTTPS 终端），禁用强制 HTTPS 相关头
 const helmet = require('helmet');
 app.use(helmet({
   contentSecurityPolicy: {
@@ -94,10 +95,8 @@ const dbHelper = {
     return { data, pagination: { total, totalPages, page, pageSize } };
   },
   transaction: (fn) => {
-    const executeTx = db.transaction(() => {
-      fn();
-    });
-    executeTx();
+    const executeTx = db.transaction(() => fn());
+    return executeTx();
   }
 };
 

@@ -534,7 +534,7 @@ router.post('/transfer', requirePermission('warehouse_create'), (req, res) => {
         req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?, ?)',
           [transferId, item.product_id, batchNo, item.quantity, item.input_quantity || item.quantity, item.input_unit || '公斤']);
       });
-    })();
+    });
 
     writeLog(req.db, req.user?.id, '创建调拨单', 'transfer', transferId, `调拨单号: ${orderNo}`);
     res.json({ success: true, data: { id: transferId, order_no: orderNo } });
@@ -578,7 +578,7 @@ router.put('/transfer/:id/confirm', validateId, requirePermission('warehouse_edi
       });
 
       req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', req.params.id]);
-    })();
+    });
 
     writeLog(req.db, req.user?.id, '确认调拨', 'transfer', req.params.id, '调拨完成');
     res.json({ success: true });
@@ -600,7 +600,7 @@ router.delete('/transfer/:id', validateId, requirePermission('warehouse_delete')
     req.db.transaction(() => {
       req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
       req.db.run('DELETE FROM outbound_orders WHERE id = ?', [req.params.id]);
-    })();
+    });
 
     writeLog(req.db, req.user?.id, '删除调拨单', 'transfer', req.params.id, `调拨单号: ${order.order_no}`);
     res.json({ success: true });
