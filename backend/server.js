@@ -50,6 +50,8 @@ app.use(helmet({
     }
   },
   crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  hsts: false,
 }));
 
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
