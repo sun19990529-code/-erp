@@ -1,4 +1,4 @@
-# server-sync.ps1 - ERP Server Sync Script
+﻿# server-sync.ps1 - ERP Server Sync Script
 # Run this on the server after code is pushed to GitHub
 
 # Auto-elevate to admin if not already
