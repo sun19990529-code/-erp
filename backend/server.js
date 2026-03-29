@@ -186,6 +186,16 @@ app.use('/api/logs', logsRoutes);
 const trackingRoutes = require('./routes/production-tracking');
 app.use('/api/tracking', trackingRoutes);
 
+// v1.7.0 新增路由
+const stocktakeRoutes = require('./routes/stocktake');
+app.use('/api/stocktake', stocktakeRoutes);
+const { router: notificationRoutes } = require('./routes/notifications');
+app.use('/api/notifications', notificationRoutes);
+const { router: financeRoutes } = require('./routes/finance');
+app.use('/api/finance', financeRoutes);
+const reportRoutes = require('./routes/report');
+app.use('/api/report', reportRoutes);
+
 // ==================== 全局错误处理中间件 ====================
  
 app.use((err, req, res, next) => {

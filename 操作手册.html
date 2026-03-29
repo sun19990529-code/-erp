@@ -267,6 +267,8 @@
 <li><a href="#15-v141-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.4.1 更新日志</a></li>
 <li><a href="#16-v150-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.5.0 更新日志</a></li>
 <li><a href="#17-v152-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.5.2 更新日志</a></li>
+<li><a href="#18-v153-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.5.3 更新日志</a></li>
+<li><a href="#19-v160-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97">v1.6.0 更新日志</a></li>
 </ol>
 <hr>
 <h2>1. 系统概述</h2>
@@ -1243,7 +1245,78 @@
 <li>📝 <strong>VERSION 文件同步</strong>：<code>frontend/public/VERSION</code> 和根目录 <code>VERSION</code> 更新至 v1.5.2</li>
 </ul>
 <hr>
-<p><strong>文档版本</strong>：v1.5.2<br><strong>更新日期</strong>：2026年3月25日<br><strong>编写人</strong>：系统架构师与实施工程师</p>
+<h2>18. v1.5.3 更新日志</h2>
+<p><strong>发布日期</strong>：2026年3月26日<br><strong>版本类型</strong>：代码审查与部署自动化</p>
+<h3>代码质量</h3>
+<ul>
+<li>🧹 <strong>全系统 import 清理</strong>：12 个页面共清理 93 个未使用 import</li>
+<li>⚡ <strong>load() 拆分优化</strong>：PurchasePages/OrderPages/OutsourcingPages/BasicDataPages 初始化数据与动态刷新分离</li>
+<li>🔧 <strong>API 路径修复</strong>：<code>/processes</code> → <code>/production/processes</code>，修复委外/生产/质检页面接口异常</li>
+<li>🛡️ <strong>错误守卫</strong>：openView/openEdit 添加 API 异常捕获，防止页面白屏</li>
+</ul>
+<h3>依赖更新</h3>
+<ul>
+<li>📦 react-router-dom 7.13.1 → 7.13.2</li>
+<li>📦 recharts 3.8.0 → 3.8.1</li>
+<li>📦 vite 8.0.1 → 8.0.2</li>
+<li>📦 vitest 4.1.0 → 4.1.1</li>
+</ul>
+<h3>部署自动化</h3>
+<ul>
+<li>🚀 <strong>一键部署脚本</strong>：<code>deploy/deploy.ps1</code> 支持 Windows 开发机 → Windows 服务器自动同步</li>
+<li>🔧 <strong>服务器初始化脚本</strong>：<code>deploy/server-init.ps1</code> 一键安装 OpenSSH + PM2</li>
+<li>🌐 <strong>CORS 多域名</strong>：新增 <code>msgy.asia</code> 域名白名单</li>
+<li>📄 <strong>部署文档更新</strong>：新增远程服务器部署、PM2 管理、数据库备份恢复指南</li>
+</ul>
+<hr>
+<h2>19. v1.6.1 更新日志</h2>
+<h3>19.1 系统底层与网络优化</h3>
+<ol>
+<li><strong>内网 HTTP 直连支持</strong>：禁用强制 HTTPS 的 CSP 升级策略与 HSTS，内网用户现在可以通过 HTTP(S) 直接访问且无跨域或拦截问题。</li>
+<li><strong>控制台乱码修复</strong>：所有启动脚本以标准 UTF-8 BOM 格式编码，修复由于各种 PowerShell 环境编码差异导致的乱码。</li>
+</ol>
+<h3>19.2 业务逻辑审查与修复</h3>
+<ol>
+<li><strong>领料功能加强</strong>：修复半成品单位换算细节。</li>
+<li><strong>库存管理</strong>：调拨事务全面修复。</li>
+<li><strong>状态校验</strong>：补全状态白名单规则校验。</li>
+<li><strong>缓存与性能</strong>：加入联动缓存清理机制。</li>
+</ol>
+<h2>20. v1.6.0 更新日志</h2>
+<p><strong>发布日期</strong>：2026年3月28日
+<strong>版本类型</strong>：生产库存联动 &amp; 下拉优化</p>
+<h3>产品命名与公差体系</h3>
+<ul>
+<li>📐 <strong>自动命名</strong>：产品名称/规格由外径、内径/壁厚、长度等尺寸字段实时生成，格式为 <code>Φ外径+上偏差-下偏差 × φ内径 × 长度</code></li>
+<li>📏 <strong>非对称公差</strong>：支持上下偏差分别填写（如 <code>+3-1</code>），空值自动补 <code>0</code></li>
+<li>🔤 <strong>专属符号前缀</strong>：外径Φ、内径φ、壁厚δ，命名自动带入</li>
+<li>✅ <strong>壁厚/内径切换</strong>：勾选即切换命名模式</li>
+</ul>
+<h3>下拉选择框优化</h3>
+<ul>
+<li>🏷️ <strong>前缀标识</strong>：所有产品/物料下拉显示 <code>[供应商名]</code> 或 <code>[客户名]</code> 前缀，快速识别归属</li>
+<li>📂 <strong>optgroup 分组</strong>：原材料/半成品/成品使用 <code>&lt;optgroup&gt;</code> 分组标题区分，全系统 7 处统一</li>
+<li>🔗 <strong>绑定物料过滤</strong>：领料页物料下拉按成品绑定关系过滤，未绑定时显示全部（向后兼容）</li>
+</ul>
+<h3>生产库存联动修复</h3>
+<ul>
+<li>🔄 <strong>半成品单位换算</strong>：<code>convertToKg</code> 和 <code>updateItem</code> 搜索范围从仅原材料扩展至 <code>allMaterials</code>（含半成品），修复半成品领料换算为 0 的问题</li>
+<li>📢 <strong>自动入库提示</strong>：报工成功后 toast 提示&quot;已自动入库 xx 件至半成品仓/成品仓&quot;</li>
+<li>⚡ <strong>并行加载</strong>：领料页 <code>load()</code> 统一为 <code>await Promise.all()</code> 并行加载 6 个接口</li>
+<li>🗑️ <strong>级联删除</strong>：产品删除时清理 <code>product_bound_materials</code> 孤儿数据</li>
+</ul>
+<h3>代码质量</h3>
+<ul>
+<li>🧹 移除未使用的 <code>inventory</code> state 声明</li>
+<li>⚡ 领料物料绑定过滤从内联 IIFE 改为 <code>useMemo</code> 缓存</li>
+<li>📊 成品列表新增&quot;公差&quot;列（hover 显示详情）和&quot;绑定物料&quot;列</li>
+</ul>
+<h3>新增脚本</h3>
+<ul>
+<li>🚀 <strong>server-start.bat</strong>：管理员服务器启动脚本，自动 UAC 提权 + PM2 托管</li>
+</ul>
+<hr>
+<p><strong>文档版本</strong>：v1.6.1<br><strong>更新日期</strong>：2026年3月28日<br><strong>编写人</strong>：系统架构师与实施工程师</p>
 
 <div class="footer">铭晟管理系统 v1.5.1 &mdash; 本文件由 generate.bat 自动生成</div>
 </body>

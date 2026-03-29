@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title ERP-MES v1.5.1 - Document Generator
+title ERP-MES v1.7.0 - Document Generator
 
 echo ============================================
 echo   ERP-MES Management System
-echo   HTML Document Generator v1.5.1
+echo   HTML Document Generator v1.7.0
 echo ============================================
 echo.
 echo Generating HTML documents...

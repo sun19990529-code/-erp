@@ -85,7 +85,7 @@ export function useConfirm() {
     resolveRef.current?.(false);
   }, []);
 
-  const Dialog = (
+  const Dialog = () => (
     <ConfirmModal
       isOpen={state.isOpen}
       title={state.title}

@@ -1,6 +1,6 @@
 {
   "name": "mingsheng-management-system",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "铭晟管理系统",
   "main": "server.js",
   "scripts": {
@@ -19,7 +19,6 @@
     "express-rate-limit": "^8.3.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "sql.js": "^1.10.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.3.6"

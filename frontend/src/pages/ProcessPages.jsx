@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import ProcessConfigPanel from '../components/ProcessConfigPanel';
-import OperatorSelect from '../components/OperatorSelect';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api';
-import { useConfirm } from '../components/ConfirmModal';
+import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
+import Pagination from '../components/Pagination';
+import SearchFilter from '../components/SearchFilter';
+import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
+import { TableSkeleton, Skeleton } from '../components/Skeleton';
+import { useDraftForm } from '../hooks/useDraftForm';
+import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
 const ProcessConfigManager = () => {
   const [products, setProducts] = useState([]);
@@ -419,43 +423,4 @@ const ProcessManager = ({ processCode }) => {
   );
 };
 
-const ProcessExecutionHub = () => {
-  const [activeProcess, setActiveProcess] = useState('ROLLING');
-  const processNames = { 
-    ROLLING: '轧机', STRAIGHTENING: '校直', POLISHING: '抛光', CORRECTING: '矫直', CUTTING: '切割',
-    DRAWING: '拉拔', CLEANING: '清洗', WIRE_CUTTING: '线切割', LASER_CUTTING: '激光切割', HEAT_TREATMENT: '热处理'
-  };
-
-  return (
-    <div className="fade-in">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-4 overflow-hidden">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xl font-bold">车间报工大厅</h2>
-          <span className="bg-teal-50 text-teal-700 px-3 py-1 rounded-full text-sm font-medium">
-            当前所在工位：{processNames[activeProcess]}
-          </span>
-        </div>
-        <div className="bg-gray-50/50 p-3">
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(processNames).map(([code, name]) => (
-              <button
-                key={code}
-                onClick={() => setActiveProcess(code)}
-                className={`px-4 py-2 rounded-lg text-sm transition-all whitespace-nowrap ${
-                  activeProcess === code 
-                    ? 'bg-teal-600 text-white shadow-md font-bold' 
-                    : 'bg-white text-gray-600 hover:bg-teal-50 hover:text-teal-600 border border-gray-200/60'
-                }`}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <ProcessManager processCode={activeProcess} />
-    </div>
-  );
-};
-
-export { ProcessConfigManager, ProcessManager, ProcessExecutionHub };
+export { ProcessConfigManager, ProcessManager };

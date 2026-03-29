@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ProductionTrackingPanel } from './ProductionTracking';
-import OperatorSelect from '../components/OperatorSelect';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api';
-import { useConfirm } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
+import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
-import SearchSelect from '../components/SearchSelect';
+import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
 import Table from '../components/Table';
-import PrintableQRCode from '../components/PrintableQRCode';
+import { TableSkeleton, Skeleton } from '../components/Skeleton';
+import { useDraftForm } from '../hooks/useDraftForm';
+import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
 const PickMaterialManager = () => {
   const { isAdmin } = useAuth();
@@ -69,8 +69,8 @@ const PickMaterialManager = () => {
     setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'view' });
   };
   
-  const openCreate = () => {
-    setModal({ open: true, item: null, items: [{ material_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }], mode: 'create' });
+  const openCreate = (pickType = 'pick') => {
+    setModal({ open: true, item: null, items: [{ material_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }], mode: 'create', type: pickType });
   };
   
   // 基于成品工序材料配置自动填充领料单
@@ -157,6 +157,8 @@ const PickMaterialManager = () => {
       }
     }
     
+    // 退料不检查库存
+    if (modal.type !== 'return') {
     // 验证库存是否足够（以公斤为单位）
     const invRes = await api.get(`/inventory?warehouse_type=raw`);
     if (invRes.success) {
@@ -183,8 +185,9 @@ const PickMaterialManager = () => {
           window.__toast?.warning(`${material?.name || '物料'} 库存不足！\n当前库存: ${inv.quantity} 公斤\n领料数量: ${item.quantity} 公斤`);
           return;
         }
-      }
+        }
     }
+    } // end if (modal.type !== 'return')
     
     // 确保items包含input_quantity和input_unit字段
     const processedItems = items.map(item => ({
@@ -199,7 +202,8 @@ const PickMaterialManager = () => {
       warehouse_id: warehouseId, 
       operator: fd.get('operator'), 
       remark: fd.get('remark'), 
-      items: processedItems 
+      items: processedItems,
+      type: modal.type || 'pick'
     };
     const res = modal.mode === 'edit'
       ? await api.put(`/pick/${modal.item.id}`, obj)
@@ -292,7 +296,14 @@ const PickMaterialManager = () => {
     <div className="fade-in">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">领料管理</h2>
-        <button onClick={openCreate} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700"><i className="fas fa-plus mr-2"></i>新建领料单</button>
+        <div className="flex gap-2">
+          <button onClick={() => openCreate('return')} className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors">
+            <i className="fas fa-undo mr-2"></i>新建退料单
+          </button>
+          <button onClick={() => openCreate('pick')} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition-colors">
+            <i className="fas fa-plus mr-2"></i>新建领料单
+          </button>
+        </div>
       </div>
       
       {/* 待领料订单提醒 */}
@@ -369,16 +380,20 @@ const PickMaterialManager = () => {
       
       <div className="bg-white rounded-xl shadow">
         <Table columns={[
-          { key: 'order_no', title: '领料单号' },
-          { key: 'order_no', title: '销售订单', render: (v, row) => row.order_no || '-' },
+          { key: 'order_no', title: '单号' },
+          { key: 'type', title: '类型', render: v => (
+            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${v === 'return' ? 'bg-orange-100 text-orange-700' : 'bg-teal-100 text-teal-700'}`}>
+              {v === 'return' ? '退料' : '领料'}
+            </span>
+          )},
           { key: 'warehouse_name', title: '仓库' },
-          { key: 'operator', title: '领料人' },
+          { key: 'operator', title: '经办人' },
           { key: 'status', title: '状态', render: v => <StatusBadge status={v} type="pick" /> },
           { key: 'created_at', title: '创建时间', render: v => v?.slice(0, 10) }
         ]} data={data} onView={openView} onEdit={openEdit} onDelete={del} editPermission="production_edit" deletePermission="production_delete" />
       </div>
       
-      <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? '领料单详情' : '新建领料单'} size="max-w-3xl">
+      <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? (modal.item?.type === 'return' ? '退料单详情' : '领料单详情') : (modal.type === 'return' ? '新建退料单' : '新建领料单')} size="max-w-3xl">
         {modal.mode === 'view' ? (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 text-sm">
@@ -434,20 +449,20 @@ const PickMaterialManager = () => {
             )}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">领料仓库 *</label>
+                <label className="block text-sm font-medium mb-1">{modal.type === 'return' ? '退入仓库' : '领料仓库'} *</label>
                 <select name="warehouse_id" className="w-full border rounded-lg px-3 py-2" required>
                   <option value="">请选择</option>
                   {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">领料人</label>
+                <label className="block text-sm font-medium mb-1">{modal.type === 'return' ? '退料人' : '领料人'}</label>
                 <OperatorSelect />
               </div>
               <input type="hidden" name="order_id" value={modal.item?.order_id || ''} />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">领料明细</label>
+              <label className="block text-sm font-medium mb-2">{modal.type === 'return' ? '退料明细' : '领料明细'}</label>
               <div className="border rounded-lg p-3 space-y-2">
                 {(modal.items || []).map((it, i) => {
                   const material = allMaterials.find(m => String(m.id) === String(it.material_id));

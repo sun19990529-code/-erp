@@ -96,7 +96,7 @@ const apiRequest = async (url, options = {}) => {
       if (pathParts.length > 0) {
         invalidateCache(pathParts[0]);
         // 跨模块联动清除：写操作会影响关联模块的数据
-        const related = { pick: ['inventory'], production: ['inventory', 'orders'], inbound: ['inventory'], outbound: ['inventory', 'orders'] };
+        const related = { pick: ['inventory'], production: ['inventory', 'orders'], inbound: ['inventory'], outbound: ['inventory', 'orders'], stocktake: ['inventory'], finance: ['payables', 'receivables'] };
         (related[pathParts[0]] || []).forEach(m => invalidateCache(m));
       }
     }

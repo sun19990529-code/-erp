@@ -4,11 +4,12 @@ const { requirePermission } = require('../middleware/permission');
 const { validateId } = require('../middleware/validate');
 const { generateOrderNo } = require('../utils/order-number');
 const { convertToKg } = require('../utils/unit-convert');
+const { sendNotification } = require('./notifications');
 
-// 领料单列表
+// 领料/退料单列表
 router.get('/', requirePermission('warehouse_view'), (req, res) => {
   try {
-    const { status, order_id } = req.query;
+    const { status, order_id, type } = req.query;
     let sql = `
       SELECT po.*, w.name as warehouse_name,
         o.order_no, ppo.order_no as production_order_no
@@ -21,6 +22,7 @@ router.get('/', requirePermission('warehouse_view'), (req, res) => {
     const params = [];
     if (status) { sql += ' AND po.status = ?'; params.push(status); }
     if (order_id) { sql += ' AND po.order_id = ?'; params.push(order_id); }
+    if (type) { sql += ' AND po.type = ?'; params.push(type); }
     sql += ' ORDER BY po.created_at DESC';
     const orders = req.db.all(sql, params);
     res.json({ success: true, data: orders });
@@ -43,10 +45,12 @@ router.get('/:id', validateId, requirePermission('warehouse_view'), (req, res) =
 
 router.post('/', requirePermission('warehouse_create'), (req, res) => {
   try {
-    const { order_id, production_order_id, warehouse_id, operator, remark, items } = req.body;
+    const { order_id, production_order_id, warehouse_id, operator, remark, items, type } = req.body;
+    const pickType = type === 'return' ? 'return' : 'pick';
+    const prefix = pickType === 'return' ? 'RT' : 'PK';
     if (!warehouse_id) return res.status(400).json({ success: false, message: '请选择仓库' });
     if (!items || items.length === 0) return res.status(400).json({ success: false, message: '请至少选择一个物料' });
-    const orderNo = generateOrderNo('PK');
+    const orderNo = generateOrderNo(prefix);
 
     // 预取产品信息（用于单位换算）
     const materialIds = [...new Set(items.map(i => i.material_id).filter(Boolean))];
@@ -58,8 +62,8 @@ router.post('/', requirePermission('warehouse_create'), (req, res) => {
 
     let pickId;
     req.db.transaction(() => {
-      const result = req.db.run(`INSERT INTO pick_orders (order_no, order_id, production_order_id, warehouse_id, operator, remark, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-        [orderNo, order_id || null, production_order_id || null, warehouse_id, operator, remark || null]);
+      const result = req.db.run(`INSERT INTO pick_orders (order_no, order_id, production_order_id, warehouse_id, operator, remark, status, type) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        [orderNo, order_id || null, production_order_id || null, warehouse_id, operator, remark || null, pickType]);
       pickId = result.lastInsertRowid;
       (items || []).forEach(item => {
         if (item.material_id && item.quantity > 0) {
@@ -91,34 +95,44 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), (req,
     req.db.transaction(() => {
       if (status === 'completed') {
         const order = req.db.get('SELECT * FROM pick_orders WHERE id = ?', [req.params.id]);
+        const isReturn = order.type === 'return';
         const items = req.db.all('SELECT pi.*, p.name as material_name FROM pick_items pi JOIN products p ON pi.material_id = p.id WHERE pi.pick_order_id = ?', [req.params.id]);
         items.forEach(item => {
-          // 检查总库存是否充足
-          const totalInv = req.db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [order.warehouse_id, item.material_id]);
-          if (!totalInv || totalInv.total < item.quantity) {
-            throw new Error(`物料「${item.material_name}」库存不足，需要 ${item.quantity}，当前库存 ${totalInv?.total || 0}`);
-          }
-          
-          if (item.batch_no && item.batch_no !== 'DEFAULT_BATCH') {
-            // 指定批次 → 精准扣减该批次
-            const batchInv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.material_id, item.batch_no]);
-            if (!batchInv || batchInv.quantity < item.quantity) {
-              throw new Error(`物料「${item.material_name}」批次[${item.batch_no}]库存不足，需要 ${item.quantity}，该批次库存 ${batchInv?.quantity || 0}`);
+          if (isReturn) {
+            // 退料确认：增加库存
+            const existingInv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+              [order.warehouse_id, item.material_id, item.batch_no || 'DEFAULT_BATCH']);
+            if (existingInv) {
+              req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, existingInv.id]);
+            } else {
+              req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
+                [order.warehouse_id, item.material_id, item.batch_no || 'DEFAULT_BATCH', item.quantity]);
             }
-            req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, batchInv.id]);
           } else {
-            // 未指定批次 → 按入库时间从早到晚 FIFO 逐批扣减
-            let remaining = item.quantity;
-            const batches = req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [order.warehouse_id, item.material_id]);
-            for (const batch of batches) {
-              if (remaining <= 0) break;
-              const deduct = Math.min(remaining, batch.quantity);
-              req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
-              remaining -= deduct;
+            // 领料确认：扣减库存
+            const totalInv = req.db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [order.warehouse_id, item.material_id]);
+            if (!totalInv || totalInv.total < item.quantity) {
+              throw new Error(`物料「${item.material_name}」库存不足，需要 ${item.quantity}，当前库存 ${totalInv?.total || 0}`);
+            }
+            if (item.batch_no && item.batch_no !== 'DEFAULT_BATCH') {
+              const batchInv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.material_id, item.batch_no]);
+              if (!batchInv || batchInv.quantity < item.quantity) {
+                throw new Error(`物料「${item.material_name}」批次[${item.batch_no}]库存不足，需要 ${item.quantity}，该批次库存 ${batchInv?.quantity || 0}`);
+              }
+              req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, batchInv.id]);
+            } else {
+              let remaining = item.quantity;
+              const batches = req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [order.warehouse_id, item.material_id]);
+              for (const batch of batches) {
+                if (remaining <= 0) break;
+                const deduct = Math.min(remaining, batch.quantity);
+                req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
+                remaining -= deduct;
+              }
             }
           }
           
-          if (order.order_id) {
+          if (order.order_id && !isReturn) {
             req.db.run('UPDATE order_materials SET picked_quantity = picked_quantity + ? WHERE order_id = ? AND material_id = ?',
               [item.quantity, order.order_id, item.material_id]);
           }
@@ -133,6 +147,16 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), (req,
               req.db.run("UPDATE production_orders SET material_ready = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.production_order_id]);
             }
           }
+        }
+        
+        // 【通知】领料完成后检查库存水位
+        if (!isReturn) {
+          items.forEach(item => {
+            const totalInv = req.db.get('SELECT SUM(i.quantity) as total, p.alert_threshold, p.name FROM inventory i JOIN products p ON i.product_id = p.id WHERE i.product_id = ? GROUP BY i.product_id', [item.material_id]);
+            if (totalInv && totalInv.alert_threshold > 0 && totalInv.total <= totalInv.alert_threshold) {
+              sendNotification(req.db, null, 'warning', `库存预警：${totalInv.name}`, `物料「${totalInv.name}」当前库存 ${totalInv.total}，已低于安全水位 ${totalInv.alert_threshold}`, 'inventory', item.material_id);
+            }
+          });
         }
       }
       req.db.run('UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);

@@ -248,7 +248,8 @@
 <body>
 <h1>铭晟管理系统 - 部署与执行白皮书</h1>
 <blockquote>
-<p><strong>系统版本:</strong> v1.5.2<br><strong>更新要点:</strong> v1.5.2 为代码质量优化版，完成了 ProcessConfigPanel 共享组件抽取（消除三处重复）、CSP 安全策略配置、产品编码唯一性校验、buildTree O(n) 优化、竞态修复、版本号自动注入等改进。前序版本已完成材质分类管理、材质匹配过滤、工序物料绑定与首道工序自动扣减库存、双 Token 认证、Helmet 安全头、Zod Schema 校验、全景看板、批次追溯等功能。</p>
+<p><strong>系统版本:</strong> v1.6.1<br><strong>更新要点:</strong> v1.6.1 全局审查漏洞修复、禁用HTTPS强制升级支持HTTP直连、统一脚本编码解决乱码。 
+<strong>历史要点:</strong> v1.6.0 新增产品自动命名/非对称公差、下拉前缀标识与 optgroup 分组、生产库存联动修复（半成品换算/入库提示/并行加载）、管理员服务器启动脚本 server-start.bat。</p>
 </blockquote>
 <hr>
 <h2>第一部分：本地开发机部署</h2>
@@ -281,7 +282,8 @@
 </ul>
 <h3>4. 点火运行服务端</h3>
 <ul>
-<li>双击运行 <strong><code>start.bat</code></strong> 启动文件。</li>
+<li><strong>方式一（管理员启动，推荐）</strong>：双击 <strong><code>server-start.bat</code></strong>，自动请求 UAC 管理员提权，优先使用 PM2 托管服务</li>
+<li><strong>方式二（普通启动）</strong>：双击运行 <strong><code>start.bat</code></strong>，直接启动 Node 进程</li>
 <li>随即会唤醒常驻控制台进程，并自动打开浏览器。</li>
 <li>🔗 默认路由为：<code>http://localhost:3198</code></li>
 </ul>

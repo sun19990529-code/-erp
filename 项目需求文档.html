@@ -247,7 +247,7 @@
 </head>
 <body>
 <h1>铭晟管理系统 (ERP-MES) - 项目需求文档 (PRD)</h1>
-<p><strong>文档版本</strong>：v1.5.2<br><strong>更新日期</strong>：2026年3月25日  </p>
+<p><strong>文档版本</strong>：v1.6.1<br><strong>更新日期</strong>：2026年3月28日  </p>
 <h2>一、 项目背景与业务目标</h2>
 <p>为了解决生产制造与进销存管理中数据割裂的问题，打破接单、采购、排产、品控与仓储各环节的信息孤岛，本机组建了「<strong>铭晟管理系统</strong>」。该系统是一套深度融合 **ERP（企业资源计划）**与 **MES（制造执行系统）**核心功能的轻量级、智能化的业务闭环软件。</p>
 <p><strong>核心业务目标</strong>：</p>
@@ -387,6 +387,21 @@
 <td><strong>v1.5.2</strong></td>
 <td><strong>2026-03-25</strong></td>
 <td><strong>代码质量：ProcessConfigPanel组件抽取消除3处重复、CSP安全策略配置、产品编码唯一性校验、buildTree O(n)优化、竞态修复、版本号自动注入</strong></td>
+</tr>
+<tr>
+<td><strong>v1.5.3</strong></td>
+<td><strong>2026-03-26</strong></td>
+<td><strong>代码审查与部署自动化：93处import清理、4页面load()拆分优化、API路径修复、CORS多域名、patch依赖更新、一键部署脚本(deploy.ps1)、部署文档更新</strong></td>
+</tr>
+<tr>
+<td><strong>v1.6.1</strong></td>
+<td><strong>2026-03-28</strong></td>
+<td><strong>全局逻辑审查（单位换算/事务/缓存等）、禁止强制HTTPS配置、脚本UTF-8 BOM统一编码</strong></td>
+</tr>
+<tr>
+<td><strong>v1.6.0</strong></td>
+<td><strong>2026-03-28</strong></td>
+<td><strong>生产库存联动：产品自动命名/非对称公差、下拉前缀标识与optgroup分组、半成品单位换算修复、报工入库toast提示、领料并行加载、级联删除修复、管理员启动脚本</strong></td>
 </tr>
 </tbody></table>
 

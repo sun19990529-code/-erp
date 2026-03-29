@@ -77,7 +77,14 @@ function createTablesIfNotExist(db) {
     { name: 'outsourcing_items', sql: `CREATE TABLE IF NOT EXISTS outsourcing_items (id INTEGER PRIMARY KEY AUTOINCREMENT, outsourcing_order_id INTEGER NOT NULL, product_id INTEGER NOT NULL, quantity INTEGER NOT NULL, returned_quantity INTEGER DEFAULT 0, unit_price REAL DEFAULT 0, remark TEXT, FOREIGN KEY (outsourcing_order_id) REFERENCES outsourcing_orders(id), FOREIGN KEY (product_id) REFERENCES products(id))` },
     { name: 'operation_logs', sql: `CREATE TABLE IF NOT EXISTS operation_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, module TEXT NOT NULL, target_id TEXT, detail TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))` },
     { name: 'material_categories', sql: `CREATE TABLE IF NOT EXISTS material_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, parent_id INTEGER DEFAULT NULL, sort_order INTEGER DEFAULT 0, description TEXT, status INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (parent_id) REFERENCES material_categories(id))` },
-    { name: 'production_material_consumption', sql: `CREATE TABLE IF NOT EXISTS production_material_consumption (id INTEGER PRIMARY KEY AUTOINCREMENT, production_order_id INTEGER NOT NULL, process_id INTEGER NOT NULL, material_id INTEGER NOT NULL, planned_quantity REAL DEFAULT 0, actual_quantity REAL DEFAULT 0, unit TEXT DEFAULT '公斤', operator TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (production_order_id) REFERENCES production_orders(id), FOREIGN KEY (process_id) REFERENCES processes(id), FOREIGN KEY (material_id) REFERENCES products(id))` }
+    { name: 'production_material_consumption', sql: `CREATE TABLE IF NOT EXISTS production_material_consumption (id INTEGER PRIMARY KEY AUTOINCREMENT, production_order_id INTEGER NOT NULL, process_id INTEGER NOT NULL, material_id INTEGER NOT NULL, planned_quantity REAL DEFAULT 0, actual_quantity REAL DEFAULT 0, unit TEXT DEFAULT '公斤', operator TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (production_order_id) REFERENCES production_orders(id), FOREIGN KEY (process_id) REFERENCES processes(id), FOREIGN KEY (material_id) REFERENCES products(id))` },
+    // v1.7.0 新增
+    { name: 'stocktake_orders', sql: `CREATE TABLE IF NOT EXISTS stocktake_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT UNIQUE NOT NULL, warehouse_id INTEGER NOT NULL, operator TEXT, status TEXT DEFAULT 'draft', remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (warehouse_id) REFERENCES warehouses(id))` },
+    { name: 'stocktake_items', sql: `CREATE TABLE IF NOT EXISTS stocktake_items (id INTEGER PRIMARY KEY AUTOINCREMENT, stocktake_id INTEGER NOT NULL, product_id INTEGER NOT NULL, batch_no TEXT DEFAULT 'DEFAULT_BATCH', system_quantity REAL DEFAULT 0, actual_quantity REAL, difference REAL DEFAULT 0, remark TEXT, FOREIGN KEY (stocktake_id) REFERENCES stocktake_orders(id), FOREIGN KEY (product_id) REFERENCES products(id))` },
+    { name: 'notifications', sql: `CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, type TEXT NOT NULL, title TEXT NOT NULL, content TEXT, module TEXT, target_id INTEGER, is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))` },
+    { name: 'payables', sql: `CREATE TABLE IF NOT EXISTS payables (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT UNIQUE NOT NULL, type TEXT NOT NULL, source_type TEXT, source_id INTEGER, supplier_id INTEGER, amount REAL NOT NULL DEFAULT 0, paid_amount REAL DEFAULT 0, status TEXT DEFAULT 'unpaid', due_date DATE, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (supplier_id) REFERENCES suppliers(id))` },
+    { name: 'receivables', sql: `CREATE TABLE IF NOT EXISTS receivables (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT UNIQUE NOT NULL, type TEXT NOT NULL, source_type TEXT, source_id INTEGER, customer_id INTEGER, amount REAL NOT NULL DEFAULT 0, received_amount REAL DEFAULT 0, status TEXT DEFAULT 'unpaid', due_date DATE, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (customer_id) REFERENCES customers(id))` },
+    { name: 'payment_records', sql: `CREATE TABLE IF NOT EXISTS payment_records (id INTEGER PRIMARY KEY AUTOINCREMENT, payable_id INTEGER, receivable_id INTEGER, amount REAL NOT NULL, payment_method TEXT DEFAULT 'bank', operator TEXT, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)` }
   ];
   
   tables.forEach(t => {
@@ -125,6 +132,9 @@ function createTablesIfNotExist(db) {
     checkAndAddCol('products', 'tolerance_id_lower', "ALTER TABLE products ADD COLUMN tolerance_id_lower REAL;");
     checkAndAddCol('products', 'tolerance_wt_lower', "ALTER TABLE products ADD COLUMN tolerance_wt_lower REAL;");
     checkAndAddCol('products', 'tolerance_len_lower', "ALTER TABLE products ADD COLUMN tolerance_len_lower REAL;");
+    
+    // v1.7.0：领料单增加类型字段（pick=领料, return=退料）
+    checkAndAddCol('pick_orders', 'type', "ALTER TABLE pick_orders ADD COLUMN type TEXT DEFAULT 'pick';");
     
   } catch (e) {
     console.log('字段添加跳过（可能已存在）:', e.message);
@@ -182,6 +192,12 @@ function createIndexesIfNotExist(db) {
     // 检验索引
     { name: 'idx_final_inspection_result', sql: 'CREATE INDEX IF NOT EXISTS idx_final_inspection_result ON final_inspections(result)' },
     { name: 'idx_final_inspection_order', sql: 'CREATE INDEX IF NOT EXISTS idx_final_inspection_order ON final_inspections(order_id)' },
+    // v1.7.0 索引
+    { name: 'idx_pick_type', sql: 'CREATE INDEX IF NOT EXISTS idx_pick_type ON pick_orders(type)' },
+    { name: 'idx_stocktake_status', sql: 'CREATE INDEX IF NOT EXISTS idx_stocktake_status ON stocktake_orders(status)' },
+    { name: 'idx_notifications_user', sql: 'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read)' },
+    { name: 'idx_payables_status', sql: 'CREATE INDEX IF NOT EXISTS idx_payables_status ON payables(status)' },
+    { name: 'idx_receivables_status', sql: 'CREATE INDEX IF NOT EXISTS idx_receivables_status ON receivables(status)' },
   ];
   
   indexes.forEach(idx => {
@@ -379,7 +395,9 @@ function insertInitialData(db) {
 // 权限补充迁移：确保新增权限在现有数据库中也存在
 function ensurePermissionExists(db) {
   const required = [
-    { name: '仪表盘-查看', code: 'dashboard_view', module: '仪表盘' }
+    { name: '仪表盘-查看', code: 'dashboard_view', module: '仪表盘' },
+    { name: '财务-查看', code: 'finance_view', module: '财务管理' },
+    { name: '财务-编辑', code: 'finance_edit', module: '财务管理' }
   ];
   required.forEach(p => {
     const exists = db.prepare('SELECT id FROM permissions WHERE code = ?').get(p.code);

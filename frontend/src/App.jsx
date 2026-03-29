@@ -5,6 +5,7 @@ import { ToastProvider } from './context/ToastContext';
 import { AuthContext } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import Sidebar from './pages/Sidebar';
+import NotificationBell from './components/NotificationBell';
 
 // React.lazy 路由级懒加载 — 减少首屏包体积
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -38,6 +39,9 @@ const WorkshopMonitor = React.lazy(() => import('./pages/WorkshopMonitor'));
 const TrackingPage = React.lazy(() => import('./pages/TrackingPage'));
 const PurchaseSuggestionPage = React.lazy(() => import('./pages/PurchaseSuggestionPage'));
 const CostCardPage = React.lazy(() => import('./pages/CostCardPage'));
+const StocktakePage = React.lazy(() => import('./pages/StocktakePage'));
+const FinancePages = React.lazy(() => import('./pages/FinancePages'));
+const ReportPage = React.lazy(() => import('./pages/ReportPage'));
 const AUTH_KEY = 'erp_user_auth';
 
 // 路由 ↔ 菜单 映射表
@@ -77,6 +81,10 @@ const MENU_ROUTES = {
   'batch-tracking': '/tracking',
   'purchase-suggestion': '/purchase/suggestions',
   'cost-card': '/production/cost',
+  'stocktake': '/warehouse/stocktake',
+  'finance-payable': '/finance/payable',
+  'finance-receivable': '/finance/receivable',
+  'production-report': '/production/report',
 };
 
 // 反向映射：path → menuKey
@@ -113,9 +121,11 @@ const AppContent = ({ user, permissions, handleLogout }) => {
           <i className="fas fa-bars"></i>
         </button>
         <div className="font-bold text-gray-800 tracking-wide">铭晟管理系统</div>
-        <button onClick={handleLogout} className="text-gray-500 hover:bg-red-50 hover:text-red-500 text-sm w-10 h-10 flex items-center justify-center rounded-lg transition-colors">
-          <i className="fas fa-sign-out-alt"></i>
-        </button>
+        <div className="flex items-center gap-1">
+          <button onClick={handleLogout} className="text-gray-500 hover:bg-red-50 hover:text-red-500 text-sm w-10 h-10 flex items-center justify-center rounded-lg transition-colors">
+            <i className="fas fa-sign-out-alt"></i>
+          </button>
+        </div>
       </div>
 
       <div className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}></div>
@@ -123,6 +133,13 @@ const AppContent = ({ user, permissions, handleLogout }) => {
       <div className="flex min-h-screen bg-gray-50/50">
         <Sidebar activeMenu={activeMenu} setActiveMenu={setActiveMenu} user={user} permissions={permissions} onLogout={handleLogout} sidebarOpen={sidebarOpen} onCloseSidebar={() => setSidebarOpen(false)} />
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden overflow-y-auto w-full relative">
+          {/* 顶部通知栏（全屏幕共用唯一实例） */}
+          <div className="flex justify-end items-center mb-4 -mt-1">
+            <div className="flex items-center gap-2">
+              <NotificationBell />
+              <span className="text-xs text-gray-400 hidden lg:inline">{user?.real_name || user?.username}</span>
+            </div>
+          </div>
           <div className="max-w-[1600px] mx-auto page-transition" key={location.pathname}>
             <ErrorBoundary>
               <Suspense fallback={
@@ -174,6 +191,10 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/tracking" element={<TrackingPage />} />
                 <Route path="/purchase/suggestions" element={<PurchaseSuggestionPage />} />
                 <Route path="/production/cost" element={<CostCardPage />} />
+                <Route path="/warehouse/stocktake" element={<StocktakePage />} />
+                <Route path="/finance/payable" element={<FinancePages type="payable" />} />
+                <Route path="/finance/receivable" element={<FinancePages type="receivable" />} />
+                <Route path="/production/report" element={<ReportPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               </Suspense>

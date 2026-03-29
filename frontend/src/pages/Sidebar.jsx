@@ -12,6 +12,7 @@ const menuConfig = [
       { key: 'inbound', label: '统一入库调度' },
       { key: 'outbound', label: '统一出库调度' },
       { key: 'transfer', label: '仓库间调拨' },
+      { key: 'stocktake', label: '库存盘点' },
       { key: 'batch-tracking', label: '批次溯源查询' },
     ]
   },
@@ -25,6 +26,7 @@ const menuConfig = [
       { key: 'process-config', label: '工序流转配置' },
       { key: 'process-hub', label: '车间报工大厅' },
       { key: 'cost-card', label: '工单成本卡' },
+      { key: 'production-report', label: '生产报表' },
     ]
   },
   {
@@ -39,6 +41,13 @@ const menuConfig = [
   { key: 'purchase-hub', label: '采购单据中心', icon: 'fa-shopping-cart' },
   { key: 'purchase-suggestion', label: '智能采购建议', icon: 'fa-lightbulb' },
   { key: 'outsourcing-hub', label: '委外单据中心', icon: 'fa-truck' },
+  {
+    key: 'finance', label: '财务管理', icon: 'fa-yen-sign',
+    children: [
+      { key: 'finance-payable', label: '应付账款' },
+      { key: 'finance-receivable', label: '应收账款' },
+    ]
+  },
   {
     key: 'product', label: '产品档案', icon: 'fa-box',
     children: [
@@ -84,6 +93,7 @@ const menuPermissions = {
   'pick-material': 'production_create', 'process-config': 'production_edit',
   'process-hub': 'production_edit',
   'cost-card': 'production_view',
+  'production-report': 'production_view',
   // 质量检验
   'inspection-inbound': 'inspection_view', 'inspection-patrol': 'inspection_view',
   'inspection-outsourcing': 'inspection_view', 'inspection-final': 'inspection_view',
@@ -100,6 +110,12 @@ const menuPermissions = {
   'role': null, 'permission': null,
   'user-internal': null, 'user-external': null,
   'settings-backup': null, 'settings-about': null,
+  // 仓库盘点
+  'stocktake': 'warehouse_view',
+  'transfer': 'warehouse_edit',
+  // 财务管理
+  'finance-payable': 'finance_view',
+  'finance-receivable': 'finance_view',
 };
 
 const Sidebar = ({ activeMenu, setActiveMenu, user, permissions, onLogout, sidebarOpen, onCloseSidebar }) => {

@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api';
-import { useConfirm } from '../components/ConfirmModal';
+import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
-import Table from '../components/Table';
+import StatusBadge from '../components/StatusBadge';
+import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
+import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
+import Table from '../components/Table';
+import { TableSkeleton, Skeleton } from '../components/Skeleton';
+import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
-import ProcessConfigPanel from '../components/ProcessConfigPanel';
+import PrintableQRCode from '../components/PrintableQRCode';
 
 const SupplierManager = () => (
   <SimpleCRUDManager
@@ -773,152 +778,4 @@ const ProductManager = ({ category }) => {
   );
 };
 
-// ==================== 材质分类管理 ====================
-const MaterialCategoryManager = () => {
-  const [tree, setTree] = useState([]);
-  const [flat, setFlat] = useState([]);
-  const [confirm, ConfirmDialog] = useConfirm();
-  const [modal, setModal] = useState({ open: false, item: null });
-
-  const load = () => {
-    api.get('/material-categories').then(res => res.success && setTree(res.data));
-    api.get('/material-categories?flat=1').then(res => res.success && setFlat(res.data));
-  };
-  useEffect(() => { load(); }, []);
-
-  const save = async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const obj = {
-      name: fd.get('name'),
-      parent_id: fd.get('parent_id') || null,
-      sort_order: parseInt(fd.get('sort_order')) || 0,
-      description: fd.get('description')
-    };
-    if (modal.item?.id) {
-      await api.put(`/material-categories/${modal.item.id}`, obj);
-    } else {
-      await api.post('/material-categories', obj);
-    }
-    setModal({ open: false, item: null });
-    load();
-  };
-
-  const handleDelete = async (id) => {
-    if (!await confirm('确定删除该分类？')) return;
-    const res = await api.del(`/material-categories/${id}`);
-    if (!res.success) alert(res.message);
-    load();
-  };
-
-  const handleReorder = async (id, direction) => {
-    await api.post('/material-categories/reorder', { id, direction });
-    load();
-  };
-
-  const renderTree = (nodes, depth = 0) => (
-    nodes.map((n, idx) => (
-      <React.Fragment key={n.id}>
-        <tr className="hover:bg-gray-50">
-          <td className="px-4 py-3" style={{ paddingLeft: `${depth * 24 + 16}px` }}>
-            {n.children?.length > 0 && <i className="fas fa-folder-open text-amber-500 mr-2"></i>}
-            {(!n.children || n.children.length === 0) && <i className="fas fa-tag text-teal-500 mr-2"></i>}
-            <span className={depth === 0 ? 'font-bold' : ''}>{n.name}</span>
-          </td>
-          <td className="px-4 py-3 text-sm text-gray-500">{n.description || '-'}</td>
-          <td className="px-4 py-3">
-            <button onClick={() => handleReorder(n.id, 'up')} className={`mr-1 ${idx === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-gray-800'}`} disabled={idx === 0} title="上移"><i className="fas fa-arrow-up"></i></button>
-            <button onClick={() => handleReorder(n.id, 'down')} className={`mr-3 ${idx === nodes.length - 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-gray-800'}`} disabled={idx === nodes.length - 1} title="下移"><i className="fas fa-arrow-down"></i></button>
-            <button onClick={() => setModal({ open: true, item: { parent_id: n.id } })} className="text-teal-600 hover:text-teal-800 mr-3" title="新增子分类"><i className="fas fa-plus"></i></button>
-            <button onClick={() => setModal({ open: true, item: n })} className="text-blue-600 hover:text-blue-800 mr-3" title="编辑"><i className="fas fa-edit"></i></button>
-            <button onClick={() => handleDelete(n.id)} className="text-red-500 hover:text-red-700" title="删除"><i className="fas fa-trash"></i></button>
-          </td>
-        </tr>
-        {n.children && renderTree(n.children, depth + 1)}
-      </React.Fragment>
-    ))
-  );
-
-  return (
-    <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">材质分类管理</h2>
-        <button onClick={() => setModal({ open: true, item: null })} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700">
-          <i className="fas fa-plus mr-2"></i>新增大类
-        </button>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600">
-            <tr>
-              <th className="px-4 py-3 text-left">分类名称</th>
-              <th className="px-4 py-3 text-left">描述</th>
-              <th className="px-4 py-3 text-left">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {tree.length === 0 ? (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">暂无分类数据</td></tr>
-            ) : renderTree(tree)}
-          </tbody>
-        </table>
-      </div>
-
-      {/* 弹窗：根据场景区分 */}
-      {(() => {
-        const isEdit = !!modal.item?.id;
-        const isAddChild = modal.item?.parent_id && !modal.item?.id;
-        const isAddRoot = !modal.item;
-        // 判断是否为顶级分类（新增大类 或 编辑没有 parent_id 的分类）
-        const isTopLevel = isAddRoot || (isEdit && !modal.item?.parent_id);
-        const parentName = (isAddChild || (isEdit && modal.item?.parent_id))
-          ? flat.find(c => c.id === modal.item.parent_id)?.name
-          : null;
-        const title = isEdit
-          ? (isTopLevel ? '编辑大类' : `编辑子分类 — ${parentName || ''}`)
-          : isAddChild ? `新增子分类 — ${parentName || ''}` : '新增大类';
-
-        // 自动计算排序号：同级最大值 + 1
-        const calcNextSort = () => {
-          if (isEdit) return modal.item.sort_order;
-          const parentId = isAddChild ? modal.item.parent_id : null;
-          const siblings = flat.filter(c => (c.parent_id || null) === parentId);
-          if (siblings.length === 0) return 1;
-          return Math.max(...siblings.map(c => c.sort_order || 0)) + 1;
-        };
-
-        return (
-          <Modal isOpen={modal.open} onClose={() => setModal({ open: false, item: null })} title={title}>
-            <form onSubmit={save} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">分类名称 *</label>
-                <input name="name" defaultValue={isEdit ? modal.item?.name : ''} className="w-full border rounded-lg px-3 py-2" required placeholder={isTopLevel ? '如：不锈钢、合金、铜材' : '如：304、304L、316'} />
-              </div>
-              {/* 顶级分类（新增大类 / 编辑大类）：隐藏父级 */}
-              {isTopLevel && <input type="hidden" name="parent_id" value="" />}
-              {/* 非顶级（新增子分类 / 编辑子分类）：只读显示父级 */}
-              {!isTopLevel && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">所属大类</label>
-                  <input type="text" value={parentName || ''} disabled className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-500" />
-                  <input type="hidden" name="parent_id" value={modal.item?.parent_id} />
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium mb-1">描述</label>
-                <input name="description" defaultValue={isEdit ? modal.item?.description : ''} className="w-full border rounded-lg px-3 py-2" placeholder="可选" />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setModal({ open: false, item: null })} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
-                <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">保存</button>
-              </div>
-            </form>
-          </Modal>
-        );
-      })()}
-    </div>
-  );
-};
-
-export { SupplierManager, CustomerManager, DepartmentManager, ProductManager, MaterialCategoryManager };
+export { SupplierManager, CustomerManager, DepartmentManager, ProductManager };

@@ -5,6 +5,7 @@ const { validate, validateId } = require('../middleware/validate');
 const { purchaseCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
+const { createPayable } = require('./finance');
 
 // 采购单列表
 router.get('/', requirePermission('purchase_view'), (req, res) => {
@@ -103,6 +104,18 @@ router.put('/:id/status', validateId, requirePermission('purchase_edit'), (req, 
         }
       }
       req.db.run('UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
+      
+      // 【财务联动】采购完成时自动生成应付账款
+      if ((status === 'completed' || status === 'received') && !alreadyProcessed && purchase) {
+        createPayable(req.db, {
+          type: '采购应付',
+          sourceType: 'purchase',
+          sourceId: req.params.id,
+          supplierId: purchase.supplier_id,
+          amount: purchase.total_amount || 0,
+          remark: `采购单 ${purchase.order_no} 自动生成`
+        });
+      }
     });
     res.json({ success: true });
   } catch (error) {

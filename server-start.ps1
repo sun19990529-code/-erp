@@ -6,10 +6,10 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit
 }
 
-$Host.UI.RawUI.WindowTitle = "铭晟ERP管理系统 v1.6.0"
+$Host.UI.RawUI.WindowTitle = "铭晟ERP管理系统 v1.7.0"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   铭晟ERP管理系统 v1.6.0 - 服务器启动" -ForegroundColor Cyan
+Write-Host "   铭晟ERP管理系统 v1.7.0 - 服务器启动" -ForegroundColor Cyan
 Write-Host "   管理员模式" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
