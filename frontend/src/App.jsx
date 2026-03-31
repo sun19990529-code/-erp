@@ -12,12 +12,13 @@ const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const InventoryView = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.InventoryView })));
 const WarehouseOrderManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.WarehouseOrderManager })));
 const TransferManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.TransferManager })));
+
 const OrderManager = React.lazy(() => import('./pages/OrderPages').then(m => ({ default: m.OrderManager })));
 const ProductionScheduleGantt = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionScheduleGantt })));
 const ProductionOrderManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionOrderManager })));
 const PickMaterialManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.PickMaterialManager })));
 const ProcessConfigManager = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessConfigManager })));
-const ProcessExecutionHub = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessExecutionHub })));
+const ProcessManager = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessManager })));
 const InboundInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.InboundInspection })));
 const PatrolInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.PatrolInspection })));
 const OutsourcingInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.OutsourcingInspection })));
@@ -29,11 +30,13 @@ const SupplierManager = React.lazy(() => import('./pages/BasicDataPages').then(m
 const CustomerManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.CustomerManager })));
 const DepartmentManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.DepartmentManager })));
 const MaterialCategoryManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.MaterialCategoryManager })));
+
 const RoleManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.RoleManager })));
 const PermissionManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.PermissionManager })));
 const UserManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.UserManager })));
 const BackupSettings = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.BackupSettings })));
 const AboutSystem = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.AboutSystem })));
+const OperationLogs = React.lazy(() => import('./pages/OperationLogs'));
 const ScanStation = React.lazy(() => import('./components/ScanStation'));
 const WorkshopMonitor = React.lazy(() => import('./pages/WorkshopMonitor'));
 const TrackingPage = React.lazy(() => import('./pages/TrackingPage'));
@@ -42,6 +45,11 @@ const CostCardPage = React.lazy(() => import('./pages/CostCardPage'));
 const StocktakePage = React.lazy(() => import('./pages/StocktakePage'));
 const FinancePages = React.lazy(() => import('./pages/FinancePages'));
 const ReportPage = React.lazy(() => import('./pages/ReportPage'));
+const DataCenter = React.lazy(() => import('./pages/DataCenter'));
+const ImportPage = React.lazy(() => import('./pages/ImportPage'));
+const WorkstationQRPage = React.lazy(() => import('./pages/WorkstationQRPage'));
+const WorkstationScreen = React.lazy(() => import('./pages/WorkstationScreen'));
+const TemplateManager = React.lazy(() => import('./pages/TemplateBuilder/TemplateManager'));
 const AUTH_KEY = 'erp_user_auth';
 
 // 路由 ↔ 菜单 映射表
@@ -84,7 +92,12 @@ const MENU_ROUTES = {
   'stocktake': '/warehouse/stocktake',
   'finance-payable': '/finance/payable',
   'finance-receivable': '/finance/receivable',
+  'data-center': '/report/datacenter',
   'production-report': '/production/report',
+  'data-import': '/system/import',
+  'operation-logs': '/system/logs',
+  'workstation-qr': '/production/workstation-qr',
+  'print-template': '/system/print-template',
 };
 
 // 反向映射：path → menuKey
@@ -132,7 +145,7 @@ const AppContent = ({ user, permissions, handleLogout }) => {
 
       <div className="flex min-h-screen bg-gray-50/50">
         <Sidebar activeMenu={activeMenu} setActiveMenu={setActiveMenu} user={user} permissions={permissions} onLogout={handleLogout} sidebarOpen={sidebarOpen} onCloseSidebar={() => setSidebarOpen(false)} />
-        <main className="flex-1 p-4 sm:p-6 overflow-x-hidden overflow-y-auto w-full relative">
+        <main className="flex-1 p-3 sm:p-6 overflow-x-hidden overflow-y-auto w-full relative" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
           {/* 顶部通知栏（全屏幕共用唯一实例） */}
           <div className="flex justify-end items-center mb-4 -mt-1">
             <div className="flex items-center gap-2">
@@ -162,12 +175,13 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/warehouse/inbound" element={<WarehouseOrderManager orderType="inbound" title="入库调度中心" />} />
                 <Route path="/warehouse/outbound" element={<WarehouseOrderManager orderType="outbound" title="出库调度中心" />} />
                 <Route path="/warehouse/transfer" element={<TransferManager />} />
+
                 <Route path="/orders" element={<OrderManager />} />
                 <Route path="/production/schedule" element={<ProductionScheduleGantt />} />
                 <Route path="/production/orders" element={<ProductionOrderManager />} />
                 <Route path="/production/pick" element={<PickMaterialManager />} />
                 <Route path="/process/config" element={<ProcessConfigManager />} />
-                <Route path="/process/hub" element={<ProcessExecutionHub />} />
+                <Route path="/process/hub" element={<ProcessManager />} />
                 <Route path="/inspection/inbound" element={<InboundInspection />} />
                 <Route path="/inspection/patrol" element={<PatrolInspection />} />
                 <Route path="/inspection/outsourcing" element={<OutsourcingInspection />} />
@@ -181,6 +195,7 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/basic/customer" element={<CustomerManager />} />
                 <Route path="/basic/department" element={<DepartmentManager />} />
                 <Route path="/basic/material-category" element={<MaterialCategoryManager />} />
+
                 <Route path="/system/role" element={<RoleManager />} />
                 <Route path="/system/permission" element={<PermissionManager />} />
                 <Route path="/system/user-internal" element={<UserManager userType="internal" />} />
@@ -194,7 +209,12 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 <Route path="/warehouse/stocktake" element={<StocktakePage />} />
                 <Route path="/finance/payable" element={<FinancePages type="payable" />} />
                 <Route path="/finance/receivable" element={<FinancePages type="receivable" />} />
+                <Route path="/report/datacenter" element={<DataCenter />} />
                 <Route path="/production/report" element={<ReportPage />} />
+                <Route path="/system/import" element={<ImportPage />} />
+                <Route path="/system/logs" element={<OperationLogs />} />
+                <Route path="/production/workstation-qr" element={<WorkstationQRPage />} />
+                <Route path="/system/print-template" element={<TemplateManager />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               </Suspense>
@@ -246,9 +266,20 @@ const App = () => {
   return (
     <BrowserRouter>
       <ToastProvider>
-        <AuthContext.Provider value={{ user, permissions, isAdmin: user?.role_code === 'admin', hasPermission: (code) => user?.role_code === 'admin' || permissions.includes(code), onLogout: handleLogout }}>
-          <AppContent user={user} permissions={permissions} handleLogout={handleLogout} />
-        </AuthContext.Provider>
+        <Routes>
+          {/* 工位屏幕：公开路由，免登录 */}
+          <Route path="/ws/:stationCode" element={
+            <React.Suspense fallback={<div className="min-h-screen bg-gray-900 flex items-center justify-center"><i className="fas fa-circle-notch fa-spin text-5xl text-blue-500"></i></div>}>
+              <WorkstationScreen />
+            </React.Suspense>
+          } />
+          {/* 其他所有路由：需要登录 */}
+          <Route path="*" element={
+            <AuthContext.Provider value={{ user, permissions, isAdmin: user?.role_code === 'admin', hasPermission: (code) => user?.role_code === 'admin' || permissions.includes(code), onLogout: handleLogout }}>
+              <AppContent user={user} permissions={permissions} handleLogout={handleLogout} />
+            </AuthContext.Provider>
+          } />
+        </Routes>
       </ToastProvider>
     </BrowserRouter>
   );

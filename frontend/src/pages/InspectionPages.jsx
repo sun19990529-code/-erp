@@ -11,6 +11,8 @@ import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import PrintableQRCode from '../components/PrintableQRCode';
+import OperatorSelect from '../components/OperatorSelect';
+import InspectionFormFields from '../components/InspectionFormFields';
 
 const InboundInspection = () => {
   const [data, setData] = useState([]);

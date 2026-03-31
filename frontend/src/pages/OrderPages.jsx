@@ -11,6 +11,7 @@ import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import PrintableQRCode from '../components/PrintableQRCode';
+import { useConfirm } from '../components/ConfirmModal';
 
 const OrderManager = () => {
   const { isAdmin } = useAuth();

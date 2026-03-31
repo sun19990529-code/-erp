@@ -5,6 +5,7 @@ const { validate, validateId } = require('../middleware/validate');
 const { outsourcingCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
+const { createPayable } = require('./finance');
 
 // 待处理委外任务（优化：批量查询代替嵌套循环）
 router.get('/pending', requirePermission('outsourcing_view'), (req, res) => {
@@ -290,6 +291,18 @@ router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), (re
       }
 
       req.db.run('UPDATE outsourcing_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
+
+      // 【财务联动】委外完成时自动生成应付账款
+      if ((status === 'completed' || status === 'received') && !alreadyProcessed && outsourcing) {
+        createPayable(req.db, {
+          type: '委外应付',
+          sourceType: 'outsourcing',
+          sourceId: req.params.id,
+          supplierId: outsourcing.supplier_id,
+          amount: outsourcing.total_amount || 0,
+          remark: `委外单 ${outsourcing.order_no} 自动生成`
+        });
+      }
     });
     writeLog(req.db, req.user?.id, '委外状态变更', 'outsourcing', req.params.id, `状态: ${status}`);
     res.json({ success: true });

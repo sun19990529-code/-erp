@@ -7,8 +7,14 @@ const { JWT_SECRET, JWT_REFRESH_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN, 
 const { BCRYPT_ROUNDS } = require('../config/security');
 const { validate } = require('../middleware/validate');
 const { userLogin, userCreate } = require('../validators/schemas');
-const { clearPermissionCache, requirePermission } = require('../middleware/permission');
-const adminOnly = requirePermission('system_admin');
+const { clearPermissionCache } = require('../middleware/permission');
+// 管理员专属中间件：角色/权限/用户管理仅限 admin 角色
+const adminOnly = (req, res, next) => {
+  if (!req.user || req.user.role_code !== 'admin') {
+    return res.status(403).json({ success: false, message: '仅管理员可执行此操作' });
+  }
+  next();
+};
 
 // ==================== 部门管理（使用 CRUD 工厂）====================
 const departmentRouter = createCRUDRouter({
@@ -73,7 +79,7 @@ router.get('/operators', (req, res) => {
 });
 
 // ==================== 角色管理 ====================
-router.get('/roles', (req, res) => {
+router.get('/roles', adminOnly, (req, res) => {
   try {
     const roles = req.db.all('SELECT * FROM roles ORDER BY id');
     res.json({ success: true, data: roles });
@@ -122,7 +128,7 @@ router.delete('/roles/:id', adminOnly, (req, res) => {
 });
 
 // ==================== 权限管理 ====================
-router.get('/permissions', (req, res) => {
+router.get('/permissions', adminOnly, (req, res) => {
   try {
     const permissions = req.db.all('SELECT * FROM permissions ORDER BY id');
     res.json({ success: true, data: permissions });
@@ -186,7 +192,7 @@ router.delete('/permissions/:id', adminOnly, (req, res) => {
   }
 });
 
-router.get('/roles/:id/permissions', (req, res) => {
+router.get('/roles/:id/permissions', adminOnly, (req, res) => {
   try {
     const permissions = req.db.all(`
       SELECT p.* FROM permissions p
@@ -220,7 +226,7 @@ router.put('/roles/:id/permissions', adminOnly, (req, res) => {
 });
 
 // ==================== 用户管理 ====================
-router.get('/users', (req, res) => {
+router.get('/users', adminOnly, (req, res) => {
   try {
     const { user_type } = req.query;
     let sql = `

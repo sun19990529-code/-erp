@@ -3,6 +3,7 @@ const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
 const { generateOrderNo } = require('../utils/order-number');
 const { writeLog } = require('./logs');
+const { sendNotification } = require('./notifications');
 
 // 入库检验
 router.get('/inbound', requirePermission('inspection_view'), (req, res) => {
@@ -81,6 +82,9 @@ router.post('/inbound', requirePermission('inspection_create'), (req, res) => {
         }
       } else if (inspResult === 'fail') {
         req.db.run("UPDATE inbound_orders SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [inbound_order_id]);
+        // 【通知】来料检验不合格
+        const prodInfo = req.db.get('SELECT name FROM products WHERE id = ?', [product_id]);
+        sendNotification(req.db, null, 'error', '来料检验不合格', `产品「${prodInfo?.name || product_id}」来料检验未通过，不良数: ${defect_quantity || 0}`, 'inspection', inbound_order_id);
       }
     });
     writeLog(req.db, req.user?.id, '入库检验', 'inspection', inbound_order_id, `检验结果: ${inspResult}`);
@@ -126,6 +130,10 @@ router.post('/patrol', requirePermission('inspection_create'), (req, res) => {
       if (inspResult === 'fail' && production_order_id) {
         req.db.run("UPDATE production_orders SET status = 'quality_hold', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'processing'",
           [production_order_id]);
+        // 【通知】巡检不合格
+        const poInfo = req.db.get('SELECT order_no FROM production_orders WHERE id = ?', [production_order_id]);
+        const processInfo = req.db.get('SELECT name FROM processes WHERE id = ?', [process_id]);
+        sendNotification(req.db, null, 'error', '巡检不合格，工单已暂停', `工单 ${poInfo?.order_no || ''} 工序「${processInfo?.name || ''}」巡检未通过，已自动暂停生产`, 'production', production_order_id);
       }
     });
     writeLog(req.db, req.user?.id, '生产巡检', 'inspection', production_order_id, `检验结果: ${inspResult}`);
@@ -175,6 +183,9 @@ router.post('/outsourcing', requirePermission('inspection_create'), (req, res) =
         req.db.run("UPDATE outsourcing_orders SET status = 'inspection_passed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [outsourcing_order_id]);
       } else if (inspResult === 'fail') {
         req.db.run("UPDATE outsourcing_orders SET status = 'inspection_failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [outsourcing_order_id]);
+        // 【通知】委外检验不合格
+        const ooInfo = req.db.get('SELECT order_no FROM outsourcing_orders WHERE id = ?', [outsourcing_order_id]);
+        sendNotification(req.db, null, 'error', '委外加工检验不合格', `委外单 ${ooInfo?.order_no || ''} 检验未通过，请及时处理`, 'outsourcing', outsourcing_order_id);
       }
     });
     res.json({ success: true });

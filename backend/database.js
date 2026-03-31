@@ -32,6 +32,9 @@ function initDatabase(db) {
   // 权限补充迁移（不受 insertInitialData 的 early return 影响）
   ensurePermissionExists(db);
   
+  // 打印模板补充迁移（提供初始的高级中文注释 HTML 模板）
+  ensurePrintTemplates(db);
+  
   console.log('数据库结构初始化完成！(WAL 模式已启用)');
   return db;
 }
@@ -84,7 +87,11 @@ function createTablesIfNotExist(db) {
     { name: 'notifications', sql: `CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, type TEXT NOT NULL, title TEXT NOT NULL, content TEXT, module TEXT, target_id INTEGER, is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))` },
     { name: 'payables', sql: `CREATE TABLE IF NOT EXISTS payables (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT UNIQUE NOT NULL, type TEXT NOT NULL, source_type TEXT, source_id INTEGER, supplier_id INTEGER, amount REAL NOT NULL DEFAULT 0, paid_amount REAL DEFAULT 0, status TEXT DEFAULT 'unpaid', due_date DATE, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (supplier_id) REFERENCES suppliers(id))` },
     { name: 'receivables', sql: `CREATE TABLE IF NOT EXISTS receivables (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT UNIQUE NOT NULL, type TEXT NOT NULL, source_type TEXT, source_id INTEGER, customer_id INTEGER, amount REAL NOT NULL DEFAULT 0, received_amount REAL DEFAULT 0, status TEXT DEFAULT 'unpaid', due_date DATE, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (customer_id) REFERENCES customers(id))` },
-    { name: 'payment_records', sql: `CREATE TABLE IF NOT EXISTS payment_records (id INTEGER PRIMARY KEY AUTOINCREMENT, payable_id INTEGER, receivable_id INTEGER, amount REAL NOT NULL, payment_method TEXT DEFAULT 'bank', operator TEXT, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)` }
+    { name: 'payment_records', sql: `CREATE TABLE IF NOT EXISTS payment_records (id INTEGER PRIMARY KEY AUTOINCREMENT, payable_id INTEGER, receivable_id INTEGER, amount REAL NOT NULL, payment_method TEXT DEFAULT 'bank', operator TEXT, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)` },
+    // v2.0 工位管理
+    { name: 'workstations', sql: `CREATE TABLE IF NOT EXISTS workstations (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, process_id INTEGER, status INTEGER DEFAULT 1, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (process_id) REFERENCES processes(id))` },
+    // v2.1 打印模板管理引擎
+    { name: 'print_templates', sql: `CREATE TABLE IF NOT EXISTS print_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)` }
   ];
   
   tables.forEach(t => {
@@ -135,6 +142,20 @@ function createTablesIfNotExist(db) {
     
     // v1.7.0：领料单增加类型字段（pick=领料, return=退料）
     checkAndAddCol('pick_orders', 'type', "ALTER TABLE pick_orders ADD COLUMN type TEXT DEFAULT 'pick';");
+
+    // v1.7.1：入库明细增加供应商批号和炉号（可选追溯字段）
+    checkAndAddCol('inbound_items', 'supplier_batch_no', "ALTER TABLE inbound_items ADD COLUMN supplier_batch_no TEXT;");
+    checkAndAddCol('inbound_items', 'heat_no', "ALTER TABLE inbound_items ADD COLUMN heat_no TEXT;");
+    // 库存表也记录供应商批号和炉号，便于全链路追踪
+    checkAndAddCol('inventory', 'supplier_batch_no', "ALTER TABLE inventory ADD COLUMN supplier_batch_no TEXT;");
+    checkAndAddCol('inventory', 'heat_no', "ALTER TABLE inventory ADD COLUMN heat_no TEXT;");
+    // 领料明细也继承追溯字段（领料时从库存自动带入）
+    checkAndAddCol('pick_items', 'supplier_batch_no', "ALTER TABLE pick_items ADD COLUMN supplier_batch_no TEXT;");
+    checkAndAddCol('pick_items', 'heat_no', "ALTER TABLE pick_items ADD COLUMN heat_no TEXT;");
+    // 生产材料消耗记录补充追溯字段（报工扣料时记录来源批次的炉号/供应商批号）
+    checkAndAddCol('production_material_consumption', 'supplier_batch_no', "ALTER TABLE production_material_consumption ADD COLUMN supplier_batch_no TEXT;");
+    checkAndAddCol('production_material_consumption', 'heat_no', "ALTER TABLE production_material_consumption ADD COLUMN heat_no TEXT;");
+    checkAndAddCol('production_material_consumption', 'batch_no', "ALTER TABLE production_material_consumption ADD COLUMN batch_no TEXT;");
     
   } catch (e) {
     console.log('字段添加跳过（可能已存在）:', e.message);
@@ -198,6 +219,13 @@ function createIndexesIfNotExist(db) {
     { name: 'idx_notifications_user', sql: 'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read)' },
     { name: 'idx_payables_status', sql: 'CREATE INDEX IF NOT EXISTS idx_payables_status ON payables(status)' },
     { name: 'idx_receivables_status', sql: 'CREATE INDEX IF NOT EXISTS idx_receivables_status ON receivables(status)' },
+    // 补充缺失索引
+    { name: 'idx_inventory_updated', sql: 'CREATE INDEX IF NOT EXISTS idx_inventory_updated ON inventory(updated_at DESC)' },
+    { name: 'idx_outbound_type', sql: 'CREATE INDEX IF NOT EXISTS idx_outbound_type ON outbound_orders(type)' },
+    { name: 'idx_outbound_created', sql: 'CREATE INDEX IF NOT EXISTS idx_outbound_created ON outbound_orders(created_at DESC)' },
+    { name: 'idx_outbound_target_warehouse', sql: 'CREATE INDEX IF NOT EXISTS idx_outbound_target_warehouse ON outbound_orders(target_warehouse_id)' },
+    { name: 'idx_inbound_order_no', sql: 'CREATE INDEX IF NOT EXISTS idx_inbound_order_no ON inbound_orders(order_no)' },
+    { name: 'idx_inventory_batch', sql: 'CREATE INDEX IF NOT EXISTS idx_inventory_batch ON inventory(batch_no)' },
   ];
   
   indexes.forEach(idx => {
@@ -399,14 +427,237 @@ function ensurePermissionExists(db) {
     { name: '财务-查看', code: 'finance_view', module: '财务管理' },
     { name: '财务-编辑', code: 'finance_edit', module: '财务管理' }
   ];
+  // 获取 admin 角色 ID（通常为 1）
+  const adminRole = db.prepare("SELECT id FROM roles WHERE code = 'admin'").get();
   required.forEach(p => {
     const exists = db.prepare('SELECT id FROM permissions WHERE code = ?').get(p.code);
     if (!exists) {
-      db.run('INSERT INTO permissions (name, code, module, description) VALUES (?, ?, ?, ?)',
+      const result = db.run('INSERT INTO permissions (name, code, module, description) VALUES (?, ?, ?, ?)',
         [p.name, p.code, p.module, p.name + '权限']);
       console.log(`[迁移] 添加权限: ${p.code}`);
+      // 自动将新权限分配给 admin 角色
+      if (adminRole) {
+        const alreadyAssigned = db.prepare('SELECT id FROM role_permissions WHERE role_id = ? AND permission_id = ?')
+          .get(adminRole.id, result.lastInsertRowid);
+        if (!alreadyAssigned) {
+          db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)',
+            [adminRole.id, result.lastInsertRowid]);
+          console.log(`[迁移] 已将 ${p.code} 分配给管理员角色`);
+        }
+      }
     }
   });
+}
+
+// 供热更新注入默认打印模板
+function ensurePrintTemplates(db) {
+  const count = db.prepare('SELECT COUNT(*) as c FROM print_templates').get().c;
+  if (count === 0) {
+    console.log('[迁移] 发现 print_templates 为空，正在灌入高级默认模板...');
+    const defaultTemplates = [
+      {
+        type: 'inbound',
+        name: '标准A4采购入库单',
+        is_default: 1,
+        content: `<!-- 
+  =============================================
+  标准采购入库单 HTML 打印模板 (A4 横向设计)
+  使用说明：
+  1. 所有嵌套在 {{大括号}} 里面的部分会被系统自动替换为真实出入库数据。
+  2. <style> 标签里定义了打印格式，非专业前端请勿随意更改 @media print 的部分！
+  3. 如需修改公司名，请直接将下方的 "铭晟管理系统专用" 替换成您的公司名。
+  =============================================
+-->
+<style>
+  /* 全局基础字体和边距设置 */
+  .print-container { font-family: "Microsoft YaHei", "SimHei", sans-serif; color: #111; padding: 20px; font-size: 14px; }
+  /* 单据主标题的大字号剧中 */
+  .doc-title { text-align: center; font-size: 26px; font-weight: bold; margin-bottom: 20px; letter-spacing: 2px; }
+  /* 表头与单据信息分两栏（如单号、日期在左，供应商在右） */
+  .meta-info { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 14px; }
+  /* 定义商品明细表格的边框线和留白 */
+  .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  .data-table th, .data-table td { border: 1px solid #333; padding: 8px 12px; text-align: left; }
+  .data-table th { background-color: #f3f4f6; font-weight: bold; }
+  /* 底部签字区的留白排版 */
+  .signatures { display: flex; justify-content: space-between; margin-top: 50px; }
+  
+  /* 专用于物理打印机的核心排版控制 */
+  @media print {
+    @page { size: A4 portrait; margin: 10mm; } /* 定义为 A4 纵向，四边留白 10 毫米 */
+    body { -webkit-print-color-adjust: exact; margin: 0; }
+  }
+</style>
+
+<div class="print-container">
+  <!-- 此处为您公司的固定抬头 -->
+  <div class="doc-title">铭晟管理系统 · 采购入库单</div>
+
+  <!-- 单据的动态核心基础信息 -->
+  <div class="meta-info">
+    <div>
+      <p><strong>单据编号：</strong> {{order_no}}</p>
+      <p><strong>入库仓库：</strong> {{warehouse_name}}</p>
+    </div>
+    <div style="text-align: right;">
+      <p><strong>供应商名称：</strong> {{supplier_name}}</p>
+      <p><strong>入库时间：</strong> {{created_at}}</p>
+    </div>
+  </div>
+
+  <!-- 用以展现具体出库/入库几件商品的表格 -->
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th width="5%">序号</th>
+        <th width="15%">物料编码</th>
+        <th width="30%">物料名称与规格</th>
+        <th width="15%">入库批次</th>
+        <th width="15%">数量</th>
+        <th width="20%">备注信息</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 【注意：这段注释内是循环渲染区，不要改这里的 HTML 标签层级】 -->
+      <!-- LOOP_ITEMS_START -->
+      <tr>
+        <td>{{index}}</td>
+        <td>{{product_code}}</td>
+        <td>{{product_name}} ({{specification}})</td>
+        <td>{{batch_no}}</td>
+        <td><strong>{{quantity}}</strong> {{unit}}</td>
+        <td>{{remark}}</td>
+      </tr>
+      <!-- LOOP_ITEMS_END -->
+    </tbody>
+  </table>
+
+  <!-- 底部固定签字区 -->
+  <div class="signatures">
+    <div>仓管员签字：_____________________</div>
+    <div>交货人签字：_____________________</div>
+    <div>财务复核：_____________________</div>
+  </div>
+</div>`
+      },
+      {
+        type: 'outbound',
+        name: '标准A4销售出库单',
+        is_default: 1,
+        content: `<!-- =================销售发货专用模板================= -->
+<style>
+  .print-container { font-family: sans-serif; padding: 20px; color: #000; }
+  .header { text-align: center; margin-bottom: 30px; position: relative; }
+  .title { font-size: 28px; font-weight: bold; }
+  .subtitle { font-size: 16px; color: #555; margin-top: 5px; }
+  .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+  th, td { border: 1px solid #111; padding: 10px; text-align: left; }
+  th { background: #eee; }
+  .footer-meta { font-size: 14px; display: flex; justify-content: space-between; margin-top: 40px; }
+  @media print { @page { size: A4 landscape; margin: 15mm; } }
+</style>
+<div class="print-container">
+  <div class="header">
+    <div class="title">出库/发货送货单</div>
+    <div class="subtitle">发至客户，请妥善保管并签字后随车带回</div>
+  </div>
+  <div class="meta">
+    <div><strong>单号：</strong> {{order_no}}</div>
+    <div><strong>出库仓：</strong> {{warehouse_name}}</div>
+    <div><strong>日期：</strong> {{created_at}}</div>
+    <div><strong>对应的销售单号：</strong> {{ref_order_no}}</div>
+    <div><strong>客户名称：</strong> {{customer_name}}</div>
+  </div>
+  <table>
+    <thead><tr>
+      <th width="5%">序号</th><th>料号</th><th>品名规格</th><th>出库批次</th><th>发货数量</th>
+    </tr></thead>
+    <tbody>
+      <!-- LOOP_ITEMS_START -->
+      <tr>
+        <td>{{index}}</td><td>{{product_code}}</td><td>{{product_name}} / {{specification}}</td>
+        <td>{{batch_no}}</td><td style="font-weight:bold;font-size:16px;">{{quantity}} {{unit}}</td>
+      </tr>
+      <!-- LOOP_ITEMS_END -->
+    </tbody>
+  </table>
+  <div class="footer-meta">
+    <span>司机/承运人签字：______________</span>
+    <span>收货方当面盖章签收：______________</span>
+  </div>
+</div>`
+      },
+      {
+        type: 'production',
+        name: '标准车间生产工单排产卡',
+        is_default: 1,
+        content: `<!-- =================车间用于派工和领班的任务单排版================= -->
+<style>
+  .card-container { font-family: "Microsoft YaHei", sans-serif; box-sizing: border-box; }
+  .task-header { display: flex; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 20px; }
+  .task-qr { width: 100px; height: 100px; background: #eee; flex-shrink: 0; display:flex; align-items:center; justify-content:center; border: 1px dashed #999; }
+  .task-title { flex: 1; text-align: center; }
+  .task-title h1 { margin:0; font-size:32px; letter-spacing:4px;}
+  .task-title p { margin: 5px 0 0; font-size:18px;}
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; text-align:center;}
+  th, td { border: 2px solid #000; padding: 12px 8px; font-size: 16px; }
+  th { background: #f0f0f0; width: 15%; }
+  td { width: 35%; }
+  .process-list { width:100%; }
+  .process-list th { background: #fff; border: 1px solid #333; }
+  .process-list td { border: 1px solid #333; height: 60px; /* 留出供工人手写打钩的空间 */ }
+  @media print { @page { size: A4 portrait; margin: 10mm; } }
+</style>
+<div class="card-container">
+  <div class="task-header">
+    <div class="task-title">
+      <h1>生产流转派工单 (工卡)</h1>
+      <p>订单需求号：{{ref_order_no}}</p>
+    </div>
+    <!-- 这里可由外部二维码引擎渲染替换 -->
+    <div class="task-qr">工单条码区<br/>{{order_no}}</div>
+  </div>
+  
+  <table>
+    <tr>
+      <th>工单流水号</th><td style="font-weight:bold;">{{order_no}}</td>
+      <th>下达日期</th><td>{{created_at}}</td>
+    </tr>
+    <tr>
+      <th>生产成品</th><td colspan="3" style="font-size:20px;font-weight:bold;">{{product_name}} ({{specification}})</td>
+    </tr>
+    <tr>
+      <th>总派工数量</th><td style="font-size:24px;font-weight:bold;">{{quantity}} {{unit}}</td>
+      <th>生产批号</th><td style="font-size:18px;">{{batch_no}}</td>
+    </tr>
+  </table>
+
+  <h3 style="margin-top:30px;border-left:4px solid #000;padding-left:10px;">工艺路线及工人报工背书栏</h3>
+  <table class="process-list">
+    <thead>
+      <tr><th>工序排序</th><th>工序名称</th><th>加工要求与说明</th><th>操作工签字</th><th>完成数量</th><th>检验员签字</th></tr>
+    </thead>
+    <tbody>
+      <!-- LOOP_PROCESSES_START -->
+      <tr>
+        <td>{{sequence}}</td><td><strong>{{process_name}}</strong></td>
+        <td style="text-align:left;font-size:14px;">{{remark}}</td>
+        <td></td><td></td><td></td>
+      </tr>
+      <!-- LOOP_PROCESSES_END -->
+    </tbody>
+  </table>
+</div>`
+      }
+    ];
+
+    const insertStmt = db.prepare('INSERT INTO print_templates (type, name, content, is_default) VALUES (?, ?, ?, ?)');
+    db.transaction(() => {
+      defaultTemplates.forEach(t => insertStmt.run(t.type, t.name, t.content, t.is_default));
+    })();
+    console.log('[迁移] 成功灌入 3 套核心业务打印模板！');
+  }
 }
 
 // 导出初始化函数

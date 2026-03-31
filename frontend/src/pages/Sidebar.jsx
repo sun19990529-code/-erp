@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 // 侧边栏菜单树（原定义在 App.jsx 中 Sidebar 之前）
 const menuConfig = [
   { key: 'dashboard', label: '系统总览', icon: 'fa-tachometer-alt' },
+  { key: 'data-center', label: '数据大屏分析', icon: 'fa-chart-line' },
   { key: 'workshop-monitor', label: '车间大屏看板', icon: 'fa-desktop' },
   { key: 'scan-station', label: '扫码工站', icon: 'fa-qrcode' },
   {
@@ -27,6 +28,7 @@ const menuConfig = [
       { key: 'process-hub', label: '车间报工大厅' },
       { key: 'cost-card', label: '工单成本卡' },
       { key: 'production-report', label: '生产报表' },
+      { key: 'workstation-qr', label: '工位二维码' },
     ]
   },
   {
@@ -63,6 +65,7 @@ const menuConfig = [
       { key: 'customer', label: '客户管理' },
       { key: 'department', label: '部门管理' },
       { key: 'material-category', label: '材质分类管理' },
+
     ]
   },
   {
@@ -73,6 +76,9 @@ const menuConfig = [
       { key: 'user-internal', label: '内部用户' },
       { key: 'user-external', label: '外部用户' },
       { key: 'settings-backup', label: '数据备份' },
+      { key: 'data-import', label: '数据导入' },
+      { key: 'operation-logs', label: '操作日志' },
+      { key: 'print-template', label: '打印模板引擎' },
       { key: 'settings-about', label: '关于系统' },
     ]
   },
@@ -82,6 +88,8 @@ const menuConfig = [
 // null 表示无需权限（所有登录用户均可见）
 const menuPermissions = {
   'dashboard': null,
+  'data-center': 'dashboard_view',
+  'workshop-monitor': 'dashboard_view',
   'scan-station': null,
   // 仓库管理：查看库存只需 warehouse_view，入库/出库操作需要 warehouse_create
   'inventory': 'warehouse_view', 'inbound': 'warehouse_create', 'outbound': 'warehouse_create',
@@ -94,6 +102,7 @@ const menuPermissions = {
   'process-hub': 'production_edit',
   'cost-card': 'production_view',
   'production-report': 'production_view',
+  'workstation-qr': 'production_view',
   // 质量检验
   'inspection-inbound': 'inspection_view', 'inspection-patrol': 'inspection_view',
   'inspection-outsourcing': 'inspection_view', 'inspection-final': 'inspection_view',
@@ -109,7 +118,11 @@ const menuPermissions = {
   // 系统管理（仅管理员，前端走 isAdmin 判断，权限码置 null）
   'role': null, 'permission': null,
   'user-internal': null, 'user-external': null,
-  'settings-backup': null, 'settings-about': null,
+  'settings-backup': 'admin',
+  'settings-about': null,
+  'data-import': 'basic_data_create',
+  'operation-logs': 'admin',
+  'print-template': 'admin',
   // 仓库盘点
   'stocktake': 'warehouse_view',
   'transfer': 'warehouse_edit',

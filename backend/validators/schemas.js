@@ -122,6 +122,24 @@ const userCreate = z.object({
   status: z.coerce.number().int().min(0).max(1).optional().default(1),
 });
 
+// ==================== 仓库间调拨 ====================
+const transferCreate = z.object({
+  from_warehouse_id: requiredPositiveInt('请选择调出仓库'),
+  to_warehouse_id: requiredPositiveInt('请选择调入仓库'),
+  operator: z.string().max(50, '操作人名称过长').optional().nullable(),
+  remark: z.string().max(500, '备注过长').optional().nullable(),
+  items: z.array(z.object({
+    product_id: requiredPositiveInt('请选择产品'),
+    quantity: requiredPositive('数量必须大于0'),
+    batch_no: z.string().optional().nullable(),
+    input_quantity: z.coerce.number().positive().optional().nullable(),
+    input_unit: z.string().optional().nullable(),
+  })).min(1, '请至少添加一个调拨产品'),
+}).refine(data => String(data.from_warehouse_id) !== String(data.to_warehouse_id), {
+  message: '调出仓库和调入仓库不能相同',
+  path: ['to_warehouse_id'],
+});
+
 module.exports = {
   orderCreate,
   purchaseCreate,
@@ -131,4 +149,5 @@ module.exports = {
   outsourcingCreate,
   userLogin,
   userCreate,
+  transferCreate,
 };

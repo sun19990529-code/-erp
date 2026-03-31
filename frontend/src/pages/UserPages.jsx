@@ -10,6 +10,7 @@ import Table from '../components/Table';
 import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
+import { useConfirm } from '../components/ConfirmModal';
 
 const RoleManager = () => {
   const [data, setData] = useState([]);

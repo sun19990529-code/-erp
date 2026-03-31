@@ -129,10 +129,17 @@ if (!process.env.JWT_SECRET) {
   console.warn('⚠️  [安全警告] JWT_SECRET 使用默认值，生产环境请设置环境变量 JWT_SECRET');
 }
 const whiteList = ['/api/users/login', '/api/users/refresh'];
+// 工位展示屏 GET 路由免鉴权（纯展示终端，无需登录）
+const screenWhitePrefix = '/api/workstation/screen/';
 
 app.use((req, res, next) => {
   // 静态文件、白名单放行
   if (!req.path.startsWith('/api') || whiteList.includes(req.path)) {
+    return next();
+  }
+
+  // 工位展示屏：仅 GET 请求免鉴权，POST（报工/巡检）仍需 Token
+  if (req.method === 'GET' && req.path.startsWith(screenWhitePrefix)) {
     return next();
   }
 
@@ -195,6 +202,14 @@ const { router: financeRoutes } = require('./routes/finance');
 app.use('/api/finance', financeRoutes);
 const reportRoutes = require('./routes/report');
 app.use('/api/report', reportRoutes);
+const importRoutes = require('./routes/import');
+app.use('/api/import', importRoutes);
+const workstationRoutes = require('./routes/workstation');
+app.use('/api/workstation', workstationRoutes);
+
+// v2.1 打印模板管理路由
+const printTemplateRoutes = require('./routes/printTemplate');
+app.use('/api/print-templates', printTemplateRoutes);
 
 // ==================== 全局错误处理中间件 ====================
  

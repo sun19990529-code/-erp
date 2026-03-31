@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { exportToExcel } from '../utils/export';
+import { exportMultiSheet } from '../utils/export';
 
 const ReportPage = () => {
   const [activeTab, setActiveTab] = useState('daily');
@@ -33,7 +33,7 @@ const ReportPage = () => {
     const sheets = [];
     if (dailyData.data.length > 0) {
       sheets.push({
-        name: '生产日报',
+        sheetName: '生产日报',
         columns: [
           { header: '日期', key: 'date', width: 14 },
           { header: '工单数', key: 'order_count', width: 10 },
@@ -48,7 +48,7 @@ const ReportPage = () => {
     }
     if (productData.length > 0) {
       sheets.push({
-        name: '按产品统计',
+        sheetName: '按产品统计',
         columns: [
           { header: '产品编码', key: 'code', width: 15 },
           { header: '产品名称', key: 'name', width: 20 },
@@ -64,7 +64,7 @@ const ReportPage = () => {
     }
     if (materialData.length > 0) {
       sheets.push({
-        name: '物料消耗',
+        sheetName: '物料消耗',
         columns: [
           { header: '物料编码', key: 'code', width: 15 },
           { header: '物料名称', key: 'name', width: 20 },
@@ -77,7 +77,7 @@ const ReportPage = () => {
         data: materialData
       });
     }
-    exportToExcel(sheets, `生产报表_${dateRange.start}_${dateRange.end}`);
+    exportMultiSheet(`生产报表_${dateRange.start}_${dateRange.end}`, sheets);
   };
 
   const s = dailyData.summary;

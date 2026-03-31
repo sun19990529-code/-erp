@@ -136,7 +136,7 @@ router.get('/', requirePermission('production_view'), (req, res) => {
 
 router.get('/:id', validateId, requirePermission('production_view'), (req, res) => {
   try {
-    const order = req.db.get(`SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit FROM production_orders po JOIN products p ON po.product_id = p.id WHERE po.id = ?`, [req.params.id]);
+    const order = req.db.get(`SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit, o.order_no as ref_order_no, o.customer_name FROM production_orders po JOIN products p ON po.product_id = p.id LEFT JOIN orders o ON po.order_id = o.id WHERE po.id = ?`, [req.params.id]);
     const processRecords = req.db.all(`SELECT ppr.*, pr.name as process_name, pr.code as process_code FROM production_process_records ppr JOIN processes pr ON ppr.process_id = pr.id WHERE ppr.production_order_id = ? ORDER BY pr.sequence`, [req.params.id]);
     const outsourcingOrders = req.db.all(`SELECT oo.id, oo.order_no, oo.status, oo.created_at, s.name as supplier_name, pr.name as process_name FROM outsourcing_orders oo LEFT JOIN suppliers s ON oo.supplier_id = s.id LEFT JOIN processes pr ON oo.process_id = pr.id WHERE oo.production_order_id = ? ORDER BY oo.created_at DESC`, [req.params.id]);
     const inboundOrders = req.db.all(`SELECT io.*, w.name as warehouse_name FROM inbound_orders io LEFT JOIN warehouses w ON io.warehouse_id = w.id WHERE io.production_order_id = ? ORDER BY io.created_at DESC`, [req.params.id]);
@@ -246,18 +246,23 @@ router.post('/:id/process', validateId, requirePermission('production_edit'), (r
             }
             
             let remaining = consumeQty;
+            let traceSupplierBatch = null, traceHeatNo = null, traceBatchNo = null;
             const batches = req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [rawWarehouse.id, mat.material_id]);
             for (const batch of batches) {
               if (remaining <= 0) break;
               const deduct = Math.min(remaining, batch.quantity);
               req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
+              // 取第一个被扣减批次的追溯信息（FIFO）
+              if (!traceSupplierBatch) traceSupplierBatch = batch.supplier_batch_no;
+              if (!traceHeatNo) traceHeatNo = batch.heat_no;
+              if (!traceBatchNo) traceBatchNo = batch.batch_no;
               remaining -= deduct;
             }
             
-            // 写入材料消耗记录表
+            // 写入材料消耗记录表（含追溯字段）
             req.db.run(
-              `INSERT INTO production_material_consumption (production_order_id, process_id, material_id, planned_quantity, actual_quantity, unit, operator) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [productionId, process_id, mat.material_id, plannedQty, consumeQty, mat.unit || '公斤', operator]
+              `INSERT INTO production_material_consumption (production_order_id, process_id, material_id, planned_quantity, actual_quantity, unit, operator, supplier_batch_no, heat_no, batch_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [productionId, process_id, mat.material_id, plannedQty, consumeQty, mat.unit || '公斤', operator, traceSupplierBatch || null, traceHeatNo || null, traceBatchNo || null]
             );
             
             consumedMaterials.push({ name: mat.material_name, quantity: consumeQty, unit: mat.unit || '公斤' });
@@ -444,6 +449,56 @@ router.delete('/:id', validateId, requirePermission('production_delete'), (req, 
     res.json({ success: true });
   } catch (error) {
     console.error(`[production.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ==================== 返工流程 ====================
+router.post('/:id/rework', validateId, requirePermission('production_edit'), (req, res) => {
+  try {
+    const { target_process_id, quantity, reason, operator } = req.body;
+    if (!target_process_id) return res.status(400).json({ success: false, message: '请选择返工回退到的目标工序' });
+    if (!reason) return res.status(400).json({ success: false, message: '请填写返工原因' });
+
+    const production = req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
+    if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
+
+    // 允许从 quality_hold（质检暂停）或 completed（客户退回返工）发起
+    if (!['quality_hold', 'completed'].includes(production.status)) {
+      return res.status(400).json({ success: false, message: '只有质检暂停或已完成（客户退回）的工单才能发起返工' });
+    }
+
+    // 校验目标工序属于该产品的工序配置
+    const productProcesses = req.db.all(
+      `SELECT pp.*, p.code as process_code, p.name as process_name
+       FROM product_processes pp JOIN processes p ON pp.process_id = p.id
+       WHERE pp.product_id = ? ORDER BY pp.sequence`, [production.product_id]);
+    const targetIndex = productProcesses.findIndex(pp => pp.process_id == target_process_id);
+    if (targetIndex === -1) return res.status(400).json({ success: false, message: '目标工序不属于该产品的工序配置' });
+
+    const targetProcess = productProcesses[targetIndex];
+    const reworkQty = quantity || production.quantity;
+
+    req.db.transaction(() => {
+      // 1. 回退工单：current_process 设为目标工序，状态恢复 processing
+      req.db.run(
+        'UPDATE production_orders SET current_process = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [targetProcess.process_code, 'processing', req.params.id]);
+
+      // 2. 为目标工序及其之后的工序插入新的 pending 记录（标记为返工重做）
+      for (let i = targetIndex; i < productProcesses.length; i++) {
+        req.db.run(
+          `INSERT INTO production_process_records (production_order_id, process_id, status, remark) VALUES (?, ?, 'pending', ?)`,
+          [req.params.id, productProcesses[i].process_id, i === targetIndex ? `返工(${reason})` : '返工待重做']);
+      }
+    });
+
+    writeLog(req.db, req.user?.id, '发起返工', 'production', req.params.id,
+      `回退到工序「${targetProcess.process_name}」，数量 ${reworkQty}，原因：${reason}`);
+
+    res.json({ success: true, message: `已回退到工序「${targetProcess.process_name}」，请安排车间重新报工` });
+  } catch (error) {
+    console.error('[production.js/rework]', error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
   }
 });

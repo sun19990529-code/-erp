@@ -2,10 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
 const { validate, validateId } = require('../middleware/validate');
-const { inboundCreate, outboundCreate } = require('../validators/schemas');
+const { inboundCreate, outboundCreate, transferCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
 const { convertToKg } = require('../utils/unit-convert');
+
 
 // ==================== 仓库 ====================
 router.get('/warehouses', requirePermission('warehouse_view'), (req, res) => {
@@ -150,8 +151,8 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = `${orderNo}-${index + 1}`;
-        req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [inboundId, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
+        req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [inboundId, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null]);
       });
     });
     res.json({ success: true, data: { id: inboundId, order_no: orderNo } });
@@ -181,9 +182,9 @@ router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'
           const batch = item.batch_no || 'DEFAULT_BATCH';
           const existing = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
           if (existing) {
-            req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, existing.id]);
+            req.db.run('UPDATE inventory SET quantity = quantity + ?, supplier_batch_no = COALESCE(?, supplier_batch_no), heat_no = COALESCE(?, heat_no), updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, item.supplier_batch_no || null, item.heat_no || null, existing.id]);
           } else {
-            req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity]);
+            req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity, item.supplier_batch_no || null, item.heat_no || null]);
           }
         });
       }
@@ -220,8 +221,8 @@ router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), (req
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = item.batch_no || `${baseOrderNo}-${index + 1}`;
-        req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [req.params.id, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
+        req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [req.params.id, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null]);
       });
     });
     res.json({ success: true });
@@ -292,9 +293,10 @@ router.get('/outbound', requirePermission('warehouse_view'), (req, res) => {
 router.get('/outbound/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
   try {
     const order = req.db.get(`
-      SELECT oo.*, w.name as warehouse_name
+      SELECT oo.*, w.name as warehouse_name, o.order_no as ref_order_no, o.customer_name
       FROM outbound_orders oo
       JOIN warehouses w ON oo.warehouse_id = w.id
+      LEFT JOIN orders o ON oo.order_id = o.id
       WHERE oo.id = ?
     `, [req.params.id]);
     const items = req.db.all(`
@@ -469,7 +471,7 @@ router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete')
 // ==================== 仓库间调拨 ====================
 router.get('/transfer', requirePermission('warehouse_view'), (req, res) => {
   try {
-    const { status, page = 1, pageSize = 20 } = req.query;
+    const { status } = req.query;
     let sql = `
       SELECT oo.*, w1.name as from_warehouse_name, w2.name as to_warehouse_name
       FROM outbound_orders oo
@@ -480,13 +482,15 @@ router.get('/transfer', requirePermission('warehouse_view'), (req, res) => {
     const params = [];
     if (status) { sql += ' AND oo.status = ?'; params.push(status); }
     sql += ' ORDER BY oo.created_at DESC';
-    const result = req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
-    res.json({ success: true, data: result.data, pagination: result.pagination });
+    // 调拨单量少，全量返回，前端无需分页
+    const data = req.db.all(sql, params);
+    res.json({ success: true, data });
   } catch (error) {
     console.error(`[warehouse.js transfer]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
+
 
 router.get('/transfer/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
   try {
@@ -511,7 +515,8 @@ router.get('/transfer/:id', validateId, requirePermission('warehouse_view'), (re
   }
 });
 
-router.post('/transfer', requirePermission('warehouse_create'), (req, res) => {
+router.post('/transfer', requirePermission('warehouse_create'), validate(transferCreate), (req, res) => {
+
   try {
     const { from_warehouse_id, to_warehouse_id, items, operator, remark } = req.body;
     if (!from_warehouse_id || !to_warehouse_id) return res.status(400).json({ success: false, message: '请选择源仓库和目标仓库' });

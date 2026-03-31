@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api';
 
-const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.5.5';
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.8.0';
 
 const LoginPage = ({ onLogin }) => {
   const [username, setUsername] = useState('');

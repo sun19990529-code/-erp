@@ -10,6 +10,17 @@ import Table from '../components/Table';
 import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
+import { useConfirm } from '../components/ConfirmModal';
+import OperatorSelect from '../components/OperatorSelect';
+import { doPrint } from '../utils/printEngine';
+import { QRCodeSVG as QRCode } from 'qrcode.react';
+
+const PrintableQRCode = ({ value, label }) => (
+  <div className="flex flex-col items-center">
+    <QRCode value={value || ''} size={120} level="H" />
+    <span className="mt-2 text-xs font-bold text-gray-600 tracking-widest">{label}</span>
+  </div>
+);
 
 const InventoryView = ({ defaultType = 'raw', title = '全局库存总账' }) => {
   const [activeType, setActiveType] = useState(defaultType);
@@ -387,7 +398,9 @@ const WarehouseOrderManager = ({ orderType }) => {
             <table className="w-full border">
               <thead className="bg-gray-50"><tr>
                 <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
-                <th className="px-3 py-2 text-left text-xs">批次号</th>
+                <th className="px-3 py-2 text-left text-xs">供应商批号</th>
+                <th className="px-3 py-2 text-left text-xs">炉号</th>
+                <th className="px-3 py-2 text-left text-xs">入库批号</th>
                 <th className="px-3 py-2 text-left text-xs">输入数量</th>
                 <th className="px-3 py-2 text-left text-xs">库存数量(公斤)</th>
               </tr></thead>
@@ -396,7 +409,9 @@ const WarehouseOrderManager = ({ orderType }) => {
                   <tr key={i} className="border-t">
                     <td className="px-3 py-2 text-sm">{it.code}</td>
                     <td className="px-3 py-2 text-sm">{it.name}</td>
-                    <td className="px-3 py-2 text-sm text-teal-700 font-medium">{it.batch_no || 'DEFAULT_BATCH'}</td>
+                    <td className="px-3 py-2 text-sm text-blue-600">{it.supplier_batch_no || '-'}</td>
+                    <td className="px-3 py-2 text-sm text-orange-600">{it.heat_no || '-'}</td>
+                    <td className="px-3 py-2 text-sm text-teal-700 font-medium">{it.batch_no || '-'}</td>
                     <td className="px-3 py-2 text-sm">{it.input_quantity || it.quantity} {it.input_unit || '公斤'}</td>
                     <td className="px-3 py-2 text-sm">{it.quantity} 公斤</td>
                   </tr>
@@ -424,25 +439,9 @@ const WarehouseOrderManager = ({ orderType }) => {
             {modal.item?.status !== 'pending' && (
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <button type="button" onClick={() => {
-                  exportToPDF({
-                    filename: `${orderType === 'inbound' ? '入库单' : '出库单'}_${modal.item?.order_no}`,
-                    title: `${orderType === 'inbound' ? '入库单' : '出库单'} ${modal.item?.order_no}`,
-                    subtitle: '铭晟管理系统',
-                    meta: [
-                      `仓库：${modal.item?.warehouse_name || '-'}  供应商：${modal.item?.supplier_name || '-'}  操作员：${modal.item?.operator || '-'}`,
-                      `状态：${modal.item?.status === 'completed' ? '已完成' : '待处理'}  创建时间：${modal.item?.created_at?.slice(0, 10) || '-'}`
-                    ],
-                    columns: [
-                      { header: '产品编码', key: 'code' },
-                      { header: '产品名称', key: 'name' },
-                      { header: '批次号', key: row => row.batch_no || 'DEFAULT_BATCH' },
-                      { header: '数量', key: row => `${row.input_quantity || row.quantity} ${row.input_unit || '公斤'}` },
-                      { header: '公斤数', key: row => `${row.quantity} 公斤` }
-                    ],
-                    data: modal.item?.items || []
-                  });
-                }} className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors">
-                  <i className="fas fa-file-pdf mr-2"></i>导出PDF
+                  doPrint(orderType, modal.item);
+                }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-bold flex items-center">
+                  <i className="fas fa-print mr-2"></i>打印{title}
                 </button>
                 <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
               </div>
@@ -480,8 +479,11 @@ const WarehouseOrderManager = ({ orderType }) => {
                       <div className="w-full lg:flex-1 min-w-[200px]">
                         <SearchSelect options={filteredProducts} value={it.product_id} onChange={val => updateItem(i, 'product_id', val)} placeholder="搜索选择产品" />
                       </div>
-                      <div className="w-[30%] lg:w-32">
-                        <input type="text" value={it.batch_no || ''} onChange={e => updateItem(i, 'batch_no', e.target.value)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="指定批次(选填)" title="如有必要可手动或扫码指定批次号" />
+                      <div className="w-[30%] lg:w-28">
+                        <input type="text" value={it.supplier_batch_no || ''} onChange={e => updateItem(i, 'supplier_batch_no', e.target.value)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="供应商批号(选填)" />
+                      </div>
+                      <div className="w-[20%] lg:w-24">
+                        <input type="text" value={it.heat_no || ''} onChange={e => updateItem(i, 'heat_no', e.target.value)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="炉号(选填)" />
                       </div>
                       <div className="w-[30%] lg:w-28">
                         <input type="number" value={it.input_quantity || it.quantity} onChange={e => updateItem(i, 'input_quantity', parseFloat(e.target.value) || 0)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="输入数量" />
@@ -528,4 +530,180 @@ const WarehouseOrderManager = ({ orderType }) => {
   );
 };
 
-export { InventoryView, WarehouseOrderManager };
+const TransferManager = () => {
+  const [data, setData] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [modal, setModal] = useState({ open: false, item: null });
+  const [confirm, ConfirmDialog] = useConfirm();
+  const [form, setForm] = useDraftForm('transfer_form', { from_warehouse_id: '', to_warehouse_id: '', operator: '', remark: '', items: [] });
+  const [newItem, setNewItem] = useState({ product_id: '', quantity: '' });
+
+  const load = () => {
+    api.get('/transfer').then(res => res.success && setData(res.data));
+    api.get('/warehouses').then(res => res.success && setWarehouses(res.data));
+    api.get('/products').then(res => res.success && setProducts(res.data));
+  };
+  useEffect(() => { load(); }, []);
+
+  const addItem = () => {
+    if (!newItem.product_id || !newItem.quantity) return window.__toast?.error('请选择产品并填写数量');
+    const prod = products.find(p => p.id === parseInt(newItem.product_id));
+    setForm(f => ({ ...f, items: [...f.items, { product_id: parseInt(newItem.product_id), product_name: prod?.name || '', quantity: parseFloat(newItem.quantity), unit: prod?.unit || '' }] }));
+    setNewItem({ product_id: '', quantity: '' });
+  };
+
+  const removeItem = (idx) => setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.from_warehouse_id || !form.to_warehouse_id) return window.__toast?.error('请选择调出和调入仓库');
+    if (form.from_warehouse_id === form.to_warehouse_id) return window.__toast?.error('调出和调入仓库不能相同');
+    if (!form.items.length) return window.__toast?.error('请至少添加一个调拨产品');
+    const res = await api.post('/transfer', { from_warehouse_id: form.from_warehouse_id, to_warehouse_id: form.to_warehouse_id, operator: form.operator, remark: form.remark, items: form.items });
+    if (res.success) {
+      window.__toast?.success('调拨单创建成功');
+      setModal({ open: false, item: null });
+      setForm({ from_warehouse_id: '', to_warehouse_id: '', operator: '', remark: '', items: [] });
+      load();
+    } else window.__toast?.error(res.message);
+  };
+
+  const confirmTransfer = async (item) => {
+    if (!await confirm('确认执行调拨？确认后库存将立即调整。')) return;
+    const res = await api.put(`/transfer/${item.id}/confirm`);
+    if (res.success) { window.__toast?.success('调拨已完成，库存已调整'); load(); }
+    else window.__toast?.error(res.message);
+  };
+
+  const del = async (item) => {
+    if (!await confirm('确定删除该调拨单？')) return;
+    const res = await api.del(`/transfer/${item.id}`);
+    if (res.success) load();
+    else window.__toast?.error(res.message);
+  };
+
+  const statusMap = { pending: '待确认', confirmed: '已完成', cancelled: '已取消' };
+
+  return (
+    <div className="fade-in">
+      <ConfirmDialog />
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h2 className="text-xl font-bold">仓库间调拨</h2>
+          <p className="text-sm text-gray-500 mt-1">创建调拨单，在不同仓库间转移库存</p>
+        </div>
+        <button onClick={() => setModal({ open: true, item: null })} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700">
+          <i className="fas fa-exchange-alt mr-2"></i>新建调拨单
+        </button>
+      </div>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">调拨单号</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">调出仓库</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">调入仓库</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">操作人</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">状态</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {data.length === 0 ? (
+              <tr><td colSpan="6" className="px-4 py-12 text-center text-gray-400"><i className="fas fa-exchange-alt text-4xl mb-3 block opacity-30"></i>暂无调拨记录</td></tr>
+            ) : data.map(item => (
+              <tr key={item.id} className="hover:bg-gray-50/50">
+                <td className="px-4 py-3 text-sm font-mono text-teal-600 font-medium">{item.order_no}</td>
+                <td className="px-4 py-3 text-sm">{item.from_warehouse_name || '-'}</td>
+                <td className="px-4 py-3 text-sm">{item.to_warehouse_name || '-'}</td>
+                <td className="px-4 py-3 text-sm">{item.operator || '-'}</td>
+                <td className="px-4 py-3 text-sm">
+                  <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${
+                    item.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                    item.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>{statusMap[item.status] || item.status}</span>
+                </td>
+                <td className="px-4 py-3 text-sm space-x-2">
+                  {item.status === 'pending' && (
+                    <button onClick={() => confirmTransfer(item)} className="text-teal-600 hover:text-teal-800">
+                      <i className="fas fa-check mr-1"></i>确认
+                    </button>
+                  )}
+                  {item.status === 'pending' && (
+                    <button onClick={() => del(item)} className="text-red-500 hover:text-red-700">
+                      <i className="fas fa-trash mr-1"></i>删除
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={modal.open} onClose={() => setModal({ open: false, item: null })} title="新建调拨单" size="max-w-2xl">
+        <form onSubmit={save} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">调出仓库 *</label>
+              <select value={form.from_warehouse_id} onChange={e => setForm(f => ({ ...f, from_warehouse_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2" required>
+                <option value="">选择调出仓库</option>
+                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">调入仓库 *</label>
+              <select value={form.to_warehouse_id} onChange={e => setForm(f => ({ ...f, to_warehouse_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2" required>
+                <option value="">选择调入仓库</option>
+                {warehouses.filter(w => w.id !== parseInt(form.from_warehouse_id)).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">操作人</label>
+            <OperatorSelect name="operator_inline" value={form.operator} onChange={v => setForm(f => ({ ...f, operator: v }))} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">调拨明细</label>
+            <div className="flex gap-2 mb-2">
+              <div className="flex-1">
+                <SearchSelect
+                  options={products.map(p => ({ id: p.id, name: p.name, code: p.code }))}
+                  value={newItem.product_id}
+                  onChange={v => setNewItem(n => ({ ...n, product_id: v }))}
+                  placeholder="搜索产品编码或名称"
+                />
+              </div>
+              <input type="number" placeholder="数量" value={newItem.quantity} onChange={e => setNewItem(n => ({ ...n, quantity: e.target.value }))} className="w-28 border rounded-lg px-3 py-2 text-sm" />
+              <button type="button" onClick={addItem} className="px-3 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700">添加</button>
+            </div>
+            {form.items.length > 0 && (
+              <div className="border rounded-lg overflow-hidden">
+                {form.items.map((it, i) => (
+                  <div key={i} className="flex items-center justify-between px-3 py-2 border-b last:border-b-0 text-sm">
+                    <span>{it.product_name}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium">{it.quantity} {it.unit}</span>
+                      <button type="button" onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><i className="fas fa-times"></i></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">备注</label>
+            <textarea value={form.remark} onChange={e => setForm(f => ({ ...f, remark: e.target.value }))} className="w-full border rounded-lg px-3 py-2" rows="2"></textarea>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <button type="button" onClick={() => setModal({ open: false, item: null })} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+            <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">创建调拨单</button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+export { InventoryView, WarehouseOrderManager, TransferManager };

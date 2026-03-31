@@ -11,6 +11,19 @@ import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
+import { ProductionTrackingPanel } from './ProductionTracking';
+import { QRCodeSVG as QRCode } from 'qrcode.react';
+import { doPrint } from '../utils/printEngine';
+import { useConfirm } from '../components/ConfirmModal';
+import OperatorSelect from '../components/OperatorSelect';
+
+const PrintableQRCode = ({ value, label }) => (
+  <div className="flex flex-col items-center">
+    <QRCode value={value || ''} size={120} level="H" />
+    <span className="mt-2 text-xs font-bold text-gray-600 tracking-widest">{label}</span>
+  </div>
+);
+
 const PickMaterialManager = () => {
   const { isAdmin } = useAuth();
   const [data, setData] = useState([]);
@@ -773,10 +786,13 @@ const ProductionOrderManager = () => {
               </div>
             )}
             
-            {/* 打印流转单二维码 */}
+            {/* 顶层操作区 - 扫码打印/进站报工 */}
             {modal.item?.order_no && (
-              <div className="mt-6 flex justify-center border-t border-gray-100 pt-6">
-                 <PrintableQRCode value={modal.item.order_no} label="生产制造流转卡" />
+              <div className="mt-6 flex justify-between items-center border-t border-gray-100 pt-4">
+                <button type="button" onClick={() => doPrint('production', modal.item)} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-bold flex items-center">
+                  <i className="fas fa-print mr-2"></i>打印生产派工流转卡
+                </button>
+                <PrintableQRCode value={modal.item.order_no} label="扫码进入报工终端" />
               </div>
             )}
             

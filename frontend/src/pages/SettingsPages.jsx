@@ -10,6 +10,7 @@ import Table from '../components/Table';
 import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
+import { useConfirm } from '../components/ConfirmModal';
 
 const BackupSettings = () => {
   const [config, setConfig] = useState({
@@ -265,7 +266,7 @@ const BackupSettings = () => {
 };
 
 const AboutSystem = () => {
-  const [version, setVersion] = useState({ version: `v${__APP_VERSION__}`, date: '2026-03-25' });
+  const [version, setVersion] = useState({ version: `v${__APP_VERSION__}`, date: '2026-03-30' });
 
   useEffect(() => {
     // 尝试读取VERSION文件

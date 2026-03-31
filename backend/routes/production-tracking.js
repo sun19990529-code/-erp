@@ -539,7 +539,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
 
     // 1. 入库记录
     const inboundRecords = req.db.all(`
-      SELECT ii.id, ii.quantity, ii.unit_price, ii.batch_no,
+      SELECT ii.id, ii.quantity, ii.unit_price, ii.batch_no, ii.supplier_batch_no, ii.heat_no,
              io.order_no, io.type, io.status, io.operator, io.created_at,
              p.code as product_code, p.name as product_name, p.unit, p.specification,
              s.name as supplier_name,
@@ -555,7 +555,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
 
     // 2. 当前库存
     const inventoryRecords = req.db.all(`
-      SELECT inv.quantity, inv.batch_no, inv.updated_at,
+      SELECT inv.quantity, inv.batch_no, inv.supplier_batch_no, inv.heat_no, inv.updated_at,
              p.code as product_code, p.name as product_name, p.unit,
              w.name as warehouse_name, w.type as warehouse_type
       FROM inventory inv
@@ -566,7 +566,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
 
     // 3. 领料记录
     const pickRecords = req.db.all(`
-      SELECT pi.quantity, pi.batch_no,
+      SELECT pi.quantity, pi.batch_no, pi.supplier_batch_no, pi.heat_no,
              pk.order_no, pk.status, pk.operator, pk.created_at,
              p.code as material_code, p.name as material_name, p.unit,
              po.order_no as production_order_no, po.id as production_order_id,
@@ -638,7 +638,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
       time: r.created_at, type: 'inbound', title: '入库',
       description: `${r.warehouse_name} · ${r.order_no}`,
       detail: `${r.product_name} ${r.quantity} ${r.unit || '件'}`,
-      extra: r.supplier_name ? `供应商: ${r.supplier_name}` : null,
+      extra: [r.supplier_name ? `供应商: ${r.supplier_name}` : null, r.heat_no ? `炉号: ${r.heat_no}` : null, r.supplier_batch_no ? `供应商批号: ${r.supplier_batch_no}` : null].filter(Boolean).join(' | ') || null,
       status: r.status
     }));
     inspectionRecords.forEach(r => timeline.push({
@@ -652,7 +652,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
       time: r.created_at, type: 'pick', title: '领料',
       description: `${r.warehouse_name || ''} · ${r.order_no}`,
       detail: `${r.material_name} ${r.quantity} ${r.unit || '件'}`,
-      extra: r.production_order_no ? `生产工单: ${r.production_order_no}` : null,
+      extra: [r.production_order_no ? `生产工单: ${r.production_order_no}` : null, r.heat_no ? `炉号: ${r.heat_no}` : null, r.supplier_batch_no ? `供应商批号: ${r.supplier_batch_no}` : null].filter(Boolean).join(' | ') || null,
       status: r.status
     }));
     outboundRecords.forEach(r => timeline.push({

@@ -10,6 +10,8 @@ import Table from '../components/Table';
 import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
+import { useConfirm } from '../components/ConfirmModal';
+import OperatorSelect from '../components/OperatorSelect';
 
 const PurchaseManager = () => {
   const [data, setData] = useState([]);

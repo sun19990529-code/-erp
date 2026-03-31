@@ -114,12 +114,16 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), (req,
             if (!totalInv || totalInv.total < item.quantity) {
               throw new Error(`物料「${item.material_name}」库存不足，需要 ${item.quantity}，当前库存 ${totalInv?.total || 0}`);
             }
+            // 追溯字段：从被扣减的库存批次继承
+            let traceSupplierBatch = null, traceHeatNo = null;
             if (item.batch_no && item.batch_no !== 'DEFAULT_BATCH') {
               const batchInv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.material_id, item.batch_no]);
               if (!batchInv || batchInv.quantity < item.quantity) {
                 throw new Error(`物料「${item.material_name}」批次[${item.batch_no}]库存不足，需要 ${item.quantity}，该批次库存 ${batchInv?.quantity || 0}`);
               }
               req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, batchInv.id]);
+              traceSupplierBatch = batchInv.supplier_batch_no;
+              traceHeatNo = batchInv.heat_no;
             } else {
               let remaining = item.quantity;
               const batches = req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [order.warehouse_id, item.material_id]);
@@ -127,8 +131,16 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), (req,
                 if (remaining <= 0) break;
                 const deduct = Math.min(remaining, batch.quantity);
                 req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
+                // 取第一个被扣减批次的追溯信息（FIFO）
+                if (!traceSupplierBatch) traceSupplierBatch = batch.supplier_batch_no;
+                if (!traceHeatNo) traceHeatNo = batch.heat_no;
                 remaining -= deduct;
               }
+            }
+            // 回写追溯字段到领料明细
+            if (traceSupplierBatch || traceHeatNo) {
+              req.db.run('UPDATE pick_items SET supplier_batch_no = ?, heat_no = ? WHERE id = ?',
+                [traceSupplierBatch || null, traceHeatNo || null, item.id]);
             }
           }
           

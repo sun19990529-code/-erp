@@ -10,6 +10,9 @@ import Table from '../components/Table';
 import { TableSkeleton, Skeleton } from '../components/Skeleton';
 import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
+import { useConfirm } from '../components/ConfirmModal';
+import ProcessConfigPanel from '../components/ProcessConfigPanel';
+import OperatorSelect from '../components/OperatorSelect';
 
 const ProcessConfigManager = () => {
   const [products, setProducts] = useState([]);
@@ -305,10 +308,10 @@ const ProcessManager = ({ processCode }) => {
       </div>
       <Modal isOpen={modal.open} onClose={() => setModal({ open: false, item: null, isOutsourced: false, isFirstProcess: false, processMaterials: [] })} title={`工序扫码报工 - ${processNames[processCode] || processCode}`} size="max-w-3xl">
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm bg-gray-50 p-3 rounded-lg">
-            <div><strong>生产工单：</strong>{modal.item?.order_no}</div>
-            <div><strong>产品：</strong>{modal.item?.product_name}</div>
-            <div><strong>计划数量：</strong>{modal.item?.quantity} {unit}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-sm bg-gray-50 p-3 rounded-lg divide-y sm:divide-y-0 divide-gray-100">
+            <div className="py-1 sm:py-0"><strong>生产工单：</strong>{modal.item?.order_no}</div>
+            <div className="py-1 sm:py-0"><strong>产品：</strong>{modal.item?.product_name}</div>
+            <div className="py-1 sm:py-0"><strong>计划数量：</strong><span className="text-teal-600 font-bold">{modal.item?.quantity} {unit}</span></div>
           </div>
           {/* 累计进度条 */}
           {(() => {
@@ -344,26 +347,29 @@ const ProcessManager = ({ processCode }) => {
               {modal.processMaterials.length > 0 && (
                 <div className="mt-2 space-y-2">
                   {modal.processMaterials.map((m, i) => (
-                    <div key={i} className="flex items-center gap-3 bg-white/60 rounded-lg px-3 py-2">
-                      <div className="flex-1 min-w-0">
+                    <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 bg-white/60 rounded-lg px-3 py-2">
+                      <div className="flex-1 min-w-0 flex justify-between sm:block">
                         <div className="text-sm font-medium">
                           <i className="fas fa-cube mr-1 text-blue-400"></i>{m.material_name}
                           <span className="text-gray-400 ml-1">({m.material_code})</span>
                         </div>
                         <div className="text-xs text-gray-500 mt-0.5">
-                          单位用量: {m.quantity} {m.unit || '公斤'}/件
+                          单位: {m.quantity} {m.unit || '公斤'}/件
                         </div>
                       </div>
-                      <div className="shrink-0 w-36">
-                        <label className="block text-xs text-gray-500 mb-0.5">实际用量 ({m.unit || '公斤'})</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={materialConsumption[m.material_id] ?? ''}
-                          onChange={e => setMaterialConsumption(prev => ({ ...prev, [m.material_id]: e.target.value }))}
-                          className="w-full border border-blue-300 rounded px-2 py-1 text-sm focus:ring-1 focus:ring-blue-400"
-                          placeholder="留空=自动"
-                        />
+                      <div className="shrink-0 w-full sm:w-36">
+                        <label className="sm:block hidden text-xs text-gray-500 mb-0.5">实际用量 ({m.unit || '公斤'})</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={materialConsumption[m.material_id] ?? ''}
+                            onChange={e => setMaterialConsumption(prev => ({ ...prev, [m.material_id]: e.target.value }))}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-2 sm:py-1 text-sm md:text-base focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-shadow"
+                            placeholder="留空 = 自动计算"
+                          />
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -373,24 +379,24 @@ const ProcessManager = ({ processCode }) => {
           )}
           <form onSubmit={saveProcess} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect /></div>
-              <div><label className="block text-sm font-medium mb-1">投入数量 ({unit})</label><input name="input_quantity" type="number" className="w-full border rounded-lg px-3 py-2" /></div>
-              <div><label className="block text-sm font-medium mb-1">产出数量 ({unit}) <span className="text-gray-400 text-xs">最大: {modal.item?.quantity} {unit}</span></label><input name="output_quantity" type="number" max={modal.item?.quantity} className="w-full border rounded-lg px-3 py-2" /></div>
-              <div><label className="block text-sm font-medium mb-1">不良数量 ({unit})</label><input name="defect_quantity" type="number" className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect className="py-3 sm:py-2" /></div>
+              <div><label className="block text-sm font-medium mb-1">投入数量 ({unit})</label><input name="input_quantity" type="number" pattern="[0-9]*" inputMode="numeric" className="w-full border border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 rounded-lg px-3 py-3 sm:py-2" /></div>
+              <div><label className="block text-sm font-medium mb-1 flex justify-between"><span>产出数量 ({unit})</span><span className="text-teal-600 text-xs">最大 {modal.item?.quantity}</span></label><input name="output_quantity" type="number" pattern="[0-9]*" inputMode="numeric" max={modal.item?.quantity} className="w-full border border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 rounded-lg px-3 py-3 sm:py-2 text-lg font-medium text-teal-700" /></div>
+              <div><label className="block text-sm font-medium mb-1">不良数量 ({unit})</label><input name="defect_quantity" type="number" pattern="[0-9]*" inputMode="numeric" className="w-full border border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 rounded-lg px-3 py-3 sm:py-2" /></div>
               {modal.isOutsourced && (
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium mb-1">关联委外单 <span className="text-red-500">*</span></label>
-                  <select name="outsourcing_id" className="w-full border rounded-lg px-3 py-2" required>
+                  <select name="outsourcing_id" className="w-full border border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 rounded-lg px-3 py-3 sm:py-2" required>
                     <option value="">请选择委外加工单</option>
                     {outsourcings.map(o => <option key={o.id} value={o.id}>{o.order_no} - {o.supplier_name}</option>)}
                   </select>
                 </div>
               )}
             </div>
-            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={() => setModal({ open: false, item: null, isOutsourced: false, isFirstProcess: false, processMaterials: [] })} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
-              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">提交报工信息</button>
+            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 rounded-lg px-3 py-2" rows="2"></textarea></div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 sm:gap-2 pt-4 border-t border-gray-100">
+              <button type="button" onClick={() => setModal({ open: false, item: null, isOutsourced: false, isFirstProcess: false, processMaterials: [] })} className="w-full sm:w-auto px-6 py-3 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 focus:ring-2 focus:ring-gray-200 font-medium">取消</button>
+              <button type="submit" className="w-full sm:w-auto px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 focus:ring-2 focus:ring-teal-500/30 font-bold shadow-sm">提交报工信息</button>
             </div>
           </form>
           <div>
