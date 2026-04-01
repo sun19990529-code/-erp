@@ -10,7 +10,7 @@ const requireAdmin = (req, res, next) => {
 };
 
 // GET /api/logs - 查询操作日志（仅管理员）
-router.get('/', requireAdmin, (req, res) => {
+router.get('/', requireAdmin, async (req, res) => {
   const db = req.db;
   const { module, user_id, keyword, start_date, end_date, page = 1, pageSize = 50 } = req.query;
 
@@ -30,29 +30,30 @@ router.get('/', requireAdmin, (req, res) => {
 
   sql += ' ORDER BY ol.created_at DESC';
 
-  const result = db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+  const result = await db.paginate(sql, params, parseInt(page), parseInt(pageSize));
 
   // 统计
-  const stats = db.get(`SELECT COUNT(*) as total FROM operation_logs`);
-  const todayCount = db.get(`SELECT COUNT(*) as count FROM operation_logs WHERE created_at >= date('now', 'localtime')`);
+  const stats = await db.get(`SELECT COUNT(*) as total FROM operation_logs`);
+  const todayCount = await db.get(`SELECT COUNT(*) as count FROM operation_logs WHERE created_at::date = CURRENT_DATE`);
 
   res.json({ success: true, ...result, stats: { total: stats.total, today: todayCount.count } });
 });
 
 // GET /api/logs/filters - 获取可筛选的模块列表和用户列表
-router.get('/filters', requireAdmin, (req, res) => {
+router.get('/filters', requireAdmin, async (req, res) => {
   const db = req.db;
-  const modules = db.all(`SELECT DISTINCT module FROM operation_logs ORDER BY module`).map(r => r.module);
-  const users = db.all(`SELECT DISTINCT ol.user_id, u.real_name FROM operation_logs ol LEFT JOIN users u ON ol.user_id = u.id WHERE ol.user_id IS NOT NULL ORDER BY u.real_name`);
+  const moduleRows = await db.all(`SELECT DISTINCT module FROM operation_logs ORDER BY module`);
+  const modules = moduleRows.map(r => r.module);
+  const users = await db.all(`SELECT DISTINCT ol.user_id, u.real_name FROM operation_logs ol LEFT JOIN users u ON ol.user_id = u.id WHERE ol.user_id IS NOT NULL ORDER BY u.real_name`);
   res.json({ success: true, data: { modules, users } });
 });
 
 // 工具函数：写入操作日志（供其他路由调用）
-function writeLog(db, userId, action, module, targetId, detail) {
+async function writeLog(db, userId, action, module, targetId, detail) {
   try {
-    db.run(
+    await db.run(
       `INSERT INTO operation_logs (user_id, action, module, target_id, detail, created_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))`,
+       VALUES (?, ?, ?, ?, ?, NOW())`,
       [userId || null, action, module, targetId || null, detail || null]
     );
   } catch (e) {

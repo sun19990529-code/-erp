@@ -13,7 +13,7 @@ const InventoryView = React.lazy(() => import('./pages/WarehousePages').then(m =
 const WarehouseOrderManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.WarehouseOrderManager })));
 const TransferManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.TransferManager })));
 
-const OrderManager = React.lazy(() => import('./pages/OrderPages').then(m => ({ default: m.OrderManager })));
+const OrderManager = React.lazy(() => import('./pages/Orders'));
 const ProductionScheduleGantt = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionScheduleGantt })));
 const ProductionOrderManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionOrderManager })));
 const PickMaterialManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.PickMaterialManager })));

@@ -9,7 +9,7 @@ const { validate } = require('../middleware/validate');
 const { userLogin, userCreate } = require('../validators/schemas');
 const { clearPermissionCache } = require('../middleware/permission');
 // 管理员专属中间件：角色/权限/用户管理仅限 admin 角色
-const adminOnly = (req, res, next) => {
+const adminOnly = async (req, res, next) => {
   if (!req.user || req.user.role_code !== 'admin') {
     return res.status(403).json({ success: false, message: '仅管理员可执行此操作' });
   }
@@ -54,9 +54,9 @@ const supplierRouter = createCRUDRouter({
 router.use('/suppliers', supplierRouter);
 
 // ==================== 操作员列表（按部门分组）====================
-router.get('/operators', (req, res) => {
+router.get('/operators', async (req, res) => {
   try {
-    const users = req.db.all(`
+    const users = await req.db.all(`
       SELECT u.id, u.real_name, u.username, d.name as department_name
       FROM users u
       LEFT JOIN departments d ON u.department_id = d.id
@@ -79,9 +79,9 @@ router.get('/operators', (req, res) => {
 });
 
 // ==================== 角色管理 ====================
-router.get('/roles', adminOnly, (req, res) => {
+router.get('/roles', adminOnly, async (req, res) => {
   try {
-    const roles = req.db.all('SELECT * FROM roles ORDER BY id');
+    const roles = await req.db.all('SELECT * FROM roles ORDER BY id');
     res.json({ success: true, data: roles });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -89,10 +89,10 @@ router.get('/roles', adminOnly, (req, res) => {
   }
 });
 
-router.post('/roles', adminOnly, (req, res) => {
+router.post('/roles', adminOnly, async (req, res) => {
   try {
     const { name, code, description } = req.body;
-    req.db.run('INSERT INTO roles (name, code, description) VALUES (?, ?, ?)', [name, code, description]);
+    await req.db.run('INSERT INTO roles (name, code, description) VALUES (?, ?, ?)', [name, code, description]);
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -100,10 +100,10 @@ router.post('/roles', adminOnly, (req, res) => {
   }
 });
 
-router.put('/roles/:id', adminOnly, (req, res) => {
+router.put('/roles/:id', adminOnly, async (req, res) => {
   try {
     const { name, code, description } = req.body;
-    req.db.run('UPDATE roles SET name = ?, code = ?, description = ? WHERE id = ?', [name, code, description, req.params.id]);
+    await req.db.run('UPDATE roles SET name = ?, code = ?, description = ? WHERE id = ?', [name, code, description, req.params.id]);
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -111,15 +111,15 @@ router.put('/roles/:id', adminOnly, (req, res) => {
   }
 });
 
-router.delete('/roles/:id', adminOnly, (req, res) => {
+router.delete('/roles/:id', adminOnly, async (req, res) => {
   try {
     // 检查是否有用户关联该角色
-    const count = req.db.get('SELECT COUNT(*) as count FROM users WHERE role_id = ?', [req.params.id]);
+    const count = await req.db.get('SELECT COUNT(*) as count FROM users WHERE role_id = ?', [req.params.id]);
     if (count && count.count > 0) {
       return res.status(400).json({ success: false, message: '该角色下有关联用户，无法删除' });
     }
-    req.db.run('DELETE FROM role_permissions WHERE role_id = ?', [req.params.id]);
-    req.db.run('DELETE FROM roles WHERE id = ?', [req.params.id]);
+    await req.db.run('DELETE FROM role_permissions WHERE role_id = ?', [req.params.id]);
+    await req.db.run('DELETE FROM roles WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -128,9 +128,9 @@ router.delete('/roles/:id', adminOnly, (req, res) => {
 });
 
 // ==================== 权限管理 ====================
-router.get('/permissions', adminOnly, (req, res) => {
+router.get('/permissions', adminOnly, async (req, res) => {
   try {
-    const permissions = req.db.all('SELECT * FROM permissions ORDER BY id');
+    const permissions = await req.db.all('SELECT * FROM permissions ORDER BY id');
     res.json({ success: true, data: permissions });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -138,13 +138,13 @@ router.get('/permissions', adminOnly, (req, res) => {
   }
 });
 
-router.post('/permissions', adminOnly, (req, res) => {
+router.post('/permissions', adminOnly, async (req, res) => {
   try {
     const { name, code, module, description } = req.body;
     if (!name || !code || !module) {
       return res.status(400).json({ success: false, message: '名称、编码和模块不能为空' });
     }
-    const result = req.db.run(
+    const result = await req.db.run(
       'INSERT INTO permissions (name, code, module, description) VALUES (?, ?, ?, ?)',
       [name, code, module, description || name + '权限']
     );
@@ -158,13 +158,13 @@ router.post('/permissions', adminOnly, (req, res) => {
   }
 });
 
-router.put('/permissions/:id', adminOnly, (req, res) => {
+router.put('/permissions/:id', adminOnly, async (req, res) => {
   try {
     const { name, code, module, description } = req.body;
     if (!name || !code || !module) {
       return res.status(400).json({ success: false, message: '名称、编码和模块不能为空' });
     }
-    req.db.run(
+    await req.db.run(
       'UPDATE permissions SET name = ?, code = ?, module = ?, description = ? WHERE id = ?',
       [name, code, module, description, req.params.id]
     );
@@ -178,13 +178,13 @@ router.put('/permissions/:id', adminOnly, (req, res) => {
   }
 });
 
-router.delete('/permissions/:id', adminOnly, (req, res) => {
+router.delete('/permissions/:id', adminOnly, async (req, res) => {
   try {
-    const relations = req.db.all('SELECT * FROM role_permissions WHERE permission_id = ?', [req.params.id]);
+    const relations = await req.db.all('SELECT * FROM role_permissions WHERE permission_id = ?', [req.params.id]);
     if (relations.length > 0) {
       return res.status(400).json({ success: false, message: '该权限已被角色使用，无法删除' });
     }
-    req.db.run('DELETE FROM permissions WHERE id = ?', [req.params.id]);
+    await req.db.run('DELETE FROM permissions WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -192,9 +192,9 @@ router.delete('/permissions/:id', adminOnly, (req, res) => {
   }
 });
 
-router.get('/roles/:id/permissions', adminOnly, (req, res) => {
+router.get('/roles/:id/permissions', adminOnly, async (req, res) => {
   try {
-    const permissions = req.db.all(`
+    const permissions = await req.db.all(`
       SELECT p.* FROM permissions p
       JOIN role_permissions rp ON p.id = rp.permission_id
       WHERE rp.role_id = ?
@@ -206,15 +206,15 @@ router.get('/roles/:id/permissions', adminOnly, (req, res) => {
   }
 });
 
-router.put('/roles/:id/permissions', adminOnly, (req, res) => {
+router.put('/roles/:id/permissions', adminOnly, async (req, res) => {
   try {
     const { permissionIds } = req.body;
     // 使用事务批量操作
-    req.db.transaction(() => {
-      req.db.run('DELETE FROM role_permissions WHERE role_id = ?', [req.params.id]);
-      permissionIds.forEach(pid => {
-        req.db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', [req.params.id, pid]);
-      });
+    await req.db.transaction(async () => {
+      await req.db.run('DELETE FROM role_permissions WHERE role_id = ?', [req.params.id]);
+      for (const pid of permissionIds) {
+        await req.db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', [req.params.id, pid]);
+      }
     });
     // 【F5】权限修改后立即清除缓存
     clearPermissionCache(parseInt(req.params.id));
@@ -226,7 +226,7 @@ router.put('/roles/:id/permissions', adminOnly, (req, res) => {
 });
 
 // ==================== 用户管理 ====================
-router.get('/users', adminOnly, (req, res) => {
+router.get('/users', adminOnly, async (req, res) => {
   try {
     const { user_type } = req.query;
     let sql = `
@@ -248,7 +248,7 @@ router.get('/users', adminOnly, (req, res) => {
       }
     }
     sql += ' ORDER BY u.id';
-    const users = req.db.all(sql, params);
+    const users = await req.db.all(sql, params);
     users.forEach(u => delete u.password);
     res.json({ success: true, data: users });
   } catch (error) {
@@ -260,7 +260,7 @@ router.get('/users', adminOnly, (req, res) => {
 router.post('/users/login', validate(userLogin), async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = req.db.get(`
+    const user = await req.db.get(`
       SELECT u.*, d.name as department_name, r.name as role_name, r.code as role_code
       FROM users u
       LEFT JOIN departments d ON u.department_id = d.id
@@ -281,7 +281,7 @@ router.post('/users/login', validate(userLogin), async (req, res) => {
       passwordValid = (user.password === password);
       if (passwordValid) {
         const hashed = await bcrypt.hash(password, BCRYPT_ROUNDS);
-        req.db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, user.id]);
+        await req.db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, user.id]);
       }
     }
     
@@ -294,11 +294,12 @@ router.post('/users/login', validate(userLogin), async (req, res) => {
     // 获取用户权限
     let permissions = [];
     if (user.role_id) {
-      permissions = req.db.all(`
+      const permRows = await req.db.all(`
         SELECT p.code FROM permissions p
         JOIN role_permissions rp ON p.id = rp.permission_id
         WHERE rp.role_id = ?
-      `, [user.role_id]).map(p => p.code);
+      `, [user.role_id]);
+      permissions = permRows.map(p => p.code);
     }
     
     const tokenPayload = { id: user.id, username: user.username, role_id: user.role_id, role_code: user.role_code, user_type: user.user_type };
@@ -317,7 +318,7 @@ router.post('/users', adminOnly, validate(userCreate), async (req, res) => {
     const { username, password, real_name, user_type, department_id, role_id, supplier_id, customer_id, status } = req.body;
     // 密码加密
     const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    req.db.run(`
+    await req.db.run(`
       INSERT INTO users (username, password, real_name, user_type, department_id, role_id, supplier_id, customer_id, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [username, hashedPassword, real_name, user_type || 'internal', department_id, role_id, supplier_id, customer_id, status ?? 1]);
@@ -340,7 +341,7 @@ router.put('/users/:id', adminOnly, async (req, res) => {
     }
     sql += ', updated_at = CURRENT_TIMESTAMP WHERE id = ?';
     params.push(req.params.id);
-    req.db.run(sql, params);
+    await req.db.run(sql, params);
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -348,21 +349,21 @@ router.put('/users/:id', adminOnly, async (req, res) => {
   }
 });
 
-router.delete('/users/:id', adminOnly, (req, res) => {
+router.delete('/users/:id', adminOnly, async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
     // 【S3】保护 admin 用户不可被删除
-    const user = req.db.get('SELECT * FROM users WHERE id = ?', [userId]);
+    const user = await req.db.get('SELECT * FROM users WHERE id = ?', [userId]);
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
     if (user.role_id === 1) return res.status(400).json({ success: false, message: '系统管理员不允许删除' });
     // 不能删除自己
     if (req.user && req.user.id === userId) return res.status(400).json({ success: false, message: '不能删除自己的账号' });
     // 【B4】检查关联数据
-    const relatedOrders = req.db.get("SELECT COUNT(*) as count FROM production_orders WHERE operator = ?", [user.real_name]);
+    const relatedOrders = await req.db.get("SELECT COUNT(*) as count FROM production_orders WHERE operator = ?", [user.real_name]);
     if (relatedOrders && relatedOrders.count > 0) {
       return res.status(400).json({ success: false, message: `该用户有 ${relatedOrders.count} 条关联生产记录，无法删除` });
     }
-    req.db.run('DELETE FROM users WHERE id = ?', [userId]);
+    await req.db.run('DELETE FROM users WHERE id = ?', [userId]);
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
@@ -371,7 +372,7 @@ router.delete('/users/:id', adminOnly, (req, res) => {
 });
 
 // JWT 令牌静默刷新端点（无需鉴权中间件，由 server.js 白名单控制）
-router.post('/users/refresh', (req, res) => {
+router.post('/users/refresh', async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) return res.status(400).json({ success: false, message: '缺少 refreshToken' });
   try {

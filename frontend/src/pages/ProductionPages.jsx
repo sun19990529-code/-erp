@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
@@ -35,6 +35,8 @@ const PickMaterialManager = () => {
   const [semiProducts, setSemiProducts] = useState([]); // 半成品
   const [finishedProducts, setFinishedProducts] = useState([]); // 成品（用于工序材料配置）
   const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [selectedProductQty, setSelectedProductQty] = useState(1);
   
   const load = async () => {
     const [pickRes, orderRes, whRes, rawRes, semiRes, finRes] = await Promise.all([
@@ -219,14 +221,14 @@ const PickMaterialManager = () => {
       type: modal.type || 'pick'
     };
     const res = modal.mode === 'edit'
-      ? await api.put(`/pick/${modal.item.id}`, obj)
-      : await api.post('/pick', obj);
+      ? await api.put(`/pick/${modal.item.id}`, obj, { invalidate: ['inventory'] })
+      : await api.post('/pick', obj, { invalidate: ['inventory'] });
     if (res.success) { closeModal(); load(); }
     else window.__toast?.error(res.message);
   };
   
   const updateStatus = async (item, status) => {
-    const res = await api.put(`/pick/${item.id}/status`, { status });
+    const res = await api.put(`/pick/${item.id}/status`, { status }, { invalidate: ['inventory'] });
     if (res.success) load();
     else window.__toast?.error(res.message);
   };
@@ -323,17 +325,15 @@ const PickMaterialManager = () => {
       {orders.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
           <h3 className="font-bold text-blue-800 mb-2"><i className="fas fa-info-circle mr-2"></i>待生产订单</h3>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-blue-100">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs">订单号</th>
-                  <th className="px-3 py-2 text-left text-xs">客户</th>
-                  <th className="px-3 py-2 text-left text-xs">金额</th>
-                  <th className="px-3 py-2 text-left text-xs">状态</th>
-                  <th className="px-3 py-2 text-left text-xs">操作</th>
-                </tr>
-              </thead>
+              <thead className="bg-blue-100"><tr>
+                <th className="px-3 py-2 text-left text-xs">订单号</th>
+                <th className="px-3 py-2 text-left text-xs">客户</th>
+                <th className="px-3 py-2 text-left text-xs">金额</th>
+                <th className="px-3 py-2 text-left text-xs">状态</th>
+                <th className="px-3 py-2 text-left text-xs">操作</th>
+              </tr></thead>
               <tbody>
                 {orders.slice(0, 5).map((o, i) => (
                   <tr key={i} className="border-t border-blue-200">
@@ -351,6 +351,20 @@ const PickMaterialManager = () => {
               </tbody>
             </table>
           </div>
+          <div className="block md:hidden space-y-2 mt-2">
+            {orders.slice(0, 5).map((o, i) => (
+              <div key={i} className="bg-white rounded-lg p-3 border border-blue-200/50">
+                <div className="flex justify-between items-start mb-1">
+                  <div className="font-medium text-sm text-blue-900">{o.order_no}</div>
+                  <StatusBadge status={o.status} />
+                </div>
+                <div className="text-sm text-gray-600 mb-2">{o.customer_name} · ¥{o.total_amount || 0}</div>
+                <button onClick={() => openFromOrder(o)} className="w-full py-2 border border-blue-300 text-blue-600 rounded-lg text-sm font-medium active:bg-blue-50">
+                  <i className="fas fa-boxes mr-1"></i>快捷领料
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       
@@ -362,27 +376,23 @@ const PickMaterialManager = () => {
           <div className="flex items-end gap-4">
             <div className="flex-1">
               <label className="block text-sm font-medium text-green-700 mb-1">选择成品</label>
-              <select id="productSelect" className="w-full border border-green-300 rounded-lg px-3 py-2">
+              <select value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} className="w-full border border-green-300 rounded-lg px-3 py-2">
                 <option value="">请选择成品</option>
                 {finishedProducts.map(p => <option key={p.id} value={p.id}>{fmtFinished(p)}</option>)}
               </select>
             </div>
             <div className="w-32">
               <label className="block text-sm font-medium text-green-700 mb-1">生产数量</label>
-              <input type="number" id="productQuantity" defaultValue="1" min="1" className="w-full border border-green-300 rounded-lg px-3 py-2" />
+              <input type="number" value={selectedProductQty} onChange={e => setSelectedProductQty(parseInt(e.target.value) || 1)} min="1" className="w-full border border-green-300 rounded-lg px-3 py-2" />
             </div>
             <button onClick={() => {
-              const selectEl = document.getElementById('productSelect');
-              const qtyEl = document.getElementById('productQuantity');
-              const productId = selectEl.value;
-              const quantity = parseInt(qtyEl.value) || 1;
-              if (!productId) {
+              if (!selectedProductId) {
                 window.__toast?.warning('请选择成品');
                 return;
               }
-              const product = finishedProducts.find(p => p.id == productId);
+              const product = finishedProducts.find(p => String(p.id) === String(selectedProductId));
               if (product) {
-                openFromProductProcess(product, quantity);
+                openFromProductProcess(product, selectedProductQty);
               }
             }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 whitespace-nowrap">
               <i className="fas fa-magic mr-2"></i>自动生成领料单
@@ -417,38 +427,56 @@ const PickMaterialManager = () => {
               <div><strong>状态：</strong><StatusBadge status={modal.item?.status} type="pick" /></div>
               <div><strong>备注：</strong>{modal.item?.remark || '-'}</div>
             </div>
-            <table className="w-full border">
-              <thead className="bg-gray-50"><tr>
-                <th className="px-3 py-2 text-left text-xs">物料编码</th>
-                <th className="px-3 py-2 text-left text-xs">物料名称</th>
-                <th className="px-3 py-2 text-left text-xs">输入数量</th>
-                <th className="px-3 py-2 text-left text-xs">库存数量(公斤)</th>
-              </tr></thead>
-              <tbody>
-                {(modal.item?.items || []).map((it, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-3 py-2 text-sm">{it.code}</td>
-                    <td className="px-3 py-2 text-sm">{it.name}</td>
-                    <td className="px-3 py-2 text-sm">{it.input_quantity || it.quantity} {it.input_unit || '公斤'}</td>
-                    <td className="px-3 py-2 text-sm">{it.quantity} 公斤</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="hidden md:block">
+              <table className="w-full border">
+                <thead className="bg-gray-50"><tr>
+                  <th className="px-3 py-2 text-left text-xs">物料编码</th>
+                  <th className="px-3 py-2 text-left text-xs">物料名称</th>
+                  <th className="px-3 py-2 text-left text-xs">输入数量</th>
+                  <th className="px-3 py-2 text-left text-xs">库存数量(公斤)</th>
+                </tr></thead>
+                <tbody>
+                  {(modal.item?.items || []).map((it, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-3 py-2 text-sm">{it.code}</td>
+                      <td className="px-3 py-2 text-sm">{it.name}</td>
+                      <td className="px-3 py-2 text-sm">{it.input_quantity || it.quantity} {it.input_unit || '公斤'}</td>
+                      <td className="px-3 py-2 text-sm">{it.quantity} 公斤</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="block md:hidden space-y-2">
+              {(modal.item?.items || []).map((it, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-medium text-gray-800 text-sm">{it.name}</div>
+                      <div className="text-xs text-gray-400 font-mono">{it.code}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-gray-800">{it.input_quantity || it.quantity} {it.input_unit || '公斤'}</div>
+                      <div className="text-[10px] text-gray-400">{it.quantity} 公斤</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
             {modal.item?.status === 'pending' && (
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4 border-t">
+                <button type="button" onClick={closeModal} className="w-full sm:w-auto px-4 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">关闭</button>
                 <button type="button" onClick={async () => {
                   if (!await confirm('确认审批通过并扣减库存？')) return;
-                  const res = await api.put(`/pick/${modal.item.id}/status`, { status: 'completed' });
+                  const res = await api.put(`/pick/${modal.item.id}/status`, { status: 'completed' }, { invalidate: ['inventory'] });
                   if (res.success) { closeModal(); load(); }
-                  else alert(res.message || '审批失败');
-                }} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><i className="fas fa-check mr-2"></i>审批领料</button>
+                  else window.__toast?.error(res.message || '审批失败');
+                }} className="w-full sm:w-auto px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"><i className="fas fa-check mr-2"></i>审批领料</button>
               </div>
             )}
             {modal.item?.status !== 'pending' && (
               <div className="flex justify-end pt-4 border-t">
-                <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
+                <button type="button" onClick={closeModal} className="w-full sm:w-auto px-4 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">关闭</button>
               </div>
             )}
           </div>
@@ -535,6 +563,7 @@ const PickMaterialManager = () => {
 
 const ProductionOrderManager = () => {
   const { isAdmin } = useAuth();
+  const [confirm, ConfirmDialog] = useConfirm();
   const [data, setData] = useState([]);
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -599,7 +628,7 @@ const ProductionOrderManager = () => {
       end_time: fd.get('end_time') || null,
       remark: fd.get('remark') 
     };
-    const res = modal.item ? await api.put(`/production/${modal.item.id}`, obj) : await api.post('/production', obj);
+    const res = modal.item ? await api.put(`/production/${modal.item.id}`, obj, { invalidate: ['orders'] }) : await api.post('/production', obj, { invalidate: ['orders'] });
     if (res.success) { closeModal(); load(); }
     else window.__toast?.error(res.message);
   };
@@ -625,19 +654,20 @@ const ProductionOrderManager = () => {
   };
   
   const updateStatus = async (item, status) => {
-    const res = await api.put(`/production/${item.id}/status`, { status });
+    const res = await api.put(`/production/${item.id}/status`, { status }, { invalidate: ['orders'] });
     if (res.success) load();
     else window.__toast?.error(res.message);
   };
   
   // 获取产品单位
   const getProductUnit = (productId) => {
-    const product = products.find(p => p.id == productId);
+    const product = products.find(p => String(p.id) === String(productId));
     return product?.unit || '件';
   };
   
   return (
     <div className="fade-in">
+      <ConfirmDialog />
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">生产工单管理</h2>
         <button onClick={openCreate} className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700"><i className="fas fa-plus mr-2"></i>新增工单</button>
@@ -727,7 +757,7 @@ const ProductionOrderManager = () => {
                     </thead>
                     <tbody>
                       {modal.item.outsourcingOrders.map((o, i) => (
-                        <tr key={i} className="border-t hover:bg-orange-50 cursor-pointer" onClick={() => { window.location.hash = 'outsourcing-query'; window.location.reload(); }}>
+                        <tr key={i} className="border-t hover:bg-orange-50 cursor-pointer" onClick={() => { closeModal(); window.location.hash = 'outsourcing-query'; }}>
                           <td className="px-3 py-2 text-sm font-medium text-orange-600">{o.order_no} <i className="fas fa-external-link-alt text-xs ml-1"></i></td>
                           <td className="px-3 py-2 text-sm">{o.process_name || '-'}</td>
                           <td className="px-3 py-2 text-sm">{o.supplier_name || '-'}</td>
@@ -765,7 +795,7 @@ const ProductionOrderManager = () => {
                     </thead>
                     <tbody>
                       {modal.item.inboundOrders.map((io, i) => (
-                        <tr key={i} className="border-t hover:bg-green-50 cursor-pointer" onClick={() => { window.location.hash = 'inbound-finished'; window.location.reload(); }}>
+                        <tr key={i} className="border-t hover:bg-green-50 cursor-pointer" onClick={() => { closeModal(); window.location.hash = 'inbound-finished'; }}>
                           <td className="px-3 py-2 text-sm font-medium text-green-600">{io.order_no} <i className="fas fa-external-link-alt text-xs ml-1"></i></td>
                           <td className="px-3 py-2 text-sm">{io.warehouse_name || '-'}</td>
                           <td className="px-3 py-2 text-sm">

@@ -140,16 +140,14 @@ const ProductionTrackingPanel = ({ productionId, onClose }) => {
       {materials.summary.length > 0 && (
         <div className="bg-white border rounded-xl p-4">
           <h4 className="font-medium mb-3"><i className="fas fa-cubes text-blue-500 mr-2"></i>物料领用汇总</h4>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">物料编码</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">物料名称</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">已领量</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">领料次数</th>
-                </tr>
-              </thead>
+              <thead className="bg-gray-50"><tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">物料编码</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">物料名称</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">已领量</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">领料次数</th>
+              </tr></thead>
               <tbody className="divide-y">
                 {materials.summary.map(m => (
                   <tr key={m.id} className="hover:bg-gray-50">
@@ -161,6 +159,20 @@ const ProductionTrackingPanel = ({ productionId, onClose }) => {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="block md:hidden space-y-2">
+            {materials.summary.map(m => (
+              <div key={m.id} className="bg-blue-50/30 rounded-lg p-3 border border-blue-100/50 flex justify-between items-center">
+                <div>
+                  <div className="font-medium text-gray-800 text-sm">{m.name}</div>
+                  <div className="text-xs text-gray-400 font-mono">{m.code}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold text-blue-700">{m.picked_qty}</div>
+                  <div className="text-[10px] text-gray-400">{m.pick_count}次领料</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -248,19 +260,17 @@ const OrderTrackingPanel = ({ orderId }) => {
       {production_orders.length > 0 && (
         <div className="bg-white border rounded-xl p-4">
           <h4 className="font-medium mb-3"><i className="fas fa-list-ol text-teal-500 mr-2"></i>生产工单明细 ({production_orders.length})</h4>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">工单号</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">产品</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">目标</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">已领料</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">已产出</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">损耗率</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">状态</th>
-                </tr>
-              </thead>
+              <thead className="bg-gray-50"><tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">工单号</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">产品</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">目标</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">已领料</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">已产出</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">损耗率</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">状态</th>
+              </tr></thead>
               <tbody className="divide-y">
                 {production_orders.map(po => (
                   <tr key={po.id} className="hover:bg-gray-50">
@@ -276,22 +286,43 @@ const OrderTrackingPanel = ({ orderId }) => {
               </tbody>
             </table>
           </div>
+          <div className="block md:hidden space-y-2">
+            {production_orders.map(po => {
+              const pct = po.quantity > 0 ? Math.min(100, (po.output_total / po.quantity) * 100) : 0;
+              return (
+                <div key={po.id} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+                  <div className="flex justify-between items-start mb-1">
+                    <div>
+                      <div className="font-mono text-xs font-bold text-teal-600">{po.order_no}</div>
+                      <div className="text-sm font-medium text-gray-800">{po.product_name}</div>
+                    </div>
+                    <StatusBadge status={po.status} />
+                  </div>
+                  <div className="bg-gray-100 rounded-full h-1.5 my-2"><div className={`h-1.5 rounded-full ${pct >= 100 ? 'bg-green-500' : 'bg-teal-500'}`} style={{ width: `${pct}%` }}></div></div>
+                  <div className="grid grid-cols-4 gap-1 text-center text-xs">
+                    <div><div className="text-gray-400">目标</div><div className="font-bold">{po.quantity}</div></div>
+                    <div><div className="text-gray-400">领料</div><div className="font-bold text-blue-600">{po.picked_total}</div></div>
+                    <div><div className="text-gray-400">产出</div><div className="font-bold text-green-600">{po.output_total}</div></div>
+                    <div><div className="text-gray-400">损耗</div><LossRateBadge rate={po.loss_rate} /></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
       {/* 订单产品明细 */}
       <div className="bg-white border rounded-xl p-4">
         <h4 className="font-medium mb-3"><i className="fas fa-box text-blue-500 mr-2"></i>订单产品</h4>
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">产品编码</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">产品名称</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">订单数量</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">单位</th>
-              </tr>
-            </thead>
+            <thead className="bg-gray-50"><tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">产品编码</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">产品名称</th>
+              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">订单数量</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">单位</th>
+            </tr></thead>
             <tbody className="divide-y">
               {order.items?.map((it, i) => (
                 <tr key={i} className="hover:bg-gray-50">
@@ -303,6 +334,17 @@ const OrderTrackingPanel = ({ orderId }) => {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="block md:hidden space-y-2">
+          {order.items?.map((it, i) => (
+            <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-100 flex justify-between items-center">
+              <div>
+                <div className="font-medium text-gray-800 text-sm">{it.name}</div>
+                <div className="text-xs text-gray-400 font-mono">{it.code}</div>
+              </div>
+              <div className="font-bold text-gray-800">{it.quantity} <span className="text-xs font-normal text-gray-500">{it.unit}</span></div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

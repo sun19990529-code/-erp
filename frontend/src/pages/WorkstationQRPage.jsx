@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../api';
+import { useConfirm } from '../components/ConfirmModal';
 
 const WorkstationQRPage = () => {
   const [stations, setStations] = useState([]);
@@ -8,6 +9,7 @@ const WorkstationQRPage = () => {
   const [form, setForm] = useState({ code: '', name: '', process_id: '', remark: '' });
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [confirm, ConfirmDialog] = useConfirm();
 
   const load = async () => {
     const [s, p] = await Promise.all([
@@ -48,7 +50,7 @@ const WorkstationQRPage = () => {
   };
 
   const remove = async (id) => {
-    if (!confirm('确认删除此工位？')) return;
+    if (!await confirm('确认删除此工位？')) return;
     const res = await api.delete(`/workstation/${id}`);
     if (res.success) { window.__toast?.success('删除成功'); load(); }
   };
@@ -112,6 +114,7 @@ const WorkstationQRPage = () => {
 
   return (
     <div className="fade-in">
+      <ConfirmDialog />
       <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
         <div>
           <h2 className="text-xl font-bold text-gray-800">工位二维码管理</h2>

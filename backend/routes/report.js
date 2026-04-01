@@ -7,14 +7,14 @@ const { sendNotification } = require('./notifications');
  * 生产日报 — 按日期区间汇总产量、不良率、物料消耗
  * GET /daily?start=2026-03-01&end=2026-03-31
  */
-router.get('/daily', requirePermission('production_view'), (req, res) => {
+router.get('/daily', requirePermission('production_view'), async (req, res) => {
   try {
     const { start, end } = req.query;
     const startDate = start || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
     const endDate = end || new Date().toISOString().slice(0, 10);
 
     // 按日期汇总所有报工记录
-    const dailyData = req.db.all(`
+    const dailyData = await req.db.all(`
       SELECT DATE(ppr.created_at) as date,
         COUNT(DISTINCT ppr.production_order_id) as order_count,
         COALESCE(SUM(ppr.output_quantity), 0) as total_output,
@@ -59,13 +59,13 @@ router.get('/daily', requirePermission('production_view'), (req, res) => {
  * 按产品维度汇总
  * GET /by-product?start=2026-03-01&end=2026-03-31
  */
-router.get('/by-product', requirePermission('production_view'), (req, res) => {
+router.get('/by-product', requirePermission('production_view'), async (req, res) => {
   try {
     const { start, end } = req.query;
     const startDate = start || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const endDate = end || new Date().toISOString().slice(0, 10);
 
-    const data = req.db.all(`
+    const data = await req.db.all(`
       SELECT p.id, p.code, p.name, p.specification, p.unit,
         COUNT(DISTINCT po.id) as order_count,
         COALESCE(SUM(po.quantity), 0) as planned_qty,
@@ -103,13 +103,13 @@ router.get('/by-product', requirePermission('production_view'), (req, res) => {
  * 物料消耗汇总
  * GET /material-consumption?start=2026-03-01&end=2026-03-31
  */
-router.get('/material-consumption', requirePermission('production_view'), (req, res) => {
+router.get('/material-consumption', requirePermission('production_view'), async (req, res) => {
   try {
     const { start, end } = req.query;
     const startDate = start || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const endDate = end || new Date().toISOString().slice(0, 10);
 
-    const data = req.db.all(`
+    const data = await req.db.all(`
       SELECT p.id, p.code, p.name, p.unit,
         COALESCE(SUM(pmc.planned_quantity), 0) as total_planned,
         COALESCE(SUM(pmc.actual_quantity), 0) as total_actual,
@@ -137,7 +137,7 @@ router.get('/material-consumption', requirePermission('production_view'), (req, 
  * 财务流水走势 — 按日聚合应收、应付发生额及实收实付额
  * GET /finance-trend?start=2026-03-01&end=2026-03-31
  */
-router.get('/finance-trend', requirePermission('dashboard_view'), (req, res) => {
+router.get('/finance-trend', requirePermission('dashboard_view'), async (req, res) => {
   try {
     const { start, end } = req.query;
     const startDate = start || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -160,13 +160,13 @@ router.get('/finance-trend', requirePermission('dashboard_view'), (req, res) => 
     }
 
     // 取应收（营业额产生）— 范围查询可利用索引
-    const recData = req.db.all(`
+    const recData = await req.db.all(`
       SELECT DATE(created_at) as date, COALESCE(SUM(amount), 0) as amount 
       FROM receivables WHERE created_at >= ? AND created_at <= ? GROUP BY DATE(created_at)
     `, [startTs, endTs]);
 
     // 取应付（支出产生）
-    const payData = req.db.all(`
+    const payData = await req.db.all(`
       SELECT DATE(created_at) as date, COALESCE(SUM(amount), 0) as amount 
       FROM payables WHERE created_at >= ? AND created_at <= ? GROUP BY DATE(created_at)
     `, [startTs, endTs]);
@@ -192,7 +192,7 @@ router.get('/finance-trend', requirePermission('dashboard_view'), (req, res) => 
  * 库管出入流水趋势
  * GET /inventory-trend?start=2026-03-01&end=2026-03-31
  */
-router.get('/inventory-trend', requirePermission('dashboard_view'), (req, res) => {
+router.get('/inventory-trend', requirePermission('dashboard_view'), async (req, res) => {
   try {
     const { start, end } = req.query;
     const startDate = start || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -201,7 +201,7 @@ router.get('/inventory-trend', requirePermission('dashboard_view'), (req, res) =
     const endTs = endDate + ' 23:59:59';
 
     // 必须 JOIN 子表 inbound_items 才能拿到 quantity（主表无此字段）
-    const inboundData = req.db.all(`
+    const inboundData = await req.db.all(`
       SELECT DATE(io.created_at) as date, COALESCE(SUM(ii.quantity), 0) as quantity
       FROM inbound_orders io
       JOIN inbound_items ii ON ii.inbound_id = io.id
@@ -211,7 +211,7 @@ router.get('/inventory-trend', requirePermission('dashboard_view'), (req, res) =
     `, [startTs, endTs]);
 
     // 同理 JOIN outbound_items
-    const outboundData = req.db.all(`
+    const outboundData = await req.db.all(`
       SELECT DATE(oo.created_at) as date, COALESCE(SUM(oi.quantity), 0) as quantity
       FROM outbound_orders oo
       JOIN outbound_items oi ON oi.outbound_id = oo.id
@@ -255,13 +255,13 @@ router.get('/inventory-trend', requirePermission('dashboard_view'), (req, res) =
  * 超期检查 — 检查订单、采购单、委外单是否超期，自动发送通知
  * GET /check-overdue
  */
-router.get('/check-overdue', requirePermission('production_view'), (req, res) => {
+router.get('/check-overdue', requirePermission('production_view'), async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
     let notifications = 0;
 
     // 1. 订单超期：未完成且 delivery_date < 今天
-    const overdueOrders = req.db.all(
+    const overdueOrders = await req.db.all(
       `SELECT id, order_no, delivery_date FROM orders WHERE status NOT IN ('completed', 'cancelled') AND delivery_date < ? AND delivery_date IS NOT NULL`,
       [today]
     );
@@ -272,7 +272,7 @@ router.get('/check-overdue', requirePermission('production_view'), (req, res) =>
     });
 
     // 2. 采购超期
-    const overduePurchases = req.db.all(
+    const overduePurchases = await req.db.all(
       `SELECT id, order_no, expected_date FROM purchase_orders WHERE status NOT IN ('completed', 'received', 'cancelled') AND expected_date < ? AND expected_date IS NOT NULL`,
       [today]
     );
@@ -283,7 +283,7 @@ router.get('/check-overdue', requirePermission('production_view'), (req, res) =>
     });
 
     // 3. 委外超期
-    const overdueOutsourcing = req.db.all(
+    const overdueOutsourcing = await req.db.all(
       `SELECT id, order_no, expected_date FROM outsourcing_orders WHERE status NOT IN ('completed', 'received', 'cancelled', 'inspection_passed') AND expected_date < ? AND expected_date IS NOT NULL`,
       [today]
     );

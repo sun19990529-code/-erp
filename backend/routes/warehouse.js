@@ -9,14 +9,14 @@ const { convertToKg } = require('../utils/unit-convert');
 
 
 // ==================== 仓库 ====================
-router.get('/warehouses', requirePermission('warehouse_view'), (req, res) => {
+router.get('/warehouses', requirePermission('warehouse_view'), async (req, res) => {
   try {
     const { type } = req.query;
     let sql = 'SELECT * FROM warehouses WHERE 1=1';
     const params = [];
     if (type) { sql += ' AND type = ?'; params.push(type); }
     sql += ' ORDER BY id';
-    const warehouses = req.db.all(sql, params);
+    const warehouses = await req.db.all(sql, params);
     res.json({ success: true, data: warehouses });
   } catch (error) {
     console.error(`[warehouse.js]`, error.message);
@@ -25,7 +25,7 @@ router.get('/warehouses', requirePermission('warehouse_view'), (req, res) => {
 });
 
 // ==================== 库存查询 ====================
-router.get('/inventory', requirePermission('warehouse_view'), (req, res) => {
+router.get('/inventory', requirePermission('warehouse_view'), async (req, res) => {
   try {
     const { warehouse_type, category } = req.query;
     let sql = `
@@ -39,7 +39,7 @@ router.get('/inventory', requirePermission('warehouse_view'), (req, res) => {
     if (warehouse_type) { sql += ' AND w.type = ?'; params.push(warehouse_type); }
     if (category) { sql += ' AND p.category = ?'; params.push(category); }
     sql += ' ORDER BY i.updated_at DESC';
-    const inventory = req.db.all(sql, params);
+    const inventory = await req.db.all(sql, params);
     res.json({ success: true, data: inventory });
   } catch (error) {
     console.error(`[warehouse.js]`, error.message);
@@ -48,16 +48,16 @@ router.get('/inventory', requirePermission('warehouse_view'), (req, res) => {
 });
 
 // 库存预警
-router.get('/inventory/warnings', requirePermission('warehouse_view'), (req, res) => {
+router.get('/inventory/warnings', requirePermission('warehouse_view'), async (req, res) => {
   try {
-    const warnings = req.db.all(`
+    const warnings = await req.db.all(`
       SELECT SUM(i.quantity) as quantity, p.code, p.name, p.unit, p.stock_threshold, w.name as warehouse_name
       FROM inventory i
       JOIN products p ON i.product_id = p.id
       JOIN warehouses w ON i.warehouse_id = w.id
       WHERE p.stock_threshold > 0
-      GROUP BY i.warehouse_id, i.product_id
-      HAVING quantity < p.stock_threshold
+      GROUP BY i.warehouse_id, i.product_id, p.code, p.name, p.unit, p.stock_threshold, w.name
+      HAVING SUM(i.quantity) < p.stock_threshold
       ORDER BY quantity ASC
     `);
     res.json({ success: true, data: warnings });
@@ -68,7 +68,7 @@ router.get('/inventory/warnings', requirePermission('warehouse_view'), (req, res
 });
 
 // ==================== 入库单 ====================
-router.get('/inbound', requirePermission('warehouse_view'), (req, res) => {
+router.get('/inbound', requirePermission('warehouse_view'), async (req, res) => {
   try {
     const { type, status, page = 1, pageSize = 20 } = req.query;
     let sql = `
@@ -82,7 +82,7 @@ router.get('/inbound', requirePermission('warehouse_view'), (req, res) => {
     if (type) { sql += ' AND io.type = ?'; params.push(type); }
     if (status) { sql += ' AND io.status = ?'; params.push(status); }
     sql += ' ORDER BY io.created_at DESC';
-    const result = req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+    const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[warehouse.js]`, error.message);
@@ -90,16 +90,16 @@ router.get('/inbound', requirePermission('warehouse_view'), (req, res) => {
   }
 });
 
-router.get('/inbound/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
+router.get('/inbound/:id', validateId, requirePermission('warehouse_view'), async (req, res) => {
   try {
-    const order = req.db.get(`
+    const order = await req.db.get(`
       SELECT io.*, w.name as warehouse_name, s.name as supplier_name
       FROM inbound_orders io
       JOIN warehouses w ON io.warehouse_id = w.id
       LEFT JOIN suppliers s ON io.supplier_id = s.id
       WHERE io.id = ?
     `, [req.params.id]);
-    const items = req.db.all(`
+    const items = await req.db.all(`
       SELECT ii.*, p.code, p.name, p.specification, p.unit
       FROM inbound_items ii
       JOIN products p ON ii.product_id = p.id
@@ -112,7 +112,7 @@ router.get('/inbound/:id', validateId, requirePermission('warehouse_view'), (req
   }
 });
 
-router.post('/inbound', requirePermission('warehouse_create'), validate(inboundCreate), (req, res) => {
+router.post('/inbound', requirePermission('warehouse_create'), validate(inboundCreate), async (req, res) => {
   try {
     const { type, warehouse_id, supplier_id, items, operator, remark } = req.body;
     if (!warehouse_id) return res.status(400).json({ success: false, message: '请选择仓库' });
@@ -124,10 +124,10 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
     // 预取产品信息，避免循环内重复查询
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
-    productIds.forEach(id => {
-      const p = req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+    for (const id of productIds) {
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
-    });
+    }
     
     let totalAmount = 0;
     items.forEach(item => {
@@ -138,22 +138,23 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
     });
     
     let inboundId;
-    req.db.transaction(() => {
-      const result = req.db.run(`
+    await req.db.transaction(async () => {
+      const result = await req.db.run(`
         INSERT INTO inbound_orders (order_no, type, warehouse_id, supplier_id, total_amount, operator, remark, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_inspection')
       `, [orderNo, type, warehouse_id, supplier_id, totalAmount, operator, remark]);
       inboundId = result.lastInsertRowid;
       
-      items.forEach((item, index) => {
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = `${orderNo}-${index + 1}`;
-        req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        await req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [inboundId, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null]);
-      });
+      }
     });
     res.json({ success: true, data: { id: inboundId, order_no: orderNo } });
   } catch (error) {
@@ -162,7 +163,7 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
   }
 });
 
-router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'), (req, res) => {
+router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     const { status } = req.body;
     // 【安全】状态值白名单校验
@@ -171,24 +172,24 @@ router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'
       return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
     }
     
-    req.db.transaction(() => {
-      const order = req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
+    await req.db.transaction(async () => {
+      const order = await req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
       // 【修复#1】查询入库明细（原代码遗漏此行导致运行时崩溃）
-      const items = req.db.all('SELECT * FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
+      const items = await req.db.all('SELECT * FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
       // 【联动#2防重】只有从非完成状态变为 completed/approved 时才增加库存
       const alreadyStocked = order && (order.status === 'completed' || order.status === 'approved');
       if ((status === 'completed' || status === 'approved') && !alreadyStocked) {
-        items.forEach(item => {
+        for (const item of items) {
           const batch = item.batch_no || 'DEFAULT_BATCH';
-          const existing = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
+          const existing = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
           if (existing) {
-            req.db.run('UPDATE inventory SET quantity = quantity + ?, supplier_batch_no = COALESCE(?, supplier_batch_no), heat_no = COALESCE(?, heat_no), updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, item.supplier_batch_no || null, item.heat_no || null, existing.id]);
+            await req.db.run('UPDATE inventory SET quantity = quantity + ?, supplier_batch_no = COALESCE(?, supplier_batch_no), heat_no = COALESCE(?, heat_no), updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, item.supplier_batch_no || null, item.heat_no || null, existing.id]);
           } else {
-            req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity, item.supplier_batch_no || null, item.heat_no || null]);
+            await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity, item.supplier_batch_no || null, item.heat_no || null]);
           }
-        });
+        }
       }
-      req.db.run('UPDATE inbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
+      await req.db.run('UPDATE inbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
     });
     res.json({ success: true });
   } catch (error) {
@@ -197,33 +198,34 @@ router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'
   }
 });
 
-router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), (req, res) => {
+router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     const { warehouse_id, supplier_id, operator, remark, items } = req.body;
     
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
-    productIds.forEach(id => {
-      const p = req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+    for (const id of productIds) {
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
-    });
+    }
     
-    req.db.transaction(() => {
-      const existingOrder = req.db.get('SELECT order_no FROM inbound_orders WHERE id = ?', [req.params.id]);
+    await req.db.transaction(async () => {
+      const existingOrder = await req.db.get('SELECT order_no FROM inbound_orders WHERE id = ?', [req.params.id]);
       const baseOrderNo = existingOrder ? existingOrder.order_no : `MOD-${req.params.id}`;
       
-      req.db.run('UPDATE inbound_orders SET warehouse_id = ?, supplier_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      await req.db.run('UPDATE inbound_orders SET warehouse_id = ?, supplier_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [warehouse_id, supplier_id || null, operator, remark, req.params.id]);
-      req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
-      items.forEach((item, index) => {
+      await req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = item.batch_no || `${baseOrderNo}-${index + 1}`;
-        req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        await req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [req.params.id, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null]);
-      });
+      }
     });
     res.json({ success: true });
   } catch (error) {
@@ -232,32 +234,32 @@ router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), (req
   }
 });
 
-router.delete('/inbound/:id', validateId, requirePermission('warehouse_delete'), (req, res) => {
+router.delete('/inbound/:id', validateId, requirePermission('warehouse_delete'), async (req, res) => {
   try {
     const { force } = req.query;
-    const order = req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
+    const order = await req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
     const isAdmin = req.user?.role_code === 'admin';
     if (order && (order.status === 'completed' || order.status === 'approved') && force !== 'true' && !isAdmin) {
       return res.status(400).json({ success: false, message: '已入库的单据不能删除，如需删除请联系管理员' });
     }
     
-    req.db.transaction(() => {
+    await req.db.transaction(async () => {
       // 仅对已入库的单据回滚库存
       if (order && (order.status === 'completed' || order.status === 'approved')) {
-        const items = req.db.all('SELECT * FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
-        items.forEach(item => {
+        const items = await req.db.all('SELECT * FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
+        for (const item of items) {
           const batch = item.batch_no || 'DEFAULT_BATCH';
-          const inventory = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
+          const inventory = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
           if (inventory && inventory.quantity > 0) {
             const newQty = Math.max(0, inventory.quantity - item.quantity);
-            req.db.run('UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newQty, inventory.id]);
+            await req.db.run('UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newQty, inventory.id]);
           }
-        });
+        }
       }
       // 清理关联的检验记录（防止外键约束失败）
-      req.db.run('DELETE FROM inbound_inspections WHERE inbound_id = ?', [req.params.id]);
-      req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
-      req.db.run('DELETE FROM inbound_orders WHERE id = ?', [req.params.id]);
+      await req.db.run('DELETE FROM inbound_inspections WHERE inbound_id = ?', [req.params.id]);
+      await req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
+      await req.db.run('DELETE FROM inbound_orders WHERE id = ?', [req.params.id]);
     });
     writeLog(req.db, req.user?.id, '删除入库单', 'inbound', req.params.id, `入库单号: ${order?.order_no || req.params.id}，状态: ${order?.status}`);
     res.json({ success: true });
@@ -268,7 +270,7 @@ router.delete('/inbound/:id', validateId, requirePermission('warehouse_delete'),
 });
 
 // ==================== 出库单 ====================
-router.get('/outbound', requirePermission('warehouse_view'), (req, res) => {
+router.get('/outbound', requirePermission('warehouse_view'), async (req, res) => {
   try {
     const { type, status, page = 1, pageSize = 20 } = req.query;
     let sql = `
@@ -282,7 +284,7 @@ router.get('/outbound', requirePermission('warehouse_view'), (req, res) => {
     if (type) { sql += ' AND oo.type = ?'; params.push(type); }
     if (status) { sql += ' AND oo.status = ?'; params.push(status); }
     sql += ' ORDER BY oo.created_at DESC';
-    const result = req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+    const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[warehouse.js]`, error.message);
@@ -290,16 +292,16 @@ router.get('/outbound', requirePermission('warehouse_view'), (req, res) => {
   }
 });
 
-router.get('/outbound/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
+router.get('/outbound/:id', validateId, requirePermission('warehouse_view'), async (req, res) => {
   try {
-    const order = req.db.get(`
+    const order = await req.db.get(`
       SELECT oo.*, w.name as warehouse_name, o.order_no as ref_order_no, o.customer_name
       FROM outbound_orders oo
       JOIN warehouses w ON oo.warehouse_id = w.id
       LEFT JOIN orders o ON oo.order_id = o.id
       WHERE oo.id = ?
     `, [req.params.id]);
-    const items = req.db.all(`
+    const items = await req.db.all(`
       SELECT oi.*, p.code, p.name, p.specification, p.unit
       FROM outbound_items oi
       JOIN products p ON oi.product_id = p.id
@@ -312,7 +314,7 @@ router.get('/outbound/:id', validateId, requirePermission('warehouse_view'), (re
   }
 });
 
-router.post('/outbound', requirePermission('warehouse_create'), validate(outboundCreate), (req, res) => {
+router.post('/outbound', requirePermission('warehouse_create'), validate(outboundCreate), async (req, res) => {
   try {
     const { type, warehouse_id, order_id, items, operator, remark } = req.body;
     if (!warehouse_id) return res.status(400).json({ success: false, message: '请选择仓库' });
@@ -324,10 +326,10 @@ router.post('/outbound', requirePermission('warehouse_create'), validate(outboun
     // 预取产品信息
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
-    productIds.forEach(id => {
-      const p = req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+    for (const id of productIds) {
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
-    });
+    }
     
     let totalAmount = 0;
     items.forEach(item => {
@@ -337,22 +339,22 @@ router.post('/outbound', requirePermission('warehouse_create'), validate(outboun
     });
     
     let outboundId;
-    req.db.transaction(() => {
-      const result = req.db.run(`
+    await req.db.transaction(async () => {
+      const result = await req.db.run(`
         INSERT INTO outbound_orders (order_no, type, warehouse_id, order_id, total_amount, operator, remark, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
       `, [orderNo, type, warehouse_id, order_id || null, totalAmount, operator, remark]);
       outboundId = result.lastInsertRowid;
       
-      items.forEach(item => {
+      for (const item of items) {
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = item.batch_no || 'DEFAULT_BATCH';
-        req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [outboundId, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
-      });
+      }
     });
     res.json({ success: true, data: { id: outboundId, order_no: orderNo } });
   } catch (error) {
@@ -361,7 +363,7 @@ router.post('/outbound', requirePermission('warehouse_create'), validate(outboun
   }
 });
 
-router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit'), (req, res) => {
+router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     const { status } = req.body;
     // 【安全】状态值白名单校验
@@ -369,28 +371,28 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
     }
-    req.db.transaction(() => {
-      const order = req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
+    await req.db.transaction(async () => {
+      const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
       // 【防重复】只有从非完成状态变为 completed/approved 时才扣减库存
       const alreadyDeducted = order && (order.status === 'completed' || order.status === 'approved');
       if ((status === 'completed' || status === 'approved') && !alreadyDeducted) {
-        const items = req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
-        items.forEach(item => {
+        const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+        for (const item of items) {
           const batch = item.batch_no || 'DEFAULT_BATCH';
-          const inv = req.db.get('SELECT quantity FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
+          const inv = await req.db.get('SELECT quantity FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
           if (!inv || inv.quantity < item.quantity) {
             throw new Error(`批次条码 [${batch}] 对应的库存不足，无法出库`);
           }
-          req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+          await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
             [item.quantity, order.warehouse_id, item.product_id, batch]);
-        });
+        }
         
         // 【改进#6】成品出库完成后更新关联订单为已发货
         if (order.type === 'finished' && order.order_id) {
-          req.db.run("UPDATE orders SET status = 'shipped', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'completed'", [order.order_id]);
+          await req.db.run("UPDATE orders SET status = 'shipped', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'completed'", [order.order_id]);
         }
       }
-      req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
+      await req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
     });
     res.json({ success: true });
   } catch (error) {
@@ -402,30 +404,30 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
   }
 });
 
-router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), (req, res) => {
+router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     const { warehouse_id, order_id, operator, remark, items } = req.body;
     
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
-    productIds.forEach(id => {
-      const p = req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+    for (const id of productIds) {
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
-    });
+    }
     
-    req.db.transaction(() => {
-      req.db.run('UPDATE outbound_orders SET warehouse_id = ?, order_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    await req.db.transaction(async () => {
+      await req.db.run('UPDATE outbound_orders SET warehouse_id = ?, order_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [warehouse_id, order_id || null, operator, remark, req.params.id]);
-      req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
-      items.forEach(item => {
+      await req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      for (const item of items) {
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = item.batch_no || 'DEFAULT_BATCH';
-        req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [req.params.id, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
-      });
+      }
     });
     res.json({ success: true });
   } catch (error) {
@@ -434,31 +436,31 @@ router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), (re
   }
 });
 
-router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete'), (req, res) => {
+router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete'), async (req, res) => {
   try {
     const { force } = req.query;
-    const order = req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
+    const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
     const isAdmin = req.user?.role_code === 'admin';
     if (order && order.status === 'completed' && force !== 'true' && !isAdmin) {
       return res.status(400).json({ success: false, message: '已出库的单据不能删除，如需删除请联系管理员' });
     }
     
-    req.db.transaction(() => {
+    await req.db.transaction(async () => {
       // 仅对已出库的单据回滚库存（出库=加回库存）
       if (order && (order.status === 'completed' || order.status === 'approved')) {
-        const items = req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
-        items.forEach(item => {
+        const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+        for (const item of items) {
           const batch = item.batch_no || 'DEFAULT_BATCH';
-          const inventory = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
+          const inventory = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
           if (inventory) {
-            req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, inventory.id]);
+            await req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, inventory.id]);
           } else {
-            req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity]);
+            await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity]);
           }
-        });
+        }
       }
-      req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
-      req.db.run('DELETE FROM outbound_orders WHERE id = ?', [req.params.id]);
+      await req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      await req.db.run('DELETE FROM outbound_orders WHERE id = ?', [req.params.id]);
     });
     writeLog(req.db, req.user?.id, '删除出库单', 'outbound', req.params.id, `出库单号: ${order?.order_no || req.params.id}，状态: ${order?.status}`);
     res.json({ success: true });
@@ -469,7 +471,7 @@ router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete')
 });
 
 // ==================== 仓库间调拨 ====================
-router.get('/transfer', requirePermission('warehouse_view'), (req, res) => {
+router.get('/transfer', requirePermission('warehouse_view'), async (req, res) => {
   try {
     const { status } = req.query;
     let sql = `
@@ -483,7 +485,7 @@ router.get('/transfer', requirePermission('warehouse_view'), (req, res) => {
     if (status) { sql += ' AND oo.status = ?'; params.push(status); }
     sql += ' ORDER BY oo.created_at DESC';
     // 调拨单量少，全量返回，前端无需分页
-    const data = req.db.all(sql, params);
+    const data = await req.db.all(sql, params);
     res.json({ success: true, data });
   } catch (error) {
     console.error(`[warehouse.js transfer]`, error.message);
@@ -492,9 +494,9 @@ router.get('/transfer', requirePermission('warehouse_view'), (req, res) => {
 });
 
 
-router.get('/transfer/:id', validateId, requirePermission('warehouse_view'), (req, res) => {
+router.get('/transfer/:id', validateId, requirePermission('warehouse_view'), async (req, res) => {
   try {
-    const order = req.db.get(`
+    const order = await req.db.get(`
       SELECT oo.*, w1.name as from_warehouse_name, w2.name as to_warehouse_name
       FROM outbound_orders oo
       JOIN warehouses w1 ON oo.warehouse_id = w1.id
@@ -502,7 +504,7 @@ router.get('/transfer/:id', validateId, requirePermission('warehouse_view'), (re
       WHERE oo.id = ? AND oo.type = 'transfer'
     `, [req.params.id]);
     if (!order) return res.status(404).json({ success: false, message: '调拨单不存在' });
-    const items = req.db.all(`
+    const items = await req.db.all(`
       SELECT oi.*, p.code, p.name, p.specification, p.unit
       FROM outbound_items oi
       JOIN products p ON oi.product_id = p.id
@@ -515,7 +517,7 @@ router.get('/transfer/:id', validateId, requirePermission('warehouse_view'), (re
   }
 });
 
-router.post('/transfer', requirePermission('warehouse_create'), validate(transferCreate), (req, res) => {
+router.post('/transfer', requirePermission('warehouse_create'), validate(transferCreate), async (req, res) => {
 
   try {
     const { from_warehouse_id, to_warehouse_id, items, operator, remark } = req.body;
@@ -526,19 +528,19 @@ router.post('/transfer', requirePermission('warehouse_create'), validate(transfe
     const orderNo = generateOrderNo('DB');
     let transferId;
 
-    req.db.transaction(() => {
+    await req.db.transaction(async () => {
       // 创建调拨出库单
-      const result = req.db.run(`
+      const result = await req.db.run(`
         INSERT INTO outbound_orders (order_no, type, warehouse_id, target_warehouse_id, operator, remark, status)
         VALUES (?, 'transfer', ?, ?, ?, ?, 'pending')
       `, [orderNo, from_warehouse_id, to_warehouse_id, operator, remark]);
       transferId = result.lastInsertRowid;
 
-      items.forEach(item => {
+      for (const item of items) {
         const batchNo = item.batch_no || 'DEFAULT_BATCH';
-        req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?, ?)',
+        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?, ?)',
           [transferId, item.product_id, batchNo, item.quantity, item.input_quantity || item.quantity, item.input_unit || '公斤']);
-      });
+      }
     });
 
     writeLog(req.db, req.user?.id, '创建调拨单', 'transfer', transferId, `调拨单号: ${orderNo}`);
@@ -549,40 +551,40 @@ router.post('/transfer', requirePermission('warehouse_create'), validate(transfe
   }
 });
 
-router.put('/transfer/:id/confirm', validateId, requirePermission('warehouse_edit'), (req, res) => {
+router.put('/transfer/:id/confirm', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
-    req.db.transaction(() => {
-      const order = req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ?', [req.params.id, 'transfer']);
+    await req.db.transaction(async () => {
+      const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ?', [req.params.id, 'transfer']);
       if (!order) throw new Error('调拨单不存在');
       if (order.status === 'completed') throw new Error('该调拨单已完成');
 
-      const items = req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
 
-      items.forEach(item => {
+      for (const item of items) {
         const batch = item.batch_no || 'DEFAULT_BATCH';
         // 扣减源仓库
-        const inv = req.db.get('SELECT quantity FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+        const inv = await req.db.get('SELECT quantity FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
           [order.warehouse_id, item.product_id, batch]);
         if (!inv || inv.quantity < item.quantity) {
-          const p = req.db.get('SELECT name FROM products WHERE id = ?', [item.product_id]);
+          const p = await req.db.get('SELECT name FROM products WHERE id = ?', [item.product_id]);
           throw new Error(`${p?.name || '产品'} (批次: ${batch}) 源仓库库存不足`);
         }
-        req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+        await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
           [item.quantity, order.warehouse_id, item.product_id, batch]);
 
         // 增加目标仓库
-        const targetInv = req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+        const targetInv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
           [order.target_warehouse_id, item.product_id, batch]);
         if (targetInv) {
-          req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          await req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
             [item.quantity, targetInv.id]);
         } else {
-          req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
+          await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
             [order.target_warehouse_id, item.product_id, batch, item.quantity]);
         }
-      });
+      }
 
-      req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', req.params.id]);
+      await req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', req.params.id]);
     });
 
     writeLog(req.db, req.user?.id, '确认调拨', 'transfer', req.params.id, '调拨完成');
@@ -596,15 +598,15 @@ router.put('/transfer/:id/confirm', validateId, requirePermission('warehouse_edi
   }
 });
 
-router.delete('/transfer/:id', validateId, requirePermission('warehouse_delete'), (req, res) => {
+router.delete('/transfer/:id', validateId, requirePermission('warehouse_delete'), async (req, res) => {
   try {
-    const order = req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ?', [req.params.id, 'transfer']);
+    const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ?', [req.params.id, 'transfer']);
     if (!order) return res.status(404).json({ success: false, message: '调拨单不存在' });
     if (order.status === 'completed') return res.status(400).json({ success: false, message: '已完成的调拨单不能删除' });
 
-    req.db.transaction(() => {
-      req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
-      req.db.run('DELETE FROM outbound_orders WHERE id = ?', [req.params.id]);
+    await req.db.transaction(async () => {
+      await req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      await req.db.run('DELETE FROM outbound_orders WHERE id = ?', [req.params.id]);
     });
 
     writeLog(req.db, req.user?.id, '删除调拨单', 'transfer', req.params.id, `调拨单号: ${order.order_no}`);

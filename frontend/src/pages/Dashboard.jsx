@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { api } from '../api';
+import { useSafeFetch } from '../hooks/useSafeFetch';
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [chartData, setChartData] = useState(null);
   const [purchaseSuggestions, setPurchaseSuggestions] = useState([]);
   
-  useEffect(() => { 
-    api.get('/dashboard').then(res => res.success && setStats(res.data)); 
-    api.get('/dashboard/charts').then(res => res.success && setChartData(res.data)); 
-    api.get('/dashboard/purchase-suggestions').then(res => res.success && setPurchaseSuggestions(res.data));
+  useSafeFetch(async (isMounted) => { 
+    api.get('/dashboard').then(res => isMounted.current && res.success && setStats(res.data)); 
+    api.get('/dashboard/charts').then(res => isMounted.current && res.success && setChartData(res.data)); 
+    api.get('/dashboard/purchase-suggestions').then(res => isMounted.current && res.success && setPurchaseSuggestions(res.data));
   }, []);
   
   if (!stats || !chartData) return <div className="flex items-center justify-center h-64"><i className="fas fa-spinner fa-spin text-3xl text-teal-500"></i></div>;

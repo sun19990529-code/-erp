@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "file-saver": "^2.0.5",
@@ -28,6 +30,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.2",
+    "@vitest/ui": "^4.1.2",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",

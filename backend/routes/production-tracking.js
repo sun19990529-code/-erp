@@ -8,12 +8,12 @@ const { requirePermission } = require('../middleware/permission');
  */
 
 // ==================== 工单维度追踪 ====================
-router.get('/production/:id/tracking', requirePermission('production_view'), (req, res) => {
+router.get('/production/:id/tracking', requirePermission('production_view'), async (req, res) => {
   try {
     const productionId = req.params.id;
 
     // 1. 工单基本信息
-    const production = req.db.get(`
+    const production = await req.db.get(`
       SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit,
              o.order_no as sales_order_no, o.customer_name
       FROM production_orders po
@@ -24,7 +24,7 @@ router.get('/production/:id/tracking', requirePermission('production_view'), (re
     if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
 
     // 2. 所有关联领料单 + 明细
-    const pickOrders = req.db.all(`
+    const pickOrders = await req.db.all(`
       SELECT pk.id, pk.order_no, pk.status, pk.operator, pk.created_at, w.name as warehouse_name
       FROM pick_orders pk
       LEFT JOIN warehouses w ON pk.warehouse_id = w.id
@@ -36,7 +36,7 @@ router.get('/production/:id/tracking', requirePermission('production_view'), (re
     // 批量查询所有领料单明细（避免 N+1）
     const pickOrderIds = pickOrders.map(pk => pk.id);
     const allPickItems = pickOrderIds.length > 0
-      ? req.db.all(`SELECT pi.*, p.code, p.name, p.unit FROM pick_items pi JOIN products p ON pi.material_id = p.id WHERE pi.pick_order_id IN (${pickOrderIds.map(() => '?').join(',')})`, pickOrderIds)
+      ? await req.db.all(`SELECT pi.*, p.code, p.name, p.unit FROM pick_items pi JOIN products p ON pi.material_id = p.id WHERE pi.pick_order_id IN (${pickOrderIds.map(() => '?').join(',')})`, pickOrderIds)
       : [];
     const pickDetails = pickOrders.map(pk => {
       const items = allPickItems.filter(it => it.pick_order_id === pk.id);
@@ -46,7 +46,7 @@ router.get('/production/:id/tracking', requirePermission('production_view'), (re
     });
 
     // 3. 按物料汇总已领量
-    const materialSummary = req.db.all(`
+    const materialSummary = await req.db.all(`
       SELECT p.id, p.code, p.name, p.unit,
              SUM(CASE WHEN pk.status = 'completed' THEN pi.quantity ELSE 0 END) as picked_qty,
              COUNT(DISTINCT pk.id) as pick_count
@@ -58,7 +58,7 @@ router.get('/production/:id/tracking', requirePermission('production_view'), (re
     `, [productionId]);
 
     // 4. 成品产出（入库量）
-    const outputRows = req.db.all(`
+    const outputRows = await req.db.all(`
       SELECT ii.quantity, io.order_no as inbound_no, io.status, io.created_at
       FROM inbound_items ii
       JOIN inbound_orders io ON ii.inbound_id = io.id
@@ -69,15 +69,16 @@ router.get('/production/:id/tracking', requirePermission('production_view'), (re
       .reduce((sum, r) => sum + (r.quantity || 0), 0);
 
     // 5. 半成品产出
-    const semiOutput = req.db.all(`
+    const semiOutputRows = await req.db.all(`
       SELECT ii.quantity
       FROM inbound_items ii
       JOIN inbound_orders io ON ii.inbound_id = io.id
       WHERE io.production_order_id = ? AND io.type = 'semi'
-    `, [productionId]).reduce((sum, r) => sum + (r.quantity || 0), 0);
+    `, [productionId]);
+    const semiOutput = semiOutputRows.reduce((sum, r) => sum + (r.quantity || 0), 0);
 
     // 6. 工序进度
-    const processRecords = req.db.all(`
+    const processRecords = await req.db.all(`
       SELECT ppr.*, pr.name as process_name, pr.code as process_code
       FROM production_process_records ppr
       JOIN processes pr ON ppr.process_id = pr.id
@@ -121,17 +122,17 @@ router.get('/production/:id/tracking', requirePermission('production_view'), (re
 });
 
 // ==================== 订单维度追踪 ====================
-router.get('/orders/:id/tracking', requirePermission('order_view'), (req, res) => {
+router.get('/orders/:id/tracking', requirePermission('order_view'), async (req, res) => {
   try {
     const orderId = req.params.id;
 
     // 1. 订单信息
-    const order = req.db.get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+    const order = await req.db.get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
-    const orderItems = req.db.all(`SELECT oi.*, p.code, p.name, p.unit FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?`, [orderId]);
+    const orderItems = await req.db.all(`SELECT oi.*, p.code, p.name, p.unit FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?`, [orderId]);
 
     // 2. 关联的所有生产工单
-    const productions = req.db.all(`
+    const productions = await req.db.all(`
       SELECT po.*, p.code as product_code, p.name as product_name, p.unit
       FROM production_orders po
       JOIN products p ON po.product_id = p.id
@@ -146,10 +147,10 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), (req, res) =
     // 批量查询所有工单的领料量和产出量（避免 N+1）
     const poIds = productions.map(po => po.id);
     const allPickedByPo = poIds.length > 0
-      ? req.db.all(`SELECT pk.production_order_id, COALESCE(SUM(pi.quantity), 0) as total FROM pick_items pi JOIN pick_orders pk ON pi.pick_order_id = pk.id WHERE pk.production_order_id IN (${poIds.map(() => '?').join(',')}) AND pk.status = 'completed' GROUP BY pk.production_order_id`, poIds)
+      ? await req.db.all(`SELECT pk.production_order_id, COALESCE(SUM(pi.quantity), 0) as total FROM pick_items pi JOIN pick_orders pk ON pi.pick_order_id = pk.id WHERE pk.production_order_id IN (${poIds.map(() => '?').join(',')}) AND pk.status = 'completed' GROUP BY pk.production_order_id`, poIds)
       : [];
     const allOutputByPo = poIds.length > 0
-      ? req.db.all(`SELECT io.production_order_id, COALESCE(SUM(ii.quantity), 0) as total FROM inbound_items ii JOIN inbound_orders io ON ii.inbound_id = io.id WHERE io.production_order_id IN (${poIds.map(() => '?').join(',')}) AND io.type = 'finished' AND io.status != 'cancelled' GROUP BY io.production_order_id`, poIds)
+      ? await req.db.all(`SELECT io.production_order_id, COALESCE(SUM(ii.quantity), 0) as total FROM inbound_items ii JOIN inbound_orders io ON ii.inbound_id = io.id WHERE io.production_order_id IN (${poIds.map(() => '?').join(',')}) AND io.type = 'finished' AND io.status != 'cancelled' GROUP BY io.production_order_id`, poIds)
       : [];
 
     const productionDetails = productions.map(po => {
@@ -172,7 +173,7 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), (req, res) =
     });
 
     // 3. 订单领料汇总（直接关联订单的领料单）
-    const directPickOrders = req.db.all(`
+    const directPickOrders = await req.db.all(`
       SELECT pk.id, pk.order_no, pk.status, pk.operator, pk.created_at, w.name as warehouse_name
       FROM pick_orders pk
       LEFT JOIN warehouses w ON pk.warehouse_id = w.id
@@ -181,7 +182,7 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), (req, res) =
     `, [orderId]);
 
     // 加上直接关联订单的领料量
-    const directPicked = req.db.get(`
+    const directPicked = await req.db.get(`
       SELECT COALESCE(SUM(pi.quantity), 0) as total
       FROM pick_items pi
       JOIN pick_orders pk ON pi.pick_order_id = pk.id
@@ -221,7 +222,7 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), (req, res) =
  * 工单成本汇总列表 — 所有工单的成本概况
  * GET /cost-summary?status=completed&page=1&pageSize=20
  */
-router.get('/cost-summary', requirePermission('production_view'), (req, res) => {
+router.get('/cost-summary', requirePermission('production_view'), async (req, res) => {
   try {
     const { status, page = 1, pageSize = 20 } = req.query;
     let sql = `SELECT po.id, po.order_no, po.status, po.quantity, po.completed_quantity,
@@ -236,7 +237,7 @@ router.get('/cost-summary', requirePermission('production_view'), (req, res) => 
     if (status) { sql += ' AND po.status = ?'; params.push(status); }
     sql += ' ORDER BY po.created_at DESC';
 
-    const result = req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+    const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
 
     // 批量查询所有工单的成本数据
     const poIds = result.data.map(po => po.id);
@@ -245,21 +246,23 @@ router.get('/cost-summary', requirePermission('production_view'), (req, res) => 
     const placeholders = poIds.map(() => '?').join(',');
 
     // 物料最新入库单价（预查避免 N+1）
-    const allMaterialIds = req.db.all(`
+    const allMaterialIdRows = await req.db.all(`
       SELECT DISTINCT pi.material_id FROM pick_items pi
       JOIN pick_orders pk ON pi.pick_order_id = pk.id
       WHERE pk.production_order_id IN (${placeholders}) AND pk.status = 'completed'
-    `, poIds).map(r => r.material_id);
+    `, poIds);
+    const allMaterialIds = allMaterialIdRows.map(r => r.material_id);
     const materialPriceMap = {};
     if (allMaterialIds.length > 0) {
       const mp = allMaterialIds.map(() => '?').join(',');
-      req.db.all(`SELECT product_id, unit_price FROM inbound_items
+      const priceRows = await req.db.all(`SELECT product_id, unit_price FROM inbound_items
         WHERE id IN (SELECT MAX(id) FROM inbound_items WHERE unit_price > 0 AND product_id IN (${mp}) GROUP BY product_id)
-      `, allMaterialIds).forEach(r => { materialPriceMap[r.product_id] = r.unit_price; });
+      `, allMaterialIds);
+      priceRows.forEach(r => { materialPriceMap[r.product_id] = r.unit_price; });
     }
 
     // 物料成本（领料金额）
-    const materialCostRows = req.db.all(`
+    const materialCostRows = await req.db.all(`
       SELECT pk.production_order_id, pi.material_id, SUM(pi.quantity) as total_qty
       FROM pick_items pi
       JOIN pick_orders pk ON pi.pick_order_id = pk.id
@@ -273,7 +276,7 @@ router.get('/cost-summary', requirePermission('production_view'), (req, res) => 
     });
 
     // 委外成本
-    const outsourcingCostRows = req.db.all(`
+    const outsourcingCostRows = await req.db.all(`
       SELECT production_order_id, SUM(total_amount) as outsourcing_cost
       FROM outsourcing_orders
       WHERE production_order_id IN (${placeholders}) AND status != 'cancelled'
@@ -334,12 +337,12 @@ router.get('/cost-summary', requirePermission('production_view'), (req, res) => 
  * 单个工单成本卡明细
  * GET /production/:id/cost
  */
-router.get('/production/:id/cost', requirePermission('production_view'), (req, res) => {
+router.get('/production/:id/cost', requirePermission('production_view'), async (req, res) => {
   try {
     const productionId = req.params.id;
 
     // 1. 工单基本信息
-    const production = req.db.get(`
+    const production = await req.db.get(`
       SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit,
              p.unit_price as selling_price,
              o.order_no as sales_order_no, o.customer_name
@@ -351,21 +354,23 @@ router.get('/production/:id/cost', requirePermission('production_view'), (req, r
     if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
 
     // 2. 物料最新入库单价（预查）
-    const materialIds = req.db.all(`
+    const materialIdRows = await req.db.all(`
       SELECT DISTINCT pi.material_id FROM pick_items pi
       JOIN pick_orders pk ON pi.pick_order_id = pk.id
       WHERE pk.production_order_id = ? AND pk.status = 'completed'
-    `, [productionId]).map(r => r.material_id);
+    `, [productionId]);
+    const materialIds = materialIdRows.map(r => r.material_id);
     const detailPriceMap = {};
     if (materialIds.length > 0) {
       const mp = materialIds.map(() => '?').join(',');
-      req.db.all(`SELECT product_id, unit_price FROM inbound_items
+      const detailPriceRows = await req.db.all(`SELECT product_id, unit_price FROM inbound_items
         WHERE id IN (SELECT MAX(id) FROM inbound_items WHERE unit_price > 0 AND product_id IN (${mp}) GROUP BY product_id)
-      `, materialIds).forEach(r => { detailPriceMap[r.product_id] = r.unit_price; });
+      `, materialIds);
+      detailPriceRows.forEach(r => { detailPriceMap[r.product_id] = r.unit_price; });
     }
 
     // 3. 物料成本明细（每笔领料）
-    const materialDetails = req.db.all(`
+    const materialDetails = await req.db.all(`
       SELECT pi.material_id, pi.quantity, p.code, p.name, p.unit,
              pk.order_no as pick_order_no, pk.created_at as pick_time
       FROM pick_items pi
@@ -394,7 +399,7 @@ router.get('/production/:id/cost', requirePermission('production_view'), (req, r
     });
 
     // 4. 委外成本明细
-    const outsourcingDetails = req.db.all(`
+    const outsourcingDetails = await req.db.all(`
       SELECT oo.id, oo.order_no, oo.total_amount, oo.status, oo.created_at,
              s.name as supplier_name,
              pr.name as process_name
@@ -407,7 +412,7 @@ router.get('/production/:id/cost', requirePermission('production_view'), (req, r
     const outsourcingCost = outsourcingDetails.reduce((s, o) => s + (o.total_amount || 0), 0);
 
     // 5. 实际物料消耗记录（工序级）
-    const consumptionDetails = req.db.all(`
+    const consumptionDetails = await req.db.all(`
       SELECT pmc.*, p.name as material_name, p.code as material_code, p.unit as material_unit,
              pr.name as process_name
       FROM production_material_consumption pmc
@@ -418,7 +423,7 @@ router.get('/production/:id/cost', requirePermission('production_view'), (req, r
     `, [productionId]);
 
     // 6. 成品产出
-    const outputRecords = req.db.all(`
+    const outputRecords = await req.db.all(`
       SELECT ii.quantity, io.order_no, io.created_at
       FROM inbound_items ii
       JOIN inbound_orders io ON ii.inbound_id = io.id
@@ -475,7 +480,7 @@ router.get('/production/:id/cost', requirePermission('production_view'), (req, r
  * 批次号模糊搜索 — 返回匹配的批次号列表
  * GET /batch?keyword=xxx&limit=20
  */
-router.get('/batch', requirePermission('warehouse_view'), (req, res) => {
+router.get('/batch', requirePermission('warehouse_view'), async (req, res) => {
   try {
     const { keyword, limit = 20 } = req.query;
     if (!keyword || keyword.trim().length < 1) {
@@ -485,7 +490,7 @@ router.get('/batch', requirePermission('warehouse_view'), (req, res) => {
     const maxResults = Math.min(parseInt(limit) || 20, 100);
 
     // 从 4 张明细表中搜索不重复的 batch_no
-    const batches = req.db.all(`
+    const batches = await req.db.all(`
       SELECT DISTINCT batch_no, source, product_name, created_at FROM (
         SELECT ii.batch_no, '入库' as source, p.name as product_name, io.created_at
         FROM inbound_items ii
@@ -533,12 +538,12 @@ router.get('/batch', requirePermission('warehouse_view'), (req, res) => {
  * 批次全链路溯源 — 追踪一个批次号从入库到出库的完整生命周期
  * GET /batch/:batchNo
  */
-router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) => {
+router.get('/batch/:batchNo', requirePermission('warehouse_view'), async (req, res) => {
   try {
     const batchNo = decodeURIComponent(req.params.batchNo);
 
     // 1. 入库记录
-    const inboundRecords = req.db.all(`
+    const inboundRecords = await req.db.all(`
       SELECT ii.id, ii.quantity, ii.unit_price, ii.batch_no, ii.supplier_batch_no, ii.heat_no,
              io.order_no, io.type, io.status, io.operator, io.created_at,
              p.code as product_code, p.name as product_name, p.unit, p.specification,
@@ -554,7 +559,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
     `, [batchNo]);
 
     // 2. 当前库存
-    const inventoryRecords = req.db.all(`
+    const inventoryRecords = await req.db.all(`
       SELECT inv.quantity, inv.batch_no, inv.supplier_batch_no, inv.heat_no, inv.updated_at,
              p.code as product_code, p.name as product_name, p.unit,
              w.name as warehouse_name, w.type as warehouse_type
@@ -565,7 +570,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
     `, [batchNo]);
 
     // 3. 领料记录
-    const pickRecords = req.db.all(`
+    const pickRecords = await req.db.all(`
       SELECT pi.quantity, pi.batch_no, pi.supplier_batch_no, pi.heat_no,
              pk.order_no, pk.status, pk.operator, pk.created_at,
              p.code as material_code, p.name as material_name, p.unit,
@@ -583,7 +588,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
     `, [batchNo]);
 
     // 4. 出库记录
-    const outboundRecords = req.db.all(`
+    const outboundRecords = await req.db.all(`
       SELECT oi.quantity, oi.unit_price, oi.batch_no,
              ob.order_no, ob.type, ob.status, ob.operator, ob.created_at,
              p.code as product_code, p.name as product_name, p.unit,
@@ -602,7 +607,7 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
     const productionIds = [...new Set(pickRecords.filter(r => r.production_order_id).map(r => r.production_order_id))];
     let productionRecords = [];
     if (productionIds.length > 0) {
-      productionRecords = req.db.all(`
+      productionRecords = await req.db.all(`
         SELECT po.id, po.order_no, po.status, po.quantity, po.completed_quantity,
                po.current_process, po.start_time, po.end_time, po.created_at,
                p.code as product_code, p.name as product_name, p.unit
@@ -617,11 +622,12 @@ router.get('/batch/:batchNo', requirePermission('warehouse_view'), (req, res) =>
     let inspectionRecords = [];
     if (inboundIds.length > 0) {
       // 从 inbound_items.id 回查 inbound_id
-      const inboundOrderIds = [...new Set(req.db.all(`
+      const inboundIdRows = await req.db.all(`
         SELECT DISTINCT inbound_id FROM inbound_items WHERE batch_no = ?
-      `, [batchNo]).map(r => r.inbound_id))];
+      `, [batchNo]);
+      const inboundOrderIds = [...new Set(inboundIdRows.map(r => r.inbound_id))];
       if (inboundOrderIds.length > 0) {
-        inspectionRecords = req.db.all(`
+        inspectionRecords = await req.db.all(`
           SELECT ii.inspection_no, ii.quantity, ii.pass_quantity, ii.fail_quantity,
                  ii.inspector, ii.result, ii.remark, ii.created_at,
                  p.name as product_name

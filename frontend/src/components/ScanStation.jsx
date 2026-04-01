@@ -1,14 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
-import { api } from '../api';
-import { useAuth } from '../context/AuthContext';
-import PrintableQRCode from './PrintableQRCode';
-import StatusBadge from './StatusBadge';
-import Modal from './Modal';
+import React, { useState } from 'react';
 import { useScanner } from '../hooks/useScanner';
 
 const ScanStation = ({ onActiveMenuChange }) => {
-  const [scanResult, setScanResult] = useState('');
   const [scanLog, setScanLog] = useState([]);
   const handleScan = (code) => {
     if (code) {

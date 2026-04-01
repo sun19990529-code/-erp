@@ -173,17 +173,15 @@ const OutsourcingManager = () => {
       {pendingOutsourcing.length > 0 && (
         <div className="bg-orange-50/80 border border-orange-200/60 rounded-xl p-4 mb-4 backdrop-blur shadow-sm">
           <h3 className="font-bold text-orange-800 mb-2"><i className="fas fa-bell mr-2"></i>待委外工序提醒</h3>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-orange-100/50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold rounded-tl-lg">生产工单</th>
-                  <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold">产品</th>
-                  <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold">工序</th>
-                  <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold">数量</th>
-                  <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold rounded-tr-lg">操作</th>
-                </tr>
-              </thead>
+              <thead className="bg-orange-100/50"><tr>
+                <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold rounded-tl-lg">生产工单</th>
+                <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold">产品</th>
+                <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold">工序</th>
+                <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold">数量</th>
+                <th className="px-3 py-2 text-left text-xs text-orange-900 font-semibold rounded-tr-lg">操作</th>
+              </tr></thead>
               <tbody>
                 {pendingOutsourcing.map((item, i) => (
                   <tr key={i} className="border-t border-orange-200/50 hover:bg-orange-100/30 transition-colors">
@@ -200,6 +198,20 @@ const OutsourcingManager = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="block md:hidden space-y-2 mt-2">
+            {pendingOutsourcing.map((item, i) => (
+              <div key={i} className="bg-white rounded-lg p-3 border border-orange-200/50">
+                <div className="flex justify-between items-start mb-1.5">
+                  <div className="font-medium text-orange-900 text-sm">{item.order_no}</div>
+                  <span className="bg-orange-200 px-2 py-0.5 rounded text-xs text-orange-800">{item.process_name}</span>
+                </div>
+                <div className="text-sm text-gray-700 mb-2">{item.product_name} · <span className="font-bold">{item.quantity} {item.unit || '件'}</span></div>
+                <button onClick={() => openFromPending(item)} className="w-full text-center py-2 border border-orange-400 text-orange-600 rounded-lg text-sm font-medium active:bg-orange-50 transition-colors">
+                  <i className="fas fa-plus-circle mr-1"></i>快捷创建委外单
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -249,19 +261,32 @@ const OutsourcingManager = () => {
               <div><strong>关联工单：</strong>{modal.item?.production_order_no || '-'}</div>
               <div><strong>工序：</strong>{modal.item?.process_name || '-'}</div>
             </div>
-            <table className="w-full border">
-              <thead className="bg-gray-50"><tr>
-                <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
-                <th className="px-3 py-2 text-left text-xs">数量</th>
-              </tr></thead>
-              <tbody>
-                {(modal.item?.items || []).map((it, i) => (
-                  <tr key={i} className="border-t"><td className="px-3 py-2 text-sm">{it.code}</td><td className="px-3 py-2 text-sm">{it.name}</td>
-                    <td className="px-3 py-2 text-sm">{it.quantity}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="hidden md:block">
+              <table className="w-full border">
+                <thead className="bg-gray-50"><tr>
+                  <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
+                  <th className="px-3 py-2 text-left text-xs">数量</th>
+                </tr></thead>
+                <tbody>
+                  {(modal.item?.items || []).map((it, i) => (
+                    <tr key={i} className="border-t"><td className="px-3 py-2 text-sm">{it.code}</td><td className="px-3 py-2 text-sm">{it.name}</td>
+                      <td className="px-3 py-2 text-sm">{it.quantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="block md:hidden space-y-2">
+              {(modal.item?.items || []).map((it, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-100 flex justify-between items-center">
+                  <div>
+                    <div className="font-medium text-gray-800 text-sm">{it.name}</div>
+                    <div className="text-xs text-gray-500 font-mono">{it.code}</div>
+                  </div>
+                  <div className="text-lg font-bold text-teal-700">{it.quantity}</div>
+                </div>
+              ))}
+            </div>
             
             {/* 委外状态操作按钮 */}
             {modal.item?.status !== 'received' && modal.item?.status !== 'cancelled' && modal.item?.status !== 'completed' && (
@@ -270,21 +295,21 @@ const OutsourcingManager = () => {
                 <div className="flex flex-wrap gap-2">
                   {modal.item?.status === 'pending' && (
                     <>
-                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'confirmed')} className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"><i className="fas fa-check mr-1"></i>确认委外</button>
-                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm"><i className="fas fa-times mr-1"></i>取消委外</button>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'confirmed')} className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm flex-1 sm:flex-initial"><i className="fas fa-check mr-1"></i>确认委外</button>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm flex-1 sm:flex-initial"><i className="fas fa-times mr-1"></i>取消委外</button>
                     </>
                   )}
                   {modal.item?.status === 'confirmed' && (
                     <>
-                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'processing')} className="px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"><i className="fas fa-cogs mr-1"></i>开始加工</button>
-                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm"><i className="fas fa-times mr-1"></i>取消委外</button>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'processing')} className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm flex-1 sm:flex-initial"><i className="fas fa-cogs mr-1"></i>开始加工</button>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm flex-1 sm:flex-initial"><i className="fas fa-times mr-1"></i>取消委外</button>
                     </>
                   )}
                   {modal.item?.status === 'processing' && (
                     <>
-                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'received')} className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm"><i className="fas fa-truck mr-1"></i>确认收货</button>
-                      <button onClick={() => { closeModal(); window.__toast?.info('请前往 质检管理 → 委外加工检验 进行检验'); }} className="px-3 py-1.5 bg-orange-500 text-white rounded hover:bg-orange-600 text-sm"><i className="fas fa-clipboard-check mr-1"></i>去检验</button>
-                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm"><i className="fas fa-times mr-1"></i>取消委外</button>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'received')} className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm flex-1 sm:flex-initial"><i className="fas fa-truck mr-1"></i>确认收货</button>
+                      <button onClick={() => { closeModal(); window.__toast?.info('请前往 质检管理 → 委外加工检验 进行检验'); }} className="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 text-sm flex-1 sm:flex-initial"><i className="fas fa-clipboard-check mr-1"></i>去检验</button>
+                      <button onClick={() => updateOutsourcingStatus(modal.item.id, 'cancelled')} className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm flex-1 sm:flex-initial"><i className="fas fa-times mr-1"></i>取消委外</button>
                     </>
                   )}
                 </div>
@@ -292,7 +317,7 @@ const OutsourcingManager = () => {
             )}
             
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
+              <button onClick={closeModal} className="w-full sm:w-auto px-4 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">关闭</button>
             </div>
           </div>
         ) : (

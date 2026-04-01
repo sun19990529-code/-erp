@@ -1,28 +1,114 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
+const { Pool } = require('pg');
+const { AsyncLocalStorage } = require('async_hooks');
 const { setupSwagger } = require('./config/swagger');
 
 const app = express();
 const PORT = process.env.PORT || 3198;
-const DB_PATH = path.join(__dirname, 'mes.db');
 
-let db;
+// ==================== PostgreSQL 连接池 ====================
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT) || 54321,
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME || 'msgy-erp',
+  max: parseInt(process.env.DB_POOL_MAX) || 10,  // 最大连接数
+  min: 2,                         // 最小保持连接数
+  idleTimeoutMillis: 30000,       // 空闲连接超时
+  connectionTimeoutMillis: 5000,  // 连接超时
+});
+
+pool.on('error', (err) => {
+  console.error('[PostgreSQL] 连接池异常:', err.message);
+});
+
+// ==================== 事务上下文存储 ====================
+// 用 AsyncLocalStorage 实现：transaction 回调内部的 req.db 调用自动路由到事务客户端
+const txStorage = new AsyncLocalStorage();
+
+// SQL 占位符转换：? → $1, $2, $3...
+function convertPlaceholders(sql) {
+  let idx = 0;
+  return sql.replace(/\?/g, () => `$${++idx}`);
+}
+
+// ==================== dbHelper（PostgreSQL 异步版） ====================
+const dbHelper = {
+  async run(sql, params = []) {
+    const pgSql = convertPlaceholders(sql);
+    const executor = txStorage.getStore() || pool;
+    // INSERT 语句自动追加 RETURNING * 以获取自增 ID
+    const isInsert = /^\s*INSERT/i.test(pgSql);
+    const finalSql = (isInsert && !/RETURNING/i.test(pgSql))
+      ? pgSql + ' RETURNING *'
+      : pgSql;
+    const result = await executor.query(finalSql, params);
+    return {
+      lastInsertRowid: result.rows[0]?.id ?? null,
+      changes: result.rowCount,
+    };
+  },
+
+  async get(sql, params = []) {
+    const executor = txStorage.getStore() || pool;
+    const result = await executor.query(convertPlaceholders(sql), params);
+    return result.rows[0] || null;
+  },
+
+  async all(sql, params = []) {
+    const executor = txStorage.getStore() || pool;
+    const result = await executor.query(convertPlaceholders(sql), params);
+    return result.rows;
+  },
+
+  async paginate(sql, params = [], page = 1, pageSize = 20) {
+    const pgSql = convertPlaceholders(sql);
+    const executor = txStorage.getStore() || pool;
+    // COUNT 子查询
+    const countSql = `SELECT COUNT(*) as total FROM (${pgSql}) as _t`;
+    const countResult = await executor.query(countSql, params);
+    const total = parseInt(countResult.rows[0]?.total || 0);
+    const totalPages = Math.ceil(total / pageSize);
+    const offset = (page - 1) * pageSize;
+    // LIMIT/OFFSET 使用新的占位符编号
+    const nextIdx = params.length;
+    const dataSql = `${pgSql} LIMIT $${nextIdx + 1} OFFSET $${nextIdx + 2}`;
+    const dataResult = await executor.query(dataSql, [...params, pageSize, offset]);
+    return { data: dataResult.rows, pagination: { total, totalPages, page, pageSize } };
+  },
+
+  async transaction(fn) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // fn 内部所有 dbHelper 调用自动走这个 client
+      const result = await txStorage.run(client, () => fn());
+      await client.query('COMMIT');
+      return result;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+};
 
 // 中间件
 app.use(cors({
   origin: function(origin, callback) {
-    // 无 origin（同源直链、curl 等工具请求）直接放行
     if (!origin) return callback(null, true);
     try {
       const { hostname } = new URL(origin);
-      // 放行 localhost / 127.x / 局域网 / 任意 IP 直接访问（外网通过 IP 访问本机属合法同主机场景）
       const isLocalhost = /^(localhost|127\.\d+\.\d+\.\d+)$/.test(hostname);
       const isLAN      = /^(192\.168\.|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
       const isTrusted  = /(^|\.)suncraft\.site$|(^|\.)msgy\.asia$/.test(hostname);
-      // 开发环境放行所有 IP，生产环境仅放行局域网+可信域名
       const isProd = process.env.NODE_ENV === 'production';
       const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
       if (isLocalhost || isLAN || isTrusted || (!isProd && isIPv4)) return callback(null, true);
@@ -35,8 +121,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 
-// 安全响应头（防 XSS、点击劫持、MIME 嗅探等）
-// HTTP 直连模式（电信封锁80/443，无 HTTPS 终端），禁用强制 HTTPS 相关头
+// 安全响应头
 const helmet = require('helmet');
 app.use(helmet({
   contentSecurityPolicy: {
@@ -59,7 +144,7 @@ app.use(helmet({
 
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-// 请求限流：每 IP 每分钟最多 300 次请求
+// 请求限流
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 300,
@@ -69,56 +154,14 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// better-sqlite3 自动持久化，无需手动存盘（保留接口兼容 backup 模块）
-function saveDatabase() { /* no-op for better-sqlite3 */ }
-
-
-const dbHelper = {
-  run: (sql, params = []) => {
-    const info = db.prepare(sql).run(params);
-    return { lastInsertRowid: info.lastInsertRowid, changes: info.changes };
-  },
-  get: (sql, params = []) => {
-    return db.prepare(sql).get(params) || null;
-  },
-  all: (sql, params = []) => {
-    return db.prepare(sql).all(params);
-  },
-  paginate: (sql, params = [], page = 1, pageSize = 20) => {
-    // 【P2】用子查询包装而非正则剥离 ORDER BY
-    const countSql = `SELECT COUNT(*) as total FROM (${sql}) as _t`;
-    const totalResult = dbHelper.get(countSql, params);
-    const total = totalResult?.total || 0;
-    const totalPages = Math.ceil(total / pageSize);
-    const offset = (page - 1) * pageSize;
-    const data = dbHelper.all(`${sql} LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
-    return { data, pagination: { total, totalPages, page, pageSize } };
-  },
-  transaction: (fn) => {
-    const executeTx = db.transaction(() => fn());
-    return executeTx();
-  }
-};
+// PostgreSQL 无需手动存盘（保留接口兼容）
+function saveDatabase() { /* no-op for PostgreSQL */ }
 
 // ==================== dbHelper 中间件 ====================
-// 将 dbHelper 注入到每个请求中，路由模块通过 req.db 访问
 app.use((req, res, next) => {
   req.db = dbHelper;
-  req.getDb = () => db;
+  req.getDb = () => pool;  // 兼容 printTemplate 等直接使用原生 DB 的模块
   req.saveDatabase = saveDatabase;
-  req.restoreDb = (backupFilePath) => {
-    // bettersqlite3 的还原逻辑：关闭当前连接 -> 覆盖文件 -> 重新实例化
-    const Database = require('better-sqlite3');
-    try {
-      db.close();
-      fs.copyFileSync(backupFilePath, DB_PATH);
-      db = new Database(DB_PATH);
-      console.log('数据库还原完成:', backupFilePath);
-    } catch (err) {
-      console.error('还原失败:', err);
-      throw err;
-    }
-  };
   next();
 });
 
@@ -129,25 +172,19 @@ if (!process.env.JWT_SECRET) {
   console.warn('⚠️  [安全警告] JWT_SECRET 使用默认值，生产环境请设置环境变量 JWT_SECRET');
 }
 const whiteList = ['/api/users/login', '/api/users/refresh'];
-// 工位展示屏 GET 路由免鉴权（纯展示终端，无需登录）
 const screenWhitePrefix = '/api/workstation/screen/';
 
 app.use((req, res, next) => {
-  // 静态文件、白名单放行
   if (!req.path.startsWith('/api') || whiteList.includes(req.path)) {
     return next();
   }
-
-  // 工位展示屏：仅 GET 请求免鉴权，POST（报工/巡检）仍需 Token
   if (req.method === 'GET' && req.path.startsWith(screenWhitePrefix)) {
     return next();
   }
-
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ success: false, message: '未授权访问，请重新登录' });
   }
-
   const token = authHeader.split(' ')[1];
   try {
     req.user = jwt.verify(token, JWT_SECRET);
@@ -171,11 +208,11 @@ const pickRoutes = require('./routes/pick');
 const { router: backupRoutes, startAutoBackup } = require('./routes/backup');
 
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api', basicRoutes);            // /api/departments, /api/roles, /api/users, etc.
+app.use('/api', basicRoutes);
 app.use('/api/products', productRoutes);
-app.use('/api', warehouseRoutes);         // /api/warehouses, /api/inventory, /api/inbound, /api/outbound
+app.use('/api', warehouseRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/production', productionRoutes);  // /api/production, /api/production/processes
+app.use('/api/production', productionRoutes);
 app.use('/api/inspection', inspectionRoutes);
 app.use('/api/purchase', purchaseRoutes);
 app.use('/api/outsourcing', outsourcingRoutes);
@@ -185,15 +222,12 @@ app.use('/api/backup', backupRoutes);
 const materialCategoryRoutes = require('./routes/material-categories');
 app.use('/api/material-categories', materialCategoryRoutes);
 
-// 操作日志路由
 const logsRoutes = require('./routes/logs');
 app.use('/api/logs', logsRoutes);
 
-// 生产追踪路由
 const trackingRoutes = require('./routes/production-tracking');
 app.use('/api/tracking', trackingRoutes);
 
-// v1.7.0 新增路由
 const stocktakeRoutes = require('./routes/stocktake');
 app.use('/api/stocktake', stocktakeRoutes);
 const { router: notificationRoutes } = require('./routes/notifications');
@@ -207,12 +241,10 @@ app.use('/api/import', importRoutes);
 const workstationRoutes = require('./routes/workstation');
 app.use('/api/workstation', workstationRoutes);
 
-// v2.1 打印模板管理路由
 const printTemplateRoutes = require('./routes/printTemplate');
 app.use('/api/print-templates', printTemplateRoutes);
 
 // ==================== 全局错误处理中间件 ====================
- 
 app.use((err, req, res, next) => {
   console.error('[GlobalError]', err.stack || err.message);
   res.status(err.status || 500).json({
@@ -222,22 +254,24 @@ app.use((err, req, res, next) => {
 });
 
 // ==================== 启动服务器 ====================
-
-const { initDatabase } = require('./database');
-const Database = require('better-sqlite3');
-
 async function startServer() {
-  db = new Database(DB_PATH);
-  console.log('数据库加载成功 (better-sqlite3)');
-  db = await initDatabase(db);
-  
-  // 启动自动备份
-  startAutoBackup(() => db, saveDatabase);
-  
-  // 挂载 Swagger API 文档
+  // 验证 PostgreSQL 连接
+  try {
+    const client = await pool.connect();
+    const ver = await client.query('SELECT version()');
+    console.log('PostgreSQL 连接成功:', ver.rows[0].version.split(',')[0]);
+    client.release();
+  } catch (err) {
+    console.error('PostgreSQL 连接失败:', err.message);
+    process.exit(1);
+  }
+
+  // 启动自动备份（PostgreSQL 模式下使用 pg_dump）
+  startAutoBackup(() => pool, saveDatabase);
+
   setupSwagger(app);
 
-  // SPA fallback：非 API 路由全部返回 index.html，由 React Router 处理
+  // SPA fallback
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
   });
@@ -249,7 +283,9 @@ async function startServer() {
 
 // 进程级崩溃防护
 process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException] 未捕获的异常，服务不中断继续运行:', err.message);
+  console.error('[uncaughtException] 未捕获的异常:', err.stack || err.message);
+  // Node.js 官方建议：uncaughtException 后进程状态不确定，应退出让 PM2 重启
+  process.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection] 未处理的 Promise 拒绝:', reason);

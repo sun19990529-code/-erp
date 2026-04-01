@@ -22,7 +22,7 @@ function parseExcel(buffer) {
  * 下载导入模板
  * GET /template?type=products|suppliers|customers
  */
-router.get('/template', requirePermission('basic_data_view'), (req, res) => {
+router.get('/template', requirePermission('basic_data_view'), async (req, res) => {
   try {
     const { type } = req.query;
     const templates = {
@@ -64,7 +64,7 @@ router.get('/template', requirePermission('basic_data_view'), (req, res) => {
  * 导入产品
  * POST /products  (multipart/form-data, field: file)
  */
-router.post('/products', upload.single('file'), requirePermission('basic_data_create'), (req, res) => {
+router.post('/products', requirePermission('basic_data_create'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传文件' });
     const rows = parseExcel(req.file.buffer);
@@ -72,8 +72,9 @@ router.post('/products', upload.single('file'), requirePermission('basic_data_cr
 
     let imported = 0, skipped = 0, errors = [];
 
-    req.db.transaction(() => {
-      rows.forEach((row, index) => {
+    await req.db.transaction(async () => {
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
         const code = (row['产品编码*'] || row['产品编码'] || '').toString().trim();
         const name = (row['产品名称*'] || row['产品名称'] || '').toString().trim();
         const category = (row['分类(原材料/半成品/成品)*'] || row['分类(raw/semi/finished)*'] || row['分类'] || '').toString().trim();
@@ -98,7 +99,7 @@ router.post('/products', upload.single('file'), requirePermission('basic_data_cr
         }
 
         // 去重检查
-        const existing = req.db.get('SELECT id FROM products WHERE code = ?', [code]);
+        const existing = await req.db.get('SELECT id FROM products WHERE code = ?', [code]);
         if (existing) {
           errors.push(`第 ${index + 2} 行：编码「${code}」已存在，已跳过`);
           skipped++;
@@ -117,11 +118,11 @@ router.post('/products', upload.single('file'), requirePermission('basic_data_cr
         const supplierName = (row['供应商名称'] || '').toString().trim();
         let supplierId = null;
         if (supplierName) {
-          const supplier = req.db.get('SELECT id FROM suppliers WHERE name = ?', [supplierName]);
+          const supplier = await req.db.get('SELECT id FROM suppliers WHERE name = ?', [supplierName]);
           if (supplier) supplierId = supplier.id;
         }
 
-        req.db.run(
+        await req.db.run(
           `INSERT INTO products (code, name, specification, unit, category, unit_price, stock_threshold, outer_diameter, inner_diameter, wall_thickness, length, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [code, name,
             (row['规格型号'] || '').toString().trim(),
@@ -133,8 +134,8 @@ router.post('/products', upload.single('file'), requirePermission('basic_data_cr
           ]
         );
         imported++;
-      });
-    });
+      }
+    })();
 
     writeLog(req.db, req.user?.id, '批量导入产品', 'product', null, `导入 ${imported} 条，跳过 ${skipped} 条`);
     res.json({ success: true, data: { imported, skipped, total: rows.length, errors } });
@@ -148,7 +149,7 @@ router.post('/products', upload.single('file'), requirePermission('basic_data_cr
  * 导入供应商
  * POST /suppliers
  */
-router.post('/suppliers', upload.single('file'), requirePermission('basic_data_create'), (req, res) => {
+router.post('/suppliers', requirePermission('basic_data_create'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传文件' });
     const rows = parseExcel(req.file.buffer);
@@ -156,16 +157,17 @@ router.post('/suppliers', upload.single('file'), requirePermission('basic_data_c
 
     let imported = 0, skipped = 0, errors = [];
 
-    req.db.transaction(() => {
-      rows.forEach((row, index) => {
+    await req.db.transaction(async () => {
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
         const code = (row['供应商编码*'] || row['供应商编码'] || '').toString().trim();
         const name = (row['供应商名称*'] || row['供应商名称'] || '').toString().trim();
         if (!code || !name) { errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`); skipped++; return; }
 
-        const existing = req.db.get('SELECT id FROM suppliers WHERE code = ? OR name = ?', [code, name]);
+        const existing = await req.db.get('SELECT id FROM suppliers WHERE code = ? OR name = ?', [code, name]);
         if (existing) { errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`); skipped++; return; }
 
-        req.db.run(
+        await req.db.run(
           `INSERT INTO suppliers (code, name, contact_person, phone, email, address) VALUES (?, ?, ?, ?, ?, ?)`,
           [code, name,
             (row['联系人'] || '').toString().trim(),
@@ -175,8 +177,8 @@ router.post('/suppliers', upload.single('file'), requirePermission('basic_data_c
           ]
         );
         imported++;
-      });
-    });
+      }
+    })();
 
     writeLog(req.db, req.user?.id, '批量导入供应商', 'supplier', null, `导入 ${imported} 条，跳过 ${skipped} 条`);
     res.json({ success: true, data: { imported, skipped, total: rows.length, errors } });
@@ -190,7 +192,7 @@ router.post('/suppliers', upload.single('file'), requirePermission('basic_data_c
  * 导入客户
  * POST /customers
  */
-router.post('/customers', upload.single('file'), requirePermission('basic_data_create'), (req, res) => {
+router.post('/customers', requirePermission('basic_data_create'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传文件' });
     const rows = parseExcel(req.file.buffer);
@@ -198,16 +200,17 @@ router.post('/customers', upload.single('file'), requirePermission('basic_data_c
 
     let imported = 0, skipped = 0, errors = [];
 
-    req.db.transaction(() => {
-      rows.forEach((row, index) => {
+    await req.db.transaction(async () => {
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
         const code = (row['客户编码*'] || row['客户编码'] || '').toString().trim();
         const name = (row['客户名称*'] || row['客户名称'] || '').toString().trim();
         if (!code || !name) { errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`); skipped++; return; }
 
-        const existing = req.db.get('SELECT id FROM customers WHERE code = ? OR name = ?', [code, name]);
+        const existing = await req.db.get('SELECT id FROM customers WHERE code = ? OR name = ?', [code, name]);
         if (existing) { errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`); skipped++; return; }
 
-        req.db.run(
+        await req.db.run(
           `INSERT INTO customers (code, name, contact_person, phone, email, address, credit_level) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [code, name,
             (row['联系人'] || '').toString().trim(),
@@ -218,8 +221,8 @@ router.post('/customers', upload.single('file'), requirePermission('basic_data_c
           ]
         );
         imported++;
-      });
-    });
+      }
+    })();
 
     writeLog(req.db, req.user?.id, '批量导入客户', 'customer', null, `导入 ${imported} 条，跳过 ${skipped} 条`);
     res.json({ success: true, data: { imported, skipped, total: rows.length, errors } });

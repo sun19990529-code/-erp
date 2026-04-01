@@ -261,10 +261,10 @@ const TrackingPage = () => {
 
               {/* 入库明细 */}
               {activeTab === 'inbound' && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
+                <div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50"><tr>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">入库单号</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">类型</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">仓库</th>
@@ -274,36 +274,56 @@ const TrackingPage = () => {
                         <th className="px-4 py-3 text-right font-medium text-gray-500">单价</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">状态</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">时间</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {result.details.inbound.map((r, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium">{r.order_no}</td>
-                          <td className="px-4 py-3">{r.type === 'raw' ? '原材料' : r.type === 'semi' ? '半成品' : r.type === 'finished' ? '成品' : r.type}</td>
-                          <td className="px-4 py-3">{r.warehouse_name}</td>
-                          <td className="px-4 py-3">{r.supplier_name || '-'}</td>
-                          <td className="px-4 py-3">{r.product_name}</td>
-                          <td className="px-4 py-3 text-right font-medium">{r.quantity} {r.unit || '件'}</td>
-                          <td className="px-4 py-3 text-right">¥{(r.unit_price || 0).toFixed(2)}</td>
-                          <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.created_at)}</td>
-                        </tr>
-                      ))}
-                      {result.details.inbound.length === 0 && (
-                        <tr><td colSpan="9" className="px-4 py-8 text-center text-gray-400">暂无入库记录</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </tr></thead>
+                      <tbody className="divide-y">
+                        {result.details.inbound.map((r, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium">{r.order_no}</td>
+                            <td className="px-4 py-3">{r.type === 'raw' ? '原材料' : r.type === 'semi' ? '半成品' : r.type === 'finished' ? '成品' : r.type}</td>
+                            <td className="px-4 py-3">{r.warehouse_name}</td>
+                            <td className="px-4 py-3">{r.supplier_name || '-'}</td>
+                            <td className="px-4 py-3">{r.product_name}</td>
+                            <td className="px-4 py-3 text-right font-medium">{r.quantity} {r.unit || '件'}</td>
+                            <td className="px-4 py-3 text-right">¥{(r.unit_price || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                            <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.created_at)}</td>
+                          </tr>
+                        ))}
+                        {result.details.inbound.length === 0 && (
+                          <tr><td colSpan="9" className="px-4 py-8 text-center text-gray-400">暂无入库记录</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="block md:hidden space-y-3 p-1">
+                    {result.details.inbound.map((r, i) => (
+                      <div key={i} className="bg-gray-50/80 rounded-xl p-3 border border-gray-100">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-bold text-gray-800">{r.order_no}</div>
+                          <StatusBadge status={r.status} />
+                        </div>
+                        <div className="text-sm text-gray-700 mb-1">{r.product_name}</div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 mt-2">
+                          <div>类型: <span className="text-gray-700">{r.type === 'raw' ? '原材料' : r.type === 'semi' ? '半成品' : '成品'}</span></div>
+                          <div>数量: <span className="font-medium text-gray-800">{r.quantity} {r.unit || '件'}</span></div>
+                          <div>仓库: <span className="text-gray-700">{r.warehouse_name}</span></div>
+                          <div>单价: <span className="text-gray-700">¥{(r.unit_price || 0).toFixed(2)}</span></div>
+                          {r.supplier_name && <div className="col-span-2">供应商: <span className="text-gray-700">{r.supplier_name}</span></div>}
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-2 text-right">{formatTime(r.created_at)}</div>
+                      </div>
+                    ))}
+                    {result.details.inbound.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">暂无入库记录</div>}
+                  </div>
                 </div>
               )}
 
               {/* 领料明细 */}
               {activeTab === 'pick' && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
+                <div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50"><tr>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">领料单号</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">仓库</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">物料</th>
@@ -312,35 +332,53 @@ const TrackingPage = () => {
                         <th className="px-4 py-3 text-left font-medium text-gray-500">生产产品</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">状态</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">时间</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {result.details.pick.map((r, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium">{r.order_no}</td>
-                          <td className="px-4 py-3">{r.warehouse_name || '-'}</td>
-                          <td className="px-4 py-3">{r.material_name}</td>
-                          <td className="px-4 py-3 text-right font-medium">{r.quantity} {r.unit || '件'}</td>
-                          <td className="px-4 py-3 text-teal-600 font-medium">{r.production_order_no || '-'}</td>
-                          <td className="px-4 py-3">{r.production_product_name || '-'}</td>
-                          <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.created_at)}</td>
-                        </tr>
-                      ))}
-                      {result.details.pick.length === 0 && (
-                        <tr><td colSpan="8" className="px-4 py-8 text-center text-gray-400">暂无领料记录</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </tr></thead>
+                      <tbody className="divide-y">
+                        {result.details.pick.map((r, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium">{r.order_no}</td>
+                            <td className="px-4 py-3">{r.warehouse_name || '-'}</td>
+                            <td className="px-4 py-3">{r.material_name}</td>
+                            <td className="px-4 py-3 text-right font-medium">{r.quantity} {r.unit || '件'}</td>
+                            <td className="px-4 py-3 text-teal-600 font-medium">{r.production_order_no || '-'}</td>
+                            <td className="px-4 py-3">{r.production_product_name || '-'}</td>
+                            <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                            <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.created_at)}</td>
+                          </tr>
+                        ))}
+                        {result.details.pick.length === 0 && (
+                          <tr><td colSpan="8" className="px-4 py-8 text-center text-gray-400">暂无领料记录</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="block md:hidden space-y-3 p-1">
+                    {result.details.pick.map((r, i) => (
+                      <div key={i} className="bg-amber-50/50 rounded-xl p-3 border border-amber-100/50">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-bold text-gray-800">{r.order_no}</div>
+                          <StatusBadge status={r.status} />
+                        </div>
+                        <div className="text-sm font-medium text-gray-700 mb-1">{r.material_name} <span className="text-amber-700 font-bold">{r.quantity} {r.unit || '件'}</span></div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 mt-2">
+                          <div>仓库: <span className="text-gray-700">{r.warehouse_name || '-'}</span></div>
+                          <div>工单: <span className="text-teal-600 font-medium">{r.production_order_no || '-'}</span></div>
+                          {r.production_product_name && <div className="col-span-2">生产产品: <span className="text-gray-700">{r.production_product_name}</span></div>}
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-2 text-right">{formatTime(r.created_at)}</div>
+                      </div>
+                    ))}
+                    {result.details.pick.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">暂无领料记录</div>}
+                  </div>
                 </div>
               )}
 
               {/* 出库明细 */}
               {activeTab === 'outbound' && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
+                <div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50"><tr>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">出库单号</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">仓库</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">产品</th>
@@ -349,35 +387,53 @@ const TrackingPage = () => {
                         <th className="px-4 py-3 text-left font-medium text-gray-500">销售单号</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">状态</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">时间</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {result.details.outbound.map((r, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium">{r.order_no}</td>
-                          <td className="px-4 py-3">{r.warehouse_name || '-'}</td>
-                          <td className="px-4 py-3">{r.product_name}</td>
-                          <td className="px-4 py-3 text-right font-medium">{r.quantity} {r.unit || '件'}</td>
-                          <td className="px-4 py-3">{r.customer_name || '-'}</td>
-                          <td className="px-4 py-3">{r.sales_order_no || '-'}</td>
-                          <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.created_at)}</td>
-                        </tr>
-                      ))}
-                      {result.details.outbound.length === 0 && (
-                        <tr><td colSpan="8" className="px-4 py-8 text-center text-gray-400">暂无出库记录</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </tr></thead>
+                      <tbody className="divide-y">
+                        {result.details.outbound.map((r, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium">{r.order_no}</td>
+                            <td className="px-4 py-3">{r.warehouse_name || '-'}</td>
+                            <td className="px-4 py-3">{r.product_name}</td>
+                            <td className="px-4 py-3 text-right font-medium">{r.quantity} {r.unit || '件'}</td>
+                            <td className="px-4 py-3">{r.customer_name || '-'}</td>
+                            <td className="px-4 py-3">{r.sales_order_no || '-'}</td>
+                            <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                            <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.created_at)}</td>
+                          </tr>
+                        ))}
+                        {result.details.outbound.length === 0 && (
+                          <tr><td colSpan="8" className="px-4 py-8 text-center text-gray-400">暂无出库记录</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="block md:hidden space-y-3 p-1">
+                    {result.details.outbound.map((r, i) => (
+                      <div key={i} className="bg-red-50/30 rounded-xl p-3 border border-red-100/50">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-bold text-gray-800">{r.order_no}</div>
+                          <StatusBadge status={r.status} />
+                        </div>
+                        <div className="text-sm font-medium text-gray-700 mb-1">{r.product_name} <span className="text-red-600 font-bold">{r.quantity} {r.unit || '件'}</span></div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 mt-2">
+                          <div>仓库: <span className="text-gray-700">{r.warehouse_name || '-'}</span></div>
+                          <div>客户: <span className="text-gray-700">{r.customer_name || '-'}</span></div>
+                          {r.sales_order_no && <div className="col-span-2">销售单号: <span className="text-gray-700">{r.sales_order_no}</span></div>}
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-2 text-right">{formatTime(r.created_at)}</div>
+                      </div>
+                    ))}
+                    {result.details.outbound.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">暂无出库记录</div>}
+                  </div>
                 </div>
               )}
 
               {/* 生产工单 */}
               {activeTab === 'production' && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
+                <div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50"><tr>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">工单号</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">产品</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500">计划数量</th>
@@ -386,26 +442,48 @@ const TrackingPage = () => {
                         <th className="px-4 py-3 text-left font-medium text-gray-500">状态</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">开始时间</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500">完成时间</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {result.details.production.map((r, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-teal-600">{r.order_no}</td>
-                          <td className="px-4 py-3">{r.product_name}</td>
-                          <td className="px-4 py-3 text-right">{r.quantity} {r.unit || '件'}</td>
-                          <td className="px-4 py-3 text-right font-medium">{r.completed_quantity || 0} {r.unit || '件'}</td>
-                          <td className="px-4 py-3">{r.current_process || '-'}</td>
-                          <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.start_time)}</td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.end_time)}</td>
-                        </tr>
-                      ))}
-                      {result.details.production.length === 0 && (
-                        <tr><td colSpan="8" className="px-4 py-8 text-center text-gray-400">暂无关联生产工单</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </tr></thead>
+                      <tbody className="divide-y">
+                        {result.details.production.map((r, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium text-teal-600">{r.order_no}</td>
+                            <td className="px-4 py-3">{r.product_name}</td>
+                            <td className="px-4 py-3 text-right">{r.quantity} {r.unit || '件'}</td>
+                            <td className="px-4 py-3 text-right font-medium">{r.completed_quantity || 0} {r.unit || '件'}</td>
+                            <td className="px-4 py-3">{r.current_process || '-'}</td>
+                            <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                            <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.start_time)}</td>
+                            <td className="px-4 py-3 text-gray-400 text-xs">{formatTime(r.end_time)}</td>
+                          </tr>
+                        ))}
+                        {result.details.production.length === 0 && (
+                          <tr><td colSpan="8" className="px-4 py-8 text-center text-gray-400">暂无关联生产工单</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="block md:hidden space-y-3 p-1">
+                    {result.details.production.map((r, i) => {
+                      const pct = r.quantity > 0 ? Math.min(100, ((r.completed_quantity || 0) / r.quantity) * 100) : 0;
+                      return (
+                        <div key={i} className="bg-blue-50/30 rounded-xl p-3 border border-blue-100/50">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="font-bold text-teal-700">{r.order_no}</div>
+                            <StatusBadge status={r.status} />
+                          </div>
+                          <div className="text-sm font-medium text-gray-700 mb-2">{r.product_name}</div>
+                          <div className="bg-gray-100 rounded-full h-2 mb-2"><div className={`h-2 rounded-full ${pct >= 100 ? 'bg-green-500' : 'bg-teal-500'}`} style={{ width: `${pct}%` }}></div></div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
+                            <div>计划: <span className="text-gray-700">{r.quantity} {r.unit || '件'}</span></div>
+                            <div>完成: <span className="font-medium text-teal-700">{r.completed_quantity || 0} {r.unit || '件'}</span></div>
+                            <div>当前: <span className="text-gray-700">{r.current_process || '-'}</span></div>
+                            <div>开始: <span className="text-gray-400">{formatTime(r.start_time)}</span></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {result.details.production.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">暂无关联生产工单</div>}
+                  </div>
                 </div>
               )}
             </div>

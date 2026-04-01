@@ -26,6 +26,15 @@ const WorkstationScreen = () => {
   const [modal, setModal] = useState({ type: null }); // report | inspect
   const [form, setForm] = useState({});
 
+  // 轻量 inline toast（暗色主题，替代 alert）
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+  const showToast = (msg, type = 'error') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, type });
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  };
+
   // 时钟
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -76,8 +85,8 @@ const WorkstationScreen = () => {
 
   // 报工提交
   const submitReport = async () => {
-    if (!form.operator?.trim()) return alert('请填写操作人');
-    if (!form.output_quantity || form.output_quantity <= 0) return alert('请填写产出数量');
+    if (!form.operator?.trim()) return showToast('请填写操作人', 'warning');
+    if (!form.output_quantity || form.output_quantity <= 0) return showToast('请填写产出数量', 'warning');
     const res = await fetchApi(`${API_BASE}/${stationCode}/${selectedTask.id}/report`, {
       method: 'POST', body: JSON.stringify(form)
     });
@@ -87,14 +96,14 @@ const WorkstationScreen = () => {
       loadTasks();
       loadDetail(selectedTask.id);
     } else {
-      alert(res.message);
+      showToast(res.message, 'error');
     }
   };
 
   // 巡检提交
   const submitInspect = async () => {
-    if (!form.inspector?.trim()) return alert('请填写检验员');
-    if (!form.result) return alert('请选择检验结果');
+    if (!form.inspector?.trim()) return showToast('请填写检验员', 'warning');
+    if (!form.result) return showToast('请选择检验结果', 'warning');
     const res = await fetchApi(`${API_BASE}/${stationCode}/${selectedTask.id}/inspect`, {
       method: 'POST', body: JSON.stringify(form)
     });
@@ -103,9 +112,9 @@ const WorkstationScreen = () => {
       setForm({});
       loadTasks();
       loadDetail(selectedTask.id);
-      alert(res.message);
+      showToast(res.message, 'success');
     } else {
-      alert(res.message);
+      showToast(res.message, 'error');
     }
   };
 
@@ -390,6 +399,21 @@ const WorkstationScreen = () => {
               <button onClick={submitInspect} className="flex-1 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-500 font-bold text-lg">确认提交</button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Inline Toast */}
+      {toast && (
+        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-xl shadow-2xl text-sm font-bold flex items-center gap-2 animate-[fadeInDown_0.3s_ease] ${
+          toast.type === 'success' ? 'bg-green-600 text-white' :
+          toast.type === 'warning' ? 'bg-amber-500 text-white' :
+          'bg-red-600 text-white'
+        }`} onClick={() => setToast(null)}>
+          <i className={`fas ${
+            toast.type === 'success' ? 'fa-check-circle' :
+            toast.type === 'warning' ? 'fa-exclamation-triangle' :
+            'fa-times-circle'
+          }`}></i>
+          {toast.msg}
         </div>
       )}
     </div>

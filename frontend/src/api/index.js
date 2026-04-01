@@ -91,13 +91,14 @@ const apiRequest = async (url, options = {}) => {
     }
 
     // 变更操作清除相关缓存
-    if (!isGetRequest) {
+    if (!isGetRequest && result.success !== false) {
       const pathParts = url.split('/').filter(Boolean);
       if (pathParts.length > 0) {
-        invalidateCache(pathParts[0]);
-        // 跨模块联动清除：写操作会影响关联模块的数据
-        const related = { pick: ['inventory'], production: ['inventory', 'orders'], inbound: ['inventory'], outbound: ['inventory', 'orders'], stocktake: ['inventory'], finance: ['payables', 'receivables'] };
-        (related[pathParts[0]] || []).forEach(m => invalidateCache(m));
+        invalidateCache(pathParts[0]); // 默认清除当前模块缓存
+      }
+      // 由调用方显式声明联动缓存清理
+      if (options.invalidate && Array.isArray(options.invalidate)) {
+        options.invalidate.forEach(m => invalidateCache(m));
       }
     }
 
@@ -110,9 +111,9 @@ const apiRequest = async (url, options = {}) => {
 
 const api = {
   get: (url) => apiRequest(url),
-  post: (url, data) => apiRequest(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
-  put: (url, data) => apiRequest(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
-  del: (url) => apiRequest(url, { method: 'DELETE' }),
+  post: (url, data, options = {}) => apiRequest(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), ...options }),
+  put: (url, data, options = {}) => apiRequest(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), ...options }),
+  del: (url, options = {}) => apiRequest(url, { method: 'DELETE', ...options }),
   clearCache: clearAllCache,
   invalidateCache,
 };

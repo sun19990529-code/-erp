@@ -1,4 +1,4 @@
-﻿# server-start.ps1 - 铭晟ERP服务器启动（管理员）
+# server-start.ps1 - 铭晟ERP服务器启动（管理员）
 
 # 自动提权为管理员
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -6,11 +6,11 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit
 }
 
-$Host.UI.RawUI.WindowTitle = "铭晟ERP管理系统 v1.7.0"
+$Host.UI.RawUI.WindowTitle = "铭晟ERP管理系统 v1.8.1"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   铭晟ERP管理系统 v1.7.0 - 服务器启动" -ForegroundColor Cyan
-Write-Host "   管理员模式" -ForegroundColor Cyan
+Write-Host "   铭晟ERP管理系统 v1.8.1 - 服务器启动" -ForegroundColor Cyan
+Write-Host "   管理员模式 | PostgreSQL" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -19,6 +19,14 @@ Set-Location $PSScriptRoot
 # 检查前端是否已构建
 if (-not (Test-Path "frontend\dist")) {
     Write-Host "[提示] 前端未构建，请先运行 install.bat 或手动执行 npm run build" -ForegroundColor Red
+    Read-Host "按回车退出"
+    exit 1
+}
+
+# 检查 .env 是否存在
+if (-not (Test-Path "backend\.env")) {
+    Write-Host "[提示] 未找到 backend\.env 配置文件！" -ForegroundColor Red
+    Write-Host "请参考 backend\.env.example 创建 .env 并配置 PostgreSQL 连接信息" -ForegroundColor Red
     Read-Host "按回车退出"
     exit 1
 }

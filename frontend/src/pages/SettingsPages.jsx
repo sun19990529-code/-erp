@@ -60,7 +60,7 @@ const BackupSettings = () => {
       window.__toast?.warning('配置保存成功！');
       loadConfig();
     } else {
-      alert(res.message || '保存失败');
+      window.__toast?.error(res.message || '保存失败');
     }
   };
 
@@ -222,45 +222,48 @@ const BackupSettings = () => {
         {backupList.length === 0 ? (
           <div className="text-center text-gray-500 py-8">暂无备份文件</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
+          <div>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50"><tr>
                   <th className="text-left p-3">文件名</th>
                   <th className="text-left p-3">大小</th>
                   <th className="text-left p-3">创建时间</th>
                   <th className="text-center p-3">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {backupList.map((item, index) => (
-                  <tr key={index} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-mono text-sm">{item.name}</td>
-                    <td className="p-3">{formatSize(item.size)}</td>
-                    <td className="p-3">{formatDate(item.created)}</td>
-                    <td className="p-3 text-center">
-                      <button
-                        onClick={() => restoreBackup(item.name)}
-                        className="text-green-600 hover:text-green-800 mr-3"
-                        title="恢复此备份"
-                      >
-                        <i className="fas fa-undo"></i>
-                      </button>
-                      <button
-                        onClick={() => deleteBackup(item.name)}
-                        className="text-red-600 hover:text-red-800"
-                        title="删除此备份"
-                      >
-                        <i className="fas fa-trash"></i>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </tr></thead>
+                <tbody>
+                  {backupList.map((item, index) => (
+                    <tr key={index} className="border-b hover:bg-gray-50">
+                      <td className="p-3 font-mono text-sm">{item.name}</td>
+                      <td className="p-3">{formatSize(item.size)}</td>
+                      <td className="p-3">{formatDate(item.created)}</td>
+                      <td className="p-3 text-center">
+                        <button onClick={() => restoreBackup(item.name)} className="text-green-600 hover:text-green-800 mr-3" title="恢复此备份"><i className="fas fa-undo"></i></button>
+                        <button onClick={() => deleteBackup(item.name)} className="text-red-600 hover:text-red-800" title="删除此备份"><i className="fas fa-trash"></i></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="block md:hidden space-y-2">
+              {backupList.map((item, index) => (
+                <div key={index} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                  <div className="font-mono text-sm text-gray-800 truncate mb-1">{item.name}</div>
+                  <div className="flex justify-between items-center">
+                    <div className="text-xs text-gray-500">{formatSize(item.size)} · {formatDate(item.created)}</div>
+                    <div className="flex gap-3">
+                      <button onClick={() => restoreBackup(item.name)} className="text-green-600 active:text-green-800 p-1" title="恢复"><i className="fas fa-undo"></i></button>
+                      <button onClick={() => deleteBackup(item.name)} className="text-red-600 active:text-red-800 p-1" title="删除"><i className="fas fa-trash"></i></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
+      <ConfirmDialog />
     </div>
   );
 };
@@ -322,7 +325,7 @@ const AboutSystem = () => {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">数据库:</span>
-              <span className="font-medium">SQLite (better-sqlite3)</span>
+              <span className="font-medium">PostgreSQL 18</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">UI框架:</span>

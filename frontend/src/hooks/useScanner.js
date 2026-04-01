@@ -11,6 +11,10 @@ export function useScanner(onScan, delay = 50) {
   const buffer = useRef('');
   const lastTime = useRef(0);
   const timeoutId = useRef(null);
+  const onScanRef = useRef(onScan);
+
+  // 始终持有最新回调引用，避免反复解绑/重绑事件
+  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -43,7 +47,7 @@ export function useScanner(onScan, delay = 50) {
           }
 
           timeoutId.current = setTimeout(() => {
-            if (onScan) onScan(code);
+            if (onScanRef.current) onScanRef.current(code);
           }, 50);
         }
         return;
@@ -62,5 +66,5 @@ export function useScanner(onScan, delay = 50) {
       window.removeEventListener('keydown', handleKeyDown, true);
       if (timeoutId.current) clearTimeout(timeoutId.current);
     };
-  }, [onScan, delay]);
+  }, [delay]);
 }

@@ -50,7 +50,7 @@ const CostCardPage = () => {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             <i className="fas fa-calculator text-indigo-500"></i>
@@ -58,7 +58,7 @@ const CostCardPage = () => {
           </h2>
           <p className="text-sm text-gray-500 mt-1">每张生产工单的物料成本、委外成本及利润分析</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => exportToExcel({
             filename: `工单成本分析_${new Date().toISOString().slice(0,10)}`,
             columns: [
@@ -120,10 +120,11 @@ const CostCardPage = () => {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
+          <div>
+            {/* 桌面端表格 */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50"><tr>
                   <th className="px-3 py-3 text-left font-medium text-gray-500">工单号</th>
                   <th className="px-3 py-3 text-left font-medium text-gray-500">产品</th>
                   <th className="px-3 py-3 text-left font-medium text-gray-500">客户</th>
@@ -135,40 +136,73 @@ const CostCardPage = () => {
                   <th className="px-3 py-3 text-right font-medium text-gray-500">利润率</th>
                   <th className="px-3 py-3 text-left font-medium text-gray-500">状态</th>
                   <th className="px-3 py-3 text-center font-medium text-gray-500">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {data.map(row => (
-                  <tr key={row.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-3 font-medium text-indigo-600">{row.order_no}</td>
-                    <td className="px-3 py-3">
-                      <div>{row.product_name}</div>
-                      {row.specification && <div className="text-xs text-gray-400">{row.specification}</div>}
-                    </td>
-                    <td className="px-3 py-3 text-gray-600">{row.customer_name || '-'}</td>
-                    <td className="px-3 py-3 text-right">{row.completed_quantity || 0}/{row.quantity} {row.unit}</td>
-                    <td className="px-3 py-3 text-right text-amber-600">{formatMoney(row.material_cost)}</td>
-                    <td className="px-3 py-3 text-right text-purple-600">{formatMoney(row.outsourcing_cost)}</td>
-                    <td className="px-3 py-3 text-right font-bold text-red-600">{formatMoney(row.total_cost)}</td>
-                    <td className="px-3 py-3 text-right">{formatMoney(row.unit_cost)}/{row.unit}</td>
-                    <td className="px-3 py-3 text-right">
-                      <span className={`font-bold ${profitColor(row.profit_rate)}`}>
-                        {row.profit_rate > 0 ? '+' : ''}{row.profit_rate}%
-                      </span>
-                    </td>
-                    <td className="px-3 py-3"><StatusBadge status={row.status} /></td>
-                    <td className="px-3 py-3 text-center">
-                      <button onClick={() => openDetail(row.id)} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium">
-                        <i className="fas fa-file-invoice-dollar mr-1"></i>成本卡
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {data.length === 0 && (
-                  <tr><td colSpan="11" className="px-3 py-12 text-center text-gray-400">暂无工单数据</td></tr>
-                )}
-              </tbody>
-            </table>
+                </tr></thead>
+                <tbody className="divide-y">
+                  {data.map(row => (
+                    <tr key={row.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-3 font-medium text-indigo-600">{row.order_no}</td>
+                      <td className="px-3 py-3">
+                        <div>{row.product_name}</div>
+                        {row.specification && <div className="text-xs text-gray-400">{row.specification}</div>}
+                      </td>
+                      <td className="px-3 py-3 text-gray-600">{row.customer_name || '-'}</td>
+                      <td className="px-3 py-3 text-right">{row.completed_quantity || 0}/{row.quantity} {row.unit}</td>
+                      <td className="px-3 py-3 text-right text-amber-600">{formatMoney(row.material_cost)}</td>
+                      <td className="px-3 py-3 text-right text-purple-600">{formatMoney(row.outsourcing_cost)}</td>
+                      <td className="px-3 py-3 text-right font-bold text-red-600">{formatMoney(row.total_cost)}</td>
+                      <td className="px-3 py-3 text-right">{formatMoney(row.unit_cost)}/{row.unit}</td>
+                      <td className="px-3 py-3 text-right">
+                        <span className={`font-bold ${profitColor(row.profit_rate)}`}>
+                          {row.profit_rate > 0 ? '+' : ''}{row.profit_rate}%
+                        </span>
+                      </td>
+                      <td className="px-3 py-3"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-3 text-center">
+                        <button onClick={() => openDetail(row.id)} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium">
+                          <i className="fas fa-file-invoice-dollar mr-1"></i>成本卡
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {data.length === 0 && (
+                    <tr><td colSpan="11" className="px-3 py-12 text-center text-gray-400">暂无工单数据</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* 移动端卡片流 */}
+            <div className="block md:hidden space-y-3 p-2">
+              {data.map(row => (
+                <div key={row.id} onClick={() => openDetail(row.id)} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm active:scale-[0.98] transition-transform cursor-pointer">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="font-bold text-indigo-600 text-sm">{row.order_no}</div>
+                      <div className="text-base font-medium text-gray-800 mt-0.5">{row.product_name}</div>
+                    </div>
+                    <StatusBadge status={row.status} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                    <div className="bg-amber-50 rounded-lg p-2">
+                      <div className="text-[10px] text-amber-500">物料</div>
+                      <div className="text-sm font-bold text-amber-700">{formatMoney(row.material_cost)}</div>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-2">
+                      <div className="text-[10px] text-red-500">总成本</div>
+                      <div className="text-sm font-bold text-red-700">{formatMoney(row.total_cost)}</div>
+                    </div>
+                    <div className={`rounded-lg p-2 ${row.profit_rate >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+                      <div className="text-[10px] text-gray-500">利润率</div>
+                      <div className={`text-sm font-bold ${profitColor(row.profit_rate)}`}>{row.profit_rate > 0 ? '+' : ''}{row.profit_rate}%</div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400 mt-2 pt-2 border-t border-gray-50">
+                    <span>完成 {row.completed_quantity || 0}/{row.quantity} {row.unit}</span>
+                    <span>{row.customer_name || ''}</span>
+                  </div>
+                </div>
+              ))}
+              {data.length === 0 && <div className="text-center py-12 text-gray-400">暂无工单数据</div>}
+            </div>
           </div>
         )}
 
@@ -256,94 +290,169 @@ const CostCardPage = () => {
 
             {/* 物料汇总 */}
             {activeTab === 'summary' && (
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">物料编码</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">物料名称</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">总用量</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">单价</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">金额</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">占比</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
+              <div>
+                <div className="hidden md:block">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">物料编码</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">物料名称</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">总用量</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">单价</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">金额</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">占比</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {detail.material.summary.map((m, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 font-mono text-xs">{m.code}</td>
+                          <td className="px-3 py-2">{m.name}</td>
+                          <td className="px-3 py-2 text-right">{m.total_qty} {m.unit}</td>
+                          <td className="px-3 py-2 text-right">{formatMoney(m.unit_price)}</td>
+                          <td className="px-3 py-2 text-right font-medium text-amber-600">{formatMoney(m.total_amount)}</td>
+                          <td className="px-3 py-2 text-right text-gray-400">
+                            {detail.cost.total_cost > 0 ? (m.total_amount / detail.cost.total_cost * 100).toFixed(1) : 0}%
+                          </td>
+                        </tr>
+                      ))}
+                      {detail.material.summary.length === 0 && (
+                        <tr><td colSpan="6" className="px-3 py-6 text-center text-gray-400">暂无物料消耗记录</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="block md:hidden space-y-2">
                   {detail.material.summary.map((m, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-mono text-xs">{m.code}</td>
-                      <td className="px-3 py-2">{m.name}</td>
-                      <td className="px-3 py-2 text-right">{m.total_qty} {m.unit}</td>
-                      <td className="px-3 py-2 text-right">{formatMoney(m.unit_price)}</td>
-                      <td className="px-3 py-2 text-right font-medium text-amber-600">{formatMoney(m.total_amount)}</td>
-                      <td className="px-3 py-2 text-right text-gray-400">
-                        {detail.cost.total_cost > 0 ? (m.total_amount / detail.cost.total_cost * 100).toFixed(1) : 0}%
-                      </td>
-                    </tr>
+                    <div key={i} className="bg-amber-50/30 rounded-lg p-3 border border-amber-100/50">
+                      <div className="flex justify-between items-start mb-1">
+                        <div>
+                          <div className="font-medium text-gray-800 text-sm">{m.name}</div>
+                          <div className="text-xs text-gray-400 font-mono">{m.code}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-amber-700">{formatMoney(m.total_amount)}</div>
+                          <div className="text-[10px] text-gray-400">{detail.cost.total_cost > 0 ? (m.total_amount / detail.cost.total_cost * 100).toFixed(1) : 0}%</div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3 text-xs text-gray-500 mt-1 pt-1 border-t border-amber-100/50">
+                        <span>用量: {m.total_qty} {m.unit}</span>
+                        <span>单价: {formatMoney(m.unit_price)}</span>
+                      </div>
+                    </div>
                   ))}
                   {detail.material.summary.length === 0 && (
-                    <tr><td colSpan="6" className="px-3 py-6 text-center text-gray-400">暂无物料消耗记录</td></tr>
+                    <div className="text-center py-6 text-gray-400">暂无物料消耗记录</div>
                   )}
-                </tbody>
-              </table>
+                </div>
+              </div>
             )}
 
             {/* 领料明细 */}
             {activeTab === 'material' && (
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">领料单号</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">物料</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">数量</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">单价</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">金额</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">时间</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
+              <div>
+                <div className="hidden md:block">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">领料单号</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">物料</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">数量</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">单价</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">金额</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">时间</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {detail.material.items.map((m, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 font-medium">{m.pick_order_no}</td>
+                          <td className="px-3 py-2">{m.name}</td>
+                          <td className="px-3 py-2 text-right">{m.quantity} {m.unit}</td>
+                          <td className="px-3 py-2 text-right">{formatMoney(m.unit_price)}</td>
+                          <td className="px-3 py-2 text-right font-medium text-amber-600">{formatMoney(m.amount)}</td>
+                          <td className="px-3 py-2 text-gray-400 text-xs">{formatTime(m.pick_time)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="block md:hidden space-y-2">
                   {detail.material.items.map((m, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium">{m.pick_order_no}</td>
-                      <td className="px-3 py-2">{m.name}</td>
-                      <td className="px-3 py-2 text-right">{m.quantity} {m.unit}</td>
-                      <td className="px-3 py-2 text-right">{formatMoney(m.unit_price)}</td>
-                      <td className="px-3 py-2 text-right font-medium text-amber-600">{formatMoney(m.amount)}</td>
-                      <td className="px-3 py-2 text-gray-400 text-xs">{formatTime(m.pick_time)}</td>
-                    </tr>
+                    <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                      <div className="flex justify-between items-start mb-1">
+                        <div>
+                          <div className="font-medium text-gray-800 text-sm">{m.name}</div>
+                          <div className="text-xs text-gray-400 font-mono">{m.pick_order_no}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-amber-700">{formatMoney(m.amount)}</div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3 text-xs text-gray-500 mt-1 pt-1 border-t border-gray-100">
+                        <span>{m.quantity} {m.unit}</span>
+                        <span>单价: {formatMoney(m.unit_price)}</span>
+                        <span className="ml-auto">{formatTime(m.pick_time)}</span>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
             )}
 
             {/* 委外明细 */}
             {activeTab === 'outsourcing' && (
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">委外单号</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">工序</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">供应商</th>
-                    <th className="px-3 py-2 text-right text-xs text-gray-500">金额</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">状态</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-500">时间</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
+              <div>
+                <div className="hidden md:block">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">委外单号</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">工序</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">供应商</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">金额</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">状态</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">时间</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {detail.outsourcing.items.map((o, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 font-medium">{o.order_no}</td>
+                          <td className="px-3 py-2">{o.process_name || '-'}</td>
+                          <td className="px-3 py-2">{o.supplier_name || '-'}</td>
+                          <td className="px-3 py-2 text-right font-medium text-purple-600">{formatMoney(o.total_amount)}</td>
+                          <td className="px-3 py-2"><StatusBadge status={o.status} /></td>
+                          <td className="px-3 py-2 text-gray-400 text-xs">{formatTime(o.created_at)}</td>
+                        </tr>
+                      ))}
+                      {detail.outsourcing.items.length === 0 && (
+                        <tr><td colSpan="6" className="px-3 py-6 text-center text-gray-400">暂无委外记录</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="block md:hidden space-y-2">
                   {detail.outsourcing.items.map((o, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium">{o.order_no}</td>
-                      <td className="px-3 py-2">{o.process_name || '-'}</td>
-                      <td className="px-3 py-2">{o.supplier_name || '-'}</td>
-                      <td className="px-3 py-2 text-right font-medium text-purple-600">{formatMoney(o.total_amount)}</td>
-                      <td className="px-3 py-2"><StatusBadge status={o.status} /></td>
-                      <td className="px-3 py-2 text-gray-400 text-xs">{formatTime(o.created_at)}</td>
-                    </tr>
+                    <div key={i} className="bg-purple-50/30 rounded-lg p-3 border border-purple-100/50">
+                      <div className="flex justify-between items-start mb-1">
+                        <div>
+                          <div className="font-medium text-gray-800 text-sm">{o.order_no}</div>
+                          <div className="text-xs text-gray-500">{o.process_name || '-'} · {o.supplier_name || '-'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-purple-700">{formatMoney(o.total_amount)}</div>
+                          <StatusBadge status={o.status} />
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 pt-1 border-t border-purple-100/50">{formatTime(o.created_at)}</div>
+                    </div>
                   ))}
                   {detail.outsourcing.items.length === 0 && (
-                    <tr><td colSpan="6" className="px-3 py-6 text-center text-gray-400">暂无委外记录</td></tr>
+                    <div className="text-center py-6 text-gray-400">暂无委外记录</div>
                   )}
-                </tbody>
-              </table>
+                </div>
+              </div>
             )}
           </div>
         )}

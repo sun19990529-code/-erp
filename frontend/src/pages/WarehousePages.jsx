@@ -232,25 +232,21 @@ const WarehouseOrderManager = ({ orderType }) => {
       remark: fd.get('remark'), 
       items: processedItems 
     };
-    let res;
     try {
-      res = modal.mode === 'edit' 
-        ? await api.put(`/${apiPath}/${modal.item.id}`, obj)
-        : await api.post(`/${apiPath}`, obj);
-      console.log('API Response:', res);
+      const res = modal.mode === 'edit'
+        ? await api.put(`/${apiPath}/${modal.item.id}`, obj, { invalidate: ['inventory'] })
+        : await api.post(`/${apiPath}`, obj, { invalidate: ['inventory'] });
       if (res.success) { closeModal(); load(); }
       else {
-        alert('提交失败: ' + (res.message || '未知错误'));
-        console.error('提交失败详情:', res);
+        window.__toast?.error('提交失败: ' + (res.message || '未知错误'));
       }
     } catch (err) {
-      console.error('请求异常:', err);
-      alert('请求异常: ' + err.message);
+      window.__toast?.error('请求异常: ' + err.message);
     }
   };
   
   const updateStatus = async (item, status) => {
-    const res = await api.put(`/${apiPath}/${item.id}/status`, { status });
+    const res = await api.put(`/${apiPath}/${item.id}/status`, { status }, { invalidate: ['inventory'] });
     if (res.success) load();
     else window.__toast?.error(res.message);
   };
@@ -430,9 +426,9 @@ const WarehouseOrderManager = ({ orderType }) => {
                 <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
                 <button type="button" onClick={async () => {
                   if (!await confirm('确认审批通过并扣减库存？')) return;
-                  const res = await api.put(`/${apiPath}/${modal.item.id}/status`, { status: 'completed' });
+                  const res = await api.put(`/${apiPath}/${modal.item.id}/status`, { status: 'completed' }, { invalidate: ['inventory'] });
                   if (res.success) { closeModal(); load(); }
-                  else alert(res.message || '审批失败');
+                  else window.__toast?.error(res.message || '审批失败');
                 }} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><i className="fas fa-check mr-2"></i>审批出库</button>
               </div>
             )}
@@ -560,7 +556,7 @@ const TransferManager = () => {
     if (!form.from_warehouse_id || !form.to_warehouse_id) return window.__toast?.error('请选择调出和调入仓库');
     if (form.from_warehouse_id === form.to_warehouse_id) return window.__toast?.error('调出和调入仓库不能相同');
     if (!form.items.length) return window.__toast?.error('请至少添加一个调拨产品');
-    const res = await api.post('/transfer', { from_warehouse_id: form.from_warehouse_id, to_warehouse_id: form.to_warehouse_id, operator: form.operator, remark: form.remark, items: form.items });
+    const res = await api.post('/transfer', { from_warehouse_id: form.from_warehouse_id, to_warehouse_id: form.to_warehouse_id, operator: form.operator, remark: form.remark, items: form.items }, { invalidate: ['inventory'] });
     if (res.success) {
       window.__toast?.success('调拨单创建成功');
       setModal({ open: false, item: null });

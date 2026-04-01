@@ -1,0 +1,7 @@
+{
+  "dashboard": "OK",
+  "products": "OK",
+  "departments": "OK",
+  "inventory/warnings": "OK",
+  "purchase/suggestions": "FAIL:服务器错误"
+}

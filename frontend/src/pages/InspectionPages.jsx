@@ -57,7 +57,7 @@ const InboundInspection = () => {
       setSelectedProduct(null);
       return;
     }
-    const product = selectedInbound.items.find(p => p.product_id == productId);
+    const product = selectedInbound.items.find(p => String(p.product_id) === String(productId));
     setSelectedProduct(product || null);
   };
   
@@ -323,7 +323,7 @@ const OutsourcingInspection = () => {
       setSelectedProduct(null);
       return;
     }
-    const product = selectedOutsourcing.items.find(p => p.product_id == productId);
+    const product = selectedOutsourcing.items.find(p => String(p.product_id) === String(productId));
     setSelectedProduct(product || null);
   };
   

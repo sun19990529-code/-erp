@@ -4,11 +4,11 @@ const { requirePermission } = require('../middleware/permission');
 const { validateId } = require('../middleware/validate');
 
 // 获取当前用户未读通知数
-router.get('/unread-count', (req, res) => {
+router.get('/unread-count', async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.json({ success: true, data: 0 });
-    const result = req.db.get('SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0', [userId]);
+    const result = await req.db.get('SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0', [userId]);
     res.json({ success: true, data: result?.count || 0 });
   } catch (error) {
     console.error('[notifications.js]', error.message);
@@ -17,7 +17,7 @@ router.get('/unread-count', (req, res) => {
 });
 
 // 通知列表
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const userId = req.user?.id;
     const { is_read, page = 1, pageSize = 20 } = req.query;
@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
     const params = [userId];
     if (is_read !== undefined && is_read !== '') { sql += ' AND is_read = ?'; params.push(parseInt(is_read)); }
     sql += ' ORDER BY created_at DESC';
-    const result = req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+    const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error('[notifications.js]', error.message);
@@ -34,9 +34,9 @@ router.get('/', (req, res) => {
 });
 
 // 标记已读（单条）
-router.put('/:id/read', validateId, (req, res) => {
+router.put('/:id/read', validateId, async (req, res) => {
   try {
-    req.db.run('UPDATE notifications SET is_read = 1 WHERE id = ? AND (user_id = ? OR user_id IS NULL)', [req.params.id, req.user?.id]);
+    await req.db.run('UPDATE notifications SET is_read = 1 WHERE id = ? AND (user_id = ? OR user_id IS NULL)', [req.params.id, req.user?.id]);
     res.json({ success: true });
   } catch (error) {
     console.error('[notifications.js]', error.message);
@@ -45,9 +45,9 @@ router.put('/:id/read', validateId, (req, res) => {
 });
 
 // 全部标记已读
-router.put('/read-all', (req, res) => {
+router.put('/read-all', async (req, res) => {
   try {
-    req.db.run('UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0', [req.user?.id]);
+    await req.db.run('UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0', [req.user?.id]);
     res.json({ success: true });
   } catch (error) {
     console.error('[notifications.js]', error.message);
@@ -56,9 +56,9 @@ router.put('/read-all', (req, res) => {
 });
 
 // 删除通知
-router.delete('/:id', validateId, (req, res) => {
+router.delete('/:id', validateId, async (req, res) => {
   try {
-    req.db.run('DELETE FROM notifications WHERE id = ? AND user_id = ?', [req.params.id, req.user?.id]);
+    await req.db.run('DELETE FROM notifications WHERE id = ? AND user_id = ?', [req.params.id, req.user?.id]);
     res.json({ success: true });
   } catch (error) {
     console.error('[notifications.js]', error.message);
