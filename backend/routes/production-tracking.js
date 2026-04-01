@@ -272,7 +272,8 @@ router.get('/cost-summary', requirePermission('production_view'), async (req, re
     const materialCostMap = {};
     materialCostRows.forEach(r => {
       const price = materialPriceMap[r.material_id] || 0;
-      materialCostMap[r.production_order_id] = (materialCostMap[r.production_order_id] || 0) + r.total_qty * price;
+      const current = materialCostMap[r.production_order_id] || 0;
+      materialCostMap[r.production_order_id] = Math.round((current + r.total_qty * price) * 100) / 100;
     });
 
     // 委外成本
@@ -308,11 +309,11 @@ router.get('/cost-summary', requirePermission('production_view'), async (req, re
     });
 
     // 汇总统计
-    const totalMaterial = data.reduce((s, r) => s + r.material_cost, 0);
-    const totalOutsourcing = data.reduce((s, r) => s + r.outsourcing_cost, 0);
-    const totalAmount = data.reduce((s, r) => s + r.total_cost, 0);
-    const totalRevenue = data.reduce((s, r) => s + r.revenue, 0);
-    const totalProfit = data.reduce((s, r) => s + r.profit, 0);
+    const totalMaterial = data.reduce((s, r) => Math.round((s + r.material_cost) * 100) / 100, 0);
+    const totalOutsourcing = data.reduce((s, r) => Math.round((s + r.outsourcing_cost) * 100) / 100, 0);
+    const totalAmount = data.reduce((s, r) => Math.round((s + r.total_cost) * 100) / 100, 0);
+    const totalRevenue = data.reduce((s, r) => Math.round((s + r.revenue) * 100) / 100, 0);
+    const totalProfit = data.reduce((s, r) => Math.round((s + r.profit) * 100) / 100, 0);
 
     res.json({
       success: true,
@@ -386,7 +387,7 @@ router.get('/production/:id/cost', requirePermission('production_view'), async (
       unit_price: detailPriceMap[m.material_id] || 0,
       amount: parseFloat(((detailPriceMap[m.material_id] || 0) * m.quantity).toFixed(2))
     }));
-    const materialCost = materialItems.reduce((s, m) => s + m.amount, 0);
+    const materialCost = materialItems.reduce((s, m) => Math.round((s + m.amount) * 100) / 100, 0);
 
     // 3. 按物料汇总
     const materialSummary = {};
@@ -395,7 +396,7 @@ router.get('/production/:id/cost', requirePermission('production_view'), async (
         materialSummary[m.material_id] = { code: m.code, name: m.name, unit: m.unit, total_qty: 0, total_amount: 0, unit_price: m.unit_price };
       }
       materialSummary[m.material_id].total_qty += m.quantity;
-      materialSummary[m.material_id].total_amount += m.amount;
+      materialSummary[m.material_id].total_amount = Math.round((materialSummary[m.material_id].total_amount + m.amount) * 100) / 100;
     });
 
     // 4. 委外成本明细
@@ -409,7 +410,7 @@ router.get('/production/:id/cost', requirePermission('production_view'), async (
       WHERE oo.production_order_id = ? AND oo.status != 'cancelled'
       ORDER BY oo.created_at ASC
     `, [productionId]);
-    const outsourcingCost = outsourcingDetails.reduce((s, o) => s + (o.total_amount || 0), 0);
+    const outsourcingCost = outsourcingDetails.reduce((s, o) => Math.round((s + (o.total_amount || 0)) * 100) / 100, 0);
 
     // 5. 实际物料消耗记录（工序级）
     const consumptionDetails = await req.db.all(`

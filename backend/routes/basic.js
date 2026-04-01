@@ -8,6 +8,7 @@ const { BCRYPT_ROUNDS } = require('../config/security');
 const { validate } = require('../middleware/validate');
 const { userLogin, userCreate } = require('../validators/schemas');
 const { clearPermissionCache } = require('../middleware/permission');
+const { ENTITY_STATUS } = require('../constants/status');
 // 管理员专属中间件：角色/权限/用户管理仅限 admin 角色
 const adminOnly = async (req, res, next) => {
   if (!req.user || req.user.role_code !== 'admin') {
@@ -60,9 +61,9 @@ router.get('/operators', async (req, res) => {
       SELECT u.id, u.real_name, u.username, d.name as department_name
       FROM users u
       LEFT JOIN departments d ON u.department_id = d.id
-      WHERE u.status != 'disabled'
+      WHERE u.status != ?
       ORDER BY d.name, u.real_name
-    `);
+    `, [ENTITY_STATUS.DISABLED]);
     // 按部门分组
     const grouped = {};
     users.forEach(u => {

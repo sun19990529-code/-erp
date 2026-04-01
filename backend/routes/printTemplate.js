@@ -16,6 +16,15 @@ const requireAdmin = async (req, res, next) => {
   next();
 };
 
+// 简易 XSS 安全过滤器：仅剔除恶意脚本和事件，保留 <style> 等排版标签
+const sanitizeHTML = (html) => {
+  if (!html) return html;
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // 移除 script 标签
+    .replace(/\s+on[a-z]+\s*=\s*(['"]?).*?\1/gi, '')                   // 移除内联事件 onerror, onclick 等
+    .replace(/\s+href\s*=\s*(['"]?)javascript:.*?\1/gi, '');           // 移除 javascript: 伪协议
+};
+
 // 获取指定类型的所有模板列表（支持根据 type 过滤）
 router.get('/', async (req, res) => {
   const { type } = req.query;
@@ -64,11 +73,13 @@ router.get('/:id', async (req, res) => {
 
 // 新增打印模板（仅管理员）
 router.post('/', requireAdmin, async (req, res) => {
-  const { type, name, content, is_default } = req.body;
+  let { type, name, content, is_default } = req.body;
 
   if (!type || !name || !content) {
     return res.status(400).json({ success: false, message: '类型、模板名称、模板内容为必填项' });
   }
+
+  content = sanitizeHTML(content);
 
   try {
     let newId;
@@ -87,10 +98,12 @@ router.post('/', requireAdmin, async (req, res) => {
 
 // 修改模板内容（仅管理员）
 router.put('/:id', requireAdmin, async (req, res) => {
-  const { name, content, is_default } = req.body;
+  let { name, content, is_default } = req.body;
   if (!name || !content) {
     return res.status(400).json({ success: false, message: '模板名称与内容不能为空' });
   }
+
+  content = sanitizeHTML(content);
 
   try {
     await req.db.transaction(async () => {

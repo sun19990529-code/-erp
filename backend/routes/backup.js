@@ -67,7 +67,7 @@ const requireAdmin = async (req, res, next) => {
 
 // 【F4】文件名合法性校验，防止路径穿越
 function isValidBackupFilename(filename) {
-  return /^mes-backup-[\w-]+\.(db|sql)$/.test(filename);
+  return /^mes-backup-[\w-]+\.(db|sql|dump)$/.test(filename);
 }
 const BACKUP_CONFIG_PATH = path.join(__dirname, '..', 'backup-config.json');
 let backupTimer = null;
@@ -90,7 +90,7 @@ async function performBackup(db, saveDatabase, customPath = null) {
   if (!fs.existsSync(backupPath)) fs.mkdirSync(backupPath, { recursive: true });
   const now = new Date();
   const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const backupFileName = `mes-backup-${timestamp}.sql`;
+  const backupFileName = `mes-backup-${timestamp}.dump`;
   const backupFilePath = path.join(backupPath, backupFileName);
   
   // PostgreSQL 备份：使用 pg_dump（execFileSync 防命令注入）
@@ -119,7 +119,7 @@ async function performBackup(db, saveDatabase, customPath = null) {
 function cleanOldBackups(backupPath, maxBackups) {
   try {
     const files = fs.readdirSync(backupPath)
-      .filter(f => f.startsWith('mes-backup-') && (f.endsWith('.db') || f.endsWith('.sql')))
+      .filter(f => f.startsWith('mes-backup-') && (f.endsWith('.db') || f.endsWith('.sql') || f.endsWith('.dump')))
       .map(f => ({ name: f, path: path.join(backupPath, f), time: fs.statSync(path.join(backupPath, f)).mtime.getTime() }))
       .sort((a, b) => b.time - a.time);
     if (files.length > maxBackups) files.slice(maxBackups).forEach(f => fs.unlinkSync(f.path));
@@ -130,7 +130,7 @@ function getBackupList(backupPath) {
   try {
     if (!fs.existsSync(backupPath)) return [];
     return fs.readdirSync(backupPath)
-      .filter(f => f.startsWith('mes-backup-') && (f.endsWith('.db') || f.endsWith('.sql')))
+      .filter(f => f.startsWith('mes-backup-') && (f.endsWith('.db') || f.endsWith('.sql') || f.endsWith('.dump')))
       .map(f => { const stat = fs.statSync(path.join(backupPath, f)); return { name: f, size: stat.size, created: stat.mtime.toISOString() }; })
       .sort((a, b) => new Date(b.created) - new Date(a.created));
   } catch (error) { return []; }

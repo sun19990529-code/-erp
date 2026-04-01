@@ -5,11 +5,13 @@ const { requirePermission } = require('../middleware/permission');
 const { validateId } = require('../middleware/validate');
 const { writeLog } = require('./logs');
 
+const { ENTITY_STATUS } = require('../constants/status');
+
 // 辅助函数：为委外工序自动创建委外加工单
 async function createOutsourcingOrderForProcess(db, production, processInfo, quantity) {
   const existing = await db.get(`SELECT * FROM outsourcing_orders WHERE production_order_id = ? AND process_id = ?`, [production.id, processInfo.process_id]);
   if (existing) return existing;
-  const defaultSupplier = await db.get("SELECT id FROM suppliers WHERE status = 'active' ORDER BY id LIMIT 1") || await db.get('SELECT id FROM suppliers LIMIT 1');
+  const defaultSupplier = await db.get("SELECT id FROM suppliers WHERE status = ? ORDER BY id LIMIT 1", [ENTITY_STATUS.ACTIVE]) || await db.get('SELECT id FROM suppliers LIMIT 1');
   if (!defaultSupplier) { console.warn('[production] 无可用供应商，无法自动创建委外单'); return null; }
   const orderNo = generateOrderNo('WW');
   const result = await db.run(`
@@ -384,7 +386,14 @@ router.put('/:id/status', validateId, requirePermission('production_edit'), asyn
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
     }
-    await req.db.run('UPDATE production_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
+    await req.db.transaction(async () => {
+      const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
+      await req.db.run('UPDATE production_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
+      // 【联动】手动标完成时也触发订单进度更新 + 成品入库
+      if (status === 'completed' && production && production.order_id) {
+        await updateOrderProgress(req.db, production.order_id);
+      }
+    });
     res.json({ success: true });
   } catch (error) {
     console.error(`[production.js]`, error.message);

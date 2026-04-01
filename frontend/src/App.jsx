@@ -6,104 +6,9 @@ import { AuthContext } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import Sidebar from './pages/Sidebar';
 import NotificationBell from './components/NotificationBell';
+import { ROUTE_CONFIG, MENU_ROUTES, PATH_TO_MENU, WorkshopMonitor, ScanStation, WorkstationScreen } from './routes.config';
 
-// React.lazy 路由级懒加载 — 减少首屏包体积
-const Dashboard = React.lazy(() => import('./pages/Dashboard'));
-const InventoryView = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.InventoryView })));
-const WarehouseOrderManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.WarehouseOrderManager })));
-const TransferManager = React.lazy(() => import('./pages/WarehousePages').then(m => ({ default: m.TransferManager })));
-
-const OrderManager = React.lazy(() => import('./pages/Orders'));
-const ProductionScheduleGantt = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionScheduleGantt })));
-const ProductionOrderManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionOrderManager })));
-const PickMaterialManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.PickMaterialManager })));
-const ProcessConfigManager = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessConfigManager })));
-const ProcessManager = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessManager })));
-const InboundInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.InboundInspection })));
-const PatrolInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.PatrolInspection })));
-const OutsourcingInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.OutsourcingInspection })));
-const FinalInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.FinalInspection })));
-const PurchaseManager = React.lazy(() => import('./pages/PurchasePages').then(m => ({ default: m.PurchaseManager })));
-const OutsourcingManager = React.lazy(() => import('./pages/OutsourcingPages').then(m => ({ default: m.OutsourcingManager })));
-const ProductManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.ProductManager })));
-const SupplierManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.SupplierManager })));
-const CustomerManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.CustomerManager })));
-const DepartmentManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.DepartmentManager })));
-const MaterialCategoryManager = React.lazy(() => import('./pages/BasicDataPages').then(m => ({ default: m.MaterialCategoryManager })));
-
-const RoleManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.RoleManager })));
-const PermissionManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.PermissionManager })));
-const UserManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.UserManager })));
-const BackupSettings = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.BackupSettings })));
-const AboutSystem = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.AboutSystem })));
-const OperationLogs = React.lazy(() => import('./pages/OperationLogs'));
-const ScanStation = React.lazy(() => import('./components/ScanStation'));
-const WorkshopMonitor = React.lazy(() => import('./pages/WorkshopMonitor'));
-const TrackingPage = React.lazy(() => import('./pages/TrackingPage'));
-const PurchaseSuggestionPage = React.lazy(() => import('./pages/PurchaseSuggestionPage'));
-const CostCardPage = React.lazy(() => import('./pages/CostCardPage'));
-const StocktakePage = React.lazy(() => import('./pages/StocktakePage'));
-const FinancePages = React.lazy(() => import('./pages/FinancePages'));
-const ReportPage = React.lazy(() => import('./pages/ReportPage'));
-const DataCenter = React.lazy(() => import('./pages/DataCenter'));
-const ImportPage = React.lazy(() => import('./pages/ImportPage'));
-const WorkstationQRPage = React.lazy(() => import('./pages/WorkstationQRPage'));
-const WorkstationScreen = React.lazy(() => import('./pages/WorkstationScreen'));
-const TemplateManager = React.lazy(() => import('./pages/TemplateBuilder/TemplateManager'));
 const AUTH_KEY = 'erp_user_auth';
-
-// 路由 ↔ 菜单 映射表
-const MENU_ROUTES = {
-  'dashboard': '/',
-  'scan-station': '/scan',
-  'inventory': '/warehouse/inventory',
-  'inbound': '/warehouse/inbound',
-  'outbound': '/warehouse/outbound',
-  'transfer': '/warehouse/transfer',
-  'order-hub': '/orders',
-  'production-schedule': '/production/schedule',
-  'production-orders': '/production/orders',
-  'pick-material': '/production/pick',
-  'process-config': '/process/config',
-  'process-hub': '/process/hub',
-  'inspection-inbound': '/inspection/inbound',
-  'inspection-patrol': '/inspection/patrol',
-  'inspection-outsourcing': '/inspection/outsourcing',
-  'inspection-final': '/inspection/final',
-  'purchase-hub': '/purchase',
-  'outsourcing-hub': '/outsourcing',
-  'product-raw': '/basic/product-raw',
-  'product-semi': '/basic/product-semi',
-  'product-finished': '/basic/product-finished',
-  'supplier': '/basic/supplier',
-  'customer': '/basic/customer',
-  'department': '/basic/department',
-  'material-category': '/basic/material-category',
-  'role': '/system/role',
-  'permission': '/system/permission',
-  'user-internal': '/system/user-internal',
-  'user-external': '/system/user-external',
-  'settings-backup': '/settings/backup',
-  'settings-about': '/settings/about',
-  'workshop-monitor': '/monitor',
-  'batch-tracking': '/tracking',
-  'purchase-suggestion': '/purchase/suggestions',
-  'cost-card': '/production/cost',
-  'stocktake': '/warehouse/stocktake',
-  'finance-payable': '/finance/payable',
-  'finance-receivable': '/finance/receivable',
-  'data-center': '/report/datacenter',
-  'production-report': '/production/report',
-  'data-import': '/system/import',
-  'operation-logs': '/system/logs',
-  'workstation-qr': '/production/workstation-qr',
-  'print-template': '/system/print-template',
-};
-
-// 反向映射：path → menuKey
-const PATH_TO_MENU = Object.fromEntries(
-  Object.entries(MENU_ROUTES).map(([menu, path]) => [path, menu])
-);
 
 // 路由感知的主内容组件
 const AppContent = ({ user, permissions, handleLogout }) => {
@@ -169,52 +74,21 @@ const AppContent = ({ user, permissions, handleLogout }) => {
                 </div>
               }>
               <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/scan" element={<ScanStation onActiveMenuChange={setActiveMenu} />} />
-                <Route path="/warehouse/inventory" element={<InventoryView title="全局库存台账" />} />
-                <Route path="/warehouse/inbound" element={<WarehouseOrderManager orderType="inbound" title="入库调度中心" />} />
-                <Route path="/warehouse/outbound" element={<WarehouseOrderManager orderType="outbound" title="出库调度中心" />} />
-                <Route path="/warehouse/transfer" element={<TransferManager />} />
-
-                <Route path="/orders" element={<OrderManager />} />
-                <Route path="/production/schedule" element={<ProductionScheduleGantt />} />
-                <Route path="/production/orders" element={<ProductionOrderManager />} />
-                <Route path="/production/pick" element={<PickMaterialManager />} />
-                <Route path="/process/config" element={<ProcessConfigManager />} />
-                <Route path="/process/hub" element={<ProcessManager />} />
-                <Route path="/inspection/inbound" element={<InboundInspection />} />
-                <Route path="/inspection/patrol" element={<PatrolInspection />} />
-                <Route path="/inspection/outsourcing" element={<OutsourcingInspection />} />
-                <Route path="/inspection/final" element={<FinalInspection />} />
-                <Route path="/purchase" element={<PurchaseManager />} />
-                <Route path="/outsourcing" element={<OutsourcingManager />} />
-                <Route path="/basic/product-raw" element={<ProductManager category="原材料" />} />
-                <Route path="/basic/product-semi" element={<ProductManager category="半成品" />} />
-                <Route path="/basic/product-finished" element={<ProductManager category="成品" />} />
-                <Route path="/basic/supplier" element={<SupplierManager />} />
-                <Route path="/basic/customer" element={<CustomerManager />} />
-                <Route path="/basic/department" element={<DepartmentManager />} />
-                <Route path="/basic/material-category" element={<MaterialCategoryManager />} />
-
-                <Route path="/system/role" element={<RoleManager />} />
-                <Route path="/system/permission" element={<PermissionManager />} />
-                <Route path="/system/user-internal" element={<UserManager userType="internal" />} />
-                <Route path="/system/user-external" element={<UserManager userType="external" />} />
-                <Route path="/settings/backup" element={<BackupSettings />} />
-                <Route path="/settings/about" element={<AboutSystem />} />
-                <Route path="/monitor" element={<WorkshopMonitor onExit={() => setActiveMenu('dashboard')} />} />
-                <Route path="/tracking" element={<TrackingPage />} />
-                <Route path="/purchase/suggestions" element={<PurchaseSuggestionPage />} />
-                <Route path="/production/cost" element={<CostCardPage />} />
-                <Route path="/warehouse/stocktake" element={<StocktakePage />} />
-                <Route path="/finance/payable" element={<FinancePages type="payable" />} />
-                <Route path="/finance/receivable" element={<FinancePages type="receivable" />} />
-                <Route path="/report/datacenter" element={<DataCenter />} />
-                <Route path="/production/report" element={<ReportPage />} />
-                <Route path="/system/import" element={<ImportPage />} />
-                <Route path="/system/logs" element={<OperationLogs />} />
-                <Route path="/production/workstation-qr" element={<WorkstationQRPage />} />
-                <Route path="/system/print-template" element={<TemplateManager />} />
+                {/* 从配置表自动生成路由 */}
+                {ROUTE_CONFIG.map(({ menuKey, path, element }) => {
+                  // 特殊路由：需要动态传参
+                  if (menuKey === 'scan-station') {
+                    return <Route key={path} path={path} element={<ScanStation onActiveMenuChange={setActiveMenu} />} />;
+                  }
+                  if (menuKey === 'workshop-monitor') {
+                    return <Route key={path} path={path} element={<WorkshopMonitor onExit={() => setActiveMenu('dashboard')} />} />;
+                  }
+                  // 通用路由：直接使用配置中的 element
+                  if (element) {
+                    return <Route key={path} path={path} element={element} />;
+                  }
+                  return null;
+                })}
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               </Suspense>

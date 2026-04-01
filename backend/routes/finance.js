@@ -14,8 +14,12 @@ router.get('/payables', requirePermission('finance_view'), async (req, res) => {
     if (supplier_id) { sql += ' AND p.supplier_id = ?'; params.push(supplier_id); }
     sql += ' ORDER BY p.created_at DESC';
     const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
-    // 汇总
-    const summary = await req.db.get(`SELECT COUNT(*) as total, COALESCE(SUM(amount),0) as total_amount, COALESCE(SUM(paid_amount),0) as total_paid FROM payables`);
+    // 汇总（跟随筛选条件）
+    let summarySql = `SELECT COUNT(*) as total, COALESCE(SUM(amount),0) as total_amount, COALESCE(SUM(paid_amount),0) as total_paid FROM payables WHERE 1=1`;
+    const summaryParams = [];
+    if (status) { summarySql += ' AND status = ?'; summaryParams.push(status); }
+    if (supplier_id) { summarySql += ' AND supplier_id = ?'; summaryParams.push(supplier_id); }
+    const summary = await req.db.get(summarySql, summaryParams);
     res.json({ success: true, data: result.data, pagination: result.pagination, summary: { ...summary, total_unpaid: summary.total_amount - summary.total_paid } });
   } catch (error) {
     console.error('[finance.js]', error.message);
@@ -33,7 +37,11 @@ router.get('/receivables', requirePermission('finance_view'), async (req, res) =
     if (customer_id) { sql += ' AND r.customer_id = ?'; params.push(customer_id); }
     sql += ' ORDER BY r.created_at DESC';
     const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
-    const summary = await req.db.get(`SELECT COUNT(*) as total, COALESCE(SUM(amount),0) as total_amount, COALESCE(SUM(received_amount),0) as total_received FROM receivables`);
+    let summarySql = `SELECT COUNT(*) as total, COALESCE(SUM(amount),0) as total_amount, COALESCE(SUM(received_amount),0) as total_received FROM receivables WHERE 1=1`;
+    const summaryParams = [];
+    if (status) { summarySql += ' AND status = ?'; summaryParams.push(status); }
+    if (customer_id) { summarySql += ' AND customer_id = ?'; summaryParams.push(customer_id); }
+    const summary = await req.db.get(summarySql, summaryParams);
     res.json({ success: true, data: result.data, pagination: result.pagination, summary: { ...summary, total_unreceived: summary.total_amount - summary.total_received } });
   } catch (error) {
     console.error('[finance.js]', error.message);
@@ -132,19 +140,19 @@ router.get('/summary', requirePermission('finance_view'), async (req, res) => {
 });
 
 // ========== 工具函数：自动生成应付/应收 ==========
-function createPayable(db, { type, sourceType, sourceId, supplierId, amount, dueDate, remark }) {
+async function createPayable(db, { type, sourceType, sourceId, supplierId, amount, dueDate, remark }) {
   try {
     const orderNo = generateOrderNo('AP');
-    db.run(`INSERT INTO payables (order_no, type, source_type, source_id, supplier_id, amount, due_date, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    await db.run(`INSERT INTO payables (order_no, type, source_type, source_id, supplier_id, amount, due_date, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [orderNo, type, sourceType, sourceId, supplierId, amount, dueDate || null, remark || null]);
     return orderNo;
   } catch (e) { console.error('[finance] 创建应付失败:', e.message); return null; }
 }
 
-function createReceivable(db, { type, sourceType, sourceId, customerId, amount, dueDate, remark }) {
+async function createReceivable(db, { type, sourceType, sourceId, customerId, amount, dueDate, remark }) {
   try {
     const orderNo = generateOrderNo('AR');
-    db.run(`INSERT INTO receivables (order_no, type, source_type, source_id, customer_id, amount, due_date, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    await db.run(`INSERT INTO receivables (order_no, type, source_type, source_id, customer_id, amount, due_date, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [orderNo, type, sourceType, sourceId, customerId, amount, dueDate || null, remark || null]);
     return orderNo;
   } catch (e) { console.error('[finance] 创建应收失败:', e.message); return null; }

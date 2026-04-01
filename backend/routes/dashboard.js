@@ -192,12 +192,15 @@ router.get('/purchase-suggestions', requirePermission('dashboard_view'), async (
         SUM(om.required_quantity) as total_required,
         SUM(COALESCE(om.picked_quantity, 0)) as total_picked,
         SUM(om.required_quantity - COALESCE(om.picked_quantity, 0)) as shortage,
-        COALESCE((SELECT SUM(i.quantity) FROM inventory i WHERE i.product_id = om.material_id), 0::numeric) as current_stock
+        COALESCE(inv.total_stock, 0) as current_stock
       FROM order_materials om
       JOIN products p ON om.material_id = p.id
       JOIN orders o ON om.order_id = o.id
+      LEFT JOIN (
+        SELECT product_id, SUM(quantity) as total_stock FROM inventory GROUP BY product_id
+      ) inv ON inv.product_id = om.material_id
       WHERE o.status IN ('pending', 'confirmed', 'processing')
-      GROUP BY om.material_id, p.code, p.name, p.unit, p.specification
+      GROUP BY om.material_id, p.code, p.name, p.unit, p.specification, inv.total_stock
       HAVING SUM(om.required_quantity - COALESCE(om.picked_quantity, 0)) > 0
     `);
     // 筛选出库存不足以覆盖缺口的材料

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
-const { sendNotification } = require('./notifications');
+const { sendNotification, pushWebhookBatch } = require('./notifications');
 
 /**
  * 生产日报 — 按日期区间汇总产量、不良率、物料消耗
@@ -265,33 +265,41 @@ router.get('/check-overdue', requirePermission('production_view'), async (req, r
       `SELECT id, order_no, delivery_date FROM orders WHERE status NOT IN ('completed', 'cancelled') AND delivery_date < ? AND delivery_date IS NOT NULL`,
       [today]
     );
-    overdueOrders.forEach(o => {
-      sendNotification(req.db, null, 'warning', '订单交期超期',
+    for (const o of overdueOrders) {
+      await sendNotification(req.db, null, 'warning', '订单交期超期',
         `订单 ${o.order_no} 交期 ${o.delivery_date} 已超期，请尽快处理`, 'order', o.id);
       notifications++;
-    });
+    }
 
     // 2. 采购超期
     const overduePurchases = await req.db.all(
       `SELECT id, order_no, expected_date FROM purchase_orders WHERE status NOT IN ('completed', 'received', 'cancelled') AND expected_date < ? AND expected_date IS NOT NULL`,
       [today]
     );
-    overduePurchases.forEach(p => {
-      sendNotification(req.db, null, 'warning', '采购单超期',
+    for (const p of overduePurchases) {
+      await sendNotification(req.db, null, 'warning', '采购单超期',
         `采购单 ${p.order_no} 预期 ${p.expected_date} 已超期，请跟进供应商`, 'purchase', p.id);
       notifications++;
-    });
+    }
 
     // 3. 委外超期
     const overdueOutsourcing = await req.db.all(
       `SELECT id, order_no, expected_date FROM outsourcing_orders WHERE status NOT IN ('completed', 'received', 'cancelled', 'inspection_passed') AND expected_date < ? AND expected_date IS NOT NULL`,
       [today]
     );
-    overdueOutsourcing.forEach(o => {
-      sendNotification(req.db, null, 'warning', '委外单超期',
+    for (const o of overdueOutsourcing) {
+      await sendNotification(req.db, null, 'warning', '委外单超期',
         `委外单 ${o.order_no} 预期 ${o.expected_date} 已超期，请联系供应商`, 'outsourcing', o.id);
       notifications++;
-    });
+    }
+
+    // 4. 汇总推送到群机器人（合并为一条消息，避免频率限制）
+    const batchItems = [
+      ...overdueOrders.map(o => `订单 ${o.order_no} 交期 ${o.delivery_date} 已超期`),
+      ...overduePurchases.map(p => `采购单 ${p.order_no} 预期 ${p.expected_date} 已超期`),
+      ...overdueOutsourcing.map(o => `委外单 ${o.order_no} 预期 ${o.expected_date} 已超期`),
+    ];
+    await pushWebhookBatch('超期预警汇总', batchItems, 'warning');
 
     res.json({ success: true, data: { overdueOrders: overdueOrders.length, overduePurchases: overduePurchases.length, overdueOutsourcing: overdueOutsourcing.length, notifications } });
   } catch (error) {

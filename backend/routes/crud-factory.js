@@ -81,11 +81,13 @@ function createCRUDRouter(config) {
     });
   }
 
-  // 更新
+  // 更新（仅更新前端实际传了的字段，防止未传字段被覆盖为 null）
   router.put('/:id', validateId, perm('edit'), async (req, res) => {
     try {
-      const values = fields.map(f => req.body[f] !== undefined ? req.body[f] : null);
-      const setClause = fields.map(f => `${f} = ?`).join(', ');
+      const activeFields = fields.filter(f => req.body[f] !== undefined);
+      if (activeFields.length === 0) return res.status(400).json({ success: false, message: '没有需要更新的字段' });
+      const values = activeFields.map(f => req.body[f]);
+      const setClause = activeFields.map(f => `${f} = ?`).join(', ');
       const timestampClause = hasTimestamps ? ', updated_at = CURRENT_TIMESTAMP' : '';
       values.push(req.params.id);
       await req.db.run(`UPDATE ${table} SET ${setClause}${timestampClause} WHERE id = ?`, values);

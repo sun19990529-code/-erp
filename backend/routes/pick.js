@@ -166,7 +166,7 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
           for (const item of items) {
             const totalInv = await req.db.get('SELECT SUM(i.quantity) as total, p.alert_threshold, p.name FROM inventory i JOIN products p ON i.product_id = p.id WHERE i.product_id = ? GROUP BY i.product_id', [item.material_id]);
             if (totalInv && totalInv.alert_threshold > 0 && totalInv.total <= totalInv.alert_threshold) {
-              sendNotification(req.db, null, 'warning', `库存预警：${totalInv.name}`, `物料「${totalInv.name}」当前库存 ${totalInv.total}，已低于安全水位 ${totalInv.alert_threshold}`, 'inventory', item.material_id);
+              await sendNotification(req.db, null, 'warning', `库存预警：${totalInv.name}`, `物料「${totalInv.name}」当前库存 ${totalInv.total}，已低于安全水位 ${totalInv.alert_threshold}`, 'inventory', item.material_id);
             }
           }
         }

@@ -1,4 +1,4 @@
-﻿# server-sync.ps1 - ERP Server Sync Script (PostgreSQL 版)
+# server-sync.ps1 - ERP Server Sync Script (PostgreSQL 版)
 # 在服务机上运行：先 git pull 最新代码 → 构建前端 → 更新后端依赖 → 重启服务
 
 # Auto-elevate to admin if not already
@@ -12,7 +12,7 @@ $projectRoot = "F:\erp-mes-system"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   铭晟ERP v1.8.1 - 服务器一键同步" -ForegroundColor Cyan
+Write-Host "   铭晟ERP v1.9.0 - 服务器一键同步" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

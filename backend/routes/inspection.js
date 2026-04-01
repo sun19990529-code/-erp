@@ -8,14 +8,15 @@ const { sendNotification } = require('./notifications');
 // 入库检验
 router.get('/inbound', requirePermission('inspection_view'), async (req, res) => {
   try {
-    const inspections = await req.db.all(`
+    const { page = 1, pageSize = 20 } = req.query;
+    const result = await req.db.paginate(`
       SELECT ii.*, io.order_no as inbound_order_no, p.name as product_name, p.code as product_code
       FROM inbound_inspections ii
       LEFT JOIN inbound_orders io ON ii.inbound_id = io.id
       LEFT JOIN products p ON ii.product_id = p.id
       ORDER BY ii.created_at DESC
-    `);
-    res.json({ success: true, data: inspections });
+    `, [], parseInt(page), parseInt(pageSize));
+    res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -85,7 +86,7 @@ router.post('/inbound', requirePermission('inspection_create'), async (req, res)
         await req.db.run("UPDATE inbound_orders SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [inbound_order_id]);
         // 【通知】来料检验不合格
         const prodInfo = await req.db.get('SELECT name FROM products WHERE id = ?', [product_id]);
-        sendNotification(req.db, null, 'error', '来料检验不合格', `产品「${prodInfo?.name || product_id}」来料检验未通过，不良数: ${defect_quantity || 0}`, 'inspection', inbound_order_id);
+        await sendNotification(req.db, null, 'error', '来料检验不合格', `产品「${prodInfo?.name || product_id}」来料检验未通过，不良数: ${defect_quantity || 0}`, 'inspection', inbound_order_id);
       }
     });
     writeLog(req.db, req.user?.id, '入库检验', 'inspection', inbound_order_id, `检验结果: ${inspResult}`);
@@ -99,15 +100,16 @@ router.post('/inbound', requirePermission('inspection_create'), async (req, res)
 // 巡检
 router.get('/patrol', requirePermission('inspection_view'), async (req, res) => {
   try {
-    const inspections = await req.db.all(`
+    const { page = 1, pageSize = 20 } = req.query;
+    const result = await req.db.paginate(`
       SELECT pi.*, po.order_no as production_order_no, pr.name as process_name, p.name as product_name
       FROM patrol_inspections pi
       LEFT JOIN production_orders po ON pi.production_order_id = po.id
       LEFT JOIN processes pr ON pi.process_id = pr.id
       LEFT JOIN products p ON pi.product_id = p.id
       ORDER BY pi.created_at DESC
-    `);
-    res.json({ success: true, data: inspections });
+    `, [], parseInt(page), parseInt(pageSize));
+    res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -134,7 +136,7 @@ router.post('/patrol', requirePermission('inspection_create'), async (req, res) 
         // 【通知】巡检不合格
         const poInfo = await req.db.get('SELECT order_no FROM production_orders WHERE id = ?', [production_order_id]);
         const processInfo = await req.db.get('SELECT name FROM processes WHERE id = ?', [process_id]);
-        sendNotification(req.db, null, 'error', '巡检不合格，工单已暂停', `工单 ${poInfo?.order_no || ''} 工序「${processInfo?.name || ''}」巡检未通过，已自动暂停生产`, 'production', production_order_id);
+        await sendNotification(req.db, null, 'error', '巡检不合格，工单已暂停', `工单 ${poInfo?.order_no || ''} 工序「${processInfo?.name || ''}」巡检未通过，已自动暂停生产`, 'production', production_order_id);
       }
     });
     writeLog(req.db, req.user?.id, '生产巡检', 'inspection', production_order_id, `检验结果: ${inspResult}`);
@@ -148,15 +150,16 @@ router.post('/patrol', requirePermission('inspection_create'), async (req, res) 
 // 委外加工检验
 router.get('/outsourcing', requirePermission('inspection_view'), async (req, res) => {
   try {
-    const inspections = await req.db.all(`
+    const { page = 1, pageSize = 20 } = req.query;
+    const result = await req.db.paginate(`
       SELECT oi.*, oo.order_no as outsourcing_order_no, p.name as product_name, p.code as product_code, s.name as supplier_name
       FROM outsourcing_inspections oi
       LEFT JOIN outsourcing_orders oo ON oi.outsourcing_id = oo.id
       LEFT JOIN products p ON oi.product_id = p.id
       LEFT JOIN suppliers s ON oo.supplier_id = s.id
       ORDER BY oi.created_at DESC
-    `);
-    res.json({ success: true, data: inspections });
+    `, [], parseInt(page), parseInt(pageSize));
+    res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -186,7 +189,7 @@ router.post('/outsourcing', requirePermission('inspection_create'), async (req, 
         await req.db.run("UPDATE outsourcing_orders SET status = 'inspection_failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [outsourcing_order_id]);
         // 【通知】委外检验不合格
         const ooInfo = await req.db.get('SELECT order_no FROM outsourcing_orders WHERE id = ?', [outsourcing_order_id]);
-        sendNotification(req.db, null, 'error', '委外加工检验不合格', `委外单 ${ooInfo?.order_no || ''} 检验未通过，请及时处理`, 'outsourcing', outsourcing_order_id);
+        await sendNotification(req.db, null, 'error', '委外加工检验不合格', `委外单 ${ooInfo?.order_no || ''} 检验未通过，请及时处理`, 'outsourcing', outsourcing_order_id);
       }
     });
     res.json({ success: true });
@@ -199,14 +202,15 @@ router.post('/outsourcing', requirePermission('inspection_create'), async (req, 
 // 成品检验
 router.get('/final', requirePermission('inspection_view'), async (req, res) => {
   try {
-    const inspections = await req.db.all(`
+    const { page = 1, pageSize = 20 } = req.query;
+    const result = await req.db.paginate(`
       SELECT fi.*, po.order_no as production_order_no, p.name as product_name, p.code as product_code
       FROM final_inspections fi
       LEFT JOIN production_orders po ON fi.production_order_id = po.id
       LEFT JOIN products p ON fi.product_id = p.id
       ORDER BY fi.created_at DESC
-    `);
-    res.json({ success: true, data: inspections });
+    `, [], parseInt(page), parseInt(pageSize));
+    res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });

@@ -6,6 +6,7 @@
 // 权限缓存（按 role_id 缓存，避免每次请求查库）
 const permissionCache = new Map();
 const CACHE_TTL = 60 * 1000; // 缓存 60 秒
+const CACHE_MAX_SIZE = 200;  // 最多缓存 200 个角色（防止内存无限增长）
 
 async function getPermissions(db, roleId) {
   const cached = permissionCache.get(roleId);
@@ -17,6 +18,11 @@ async function getPermissions(db, roleId) {
     [roleId]
   );
   const perms = rows.map(p => p.code);
+  // 缓存满时淘汰最早写入的条目
+  if (permissionCache.size >= CACHE_MAX_SIZE) {
+    const oldestKey = permissionCache.keys().next().value;
+    permissionCache.delete(oldestKey);
+  }
   permissionCache.set(roleId, { perms, time: Date.now() });
   return perms;
 }

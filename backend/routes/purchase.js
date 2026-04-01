@@ -88,7 +88,7 @@ router.put('/:id/status', validateId, requirePermission('purchase_edit'), async 
       
       // 【财务联动】采购完成时自动生成应付账款
       if ((status === 'completed' || status === 'received') && !alreadyProcessed && purchase) {
-        createPayable(req.db, {
+        await createPayable(req.db, {
           type: '采购应付',
           sourceType: 'purchase',
           sourceId: req.params.id,

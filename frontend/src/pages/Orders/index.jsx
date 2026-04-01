@@ -140,7 +140,7 @@ const OrderManager = () => {
   };
 
   const updateOrderStatus = async (orderId, newStatus) => {
-    const statusLabels = { confirmed: '确认订单', processing: '开始生产', completed: '完成订单', cancelled: '取消订单' };
+    const statusLabels = { confirmed: '确认订单', processing: '开始生产', cancelled: '取消订单' };
     if (!await confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
     const res = await api.put(`/orders/${orderId}/status`, { status: newStatus }, { invalidate: ['orders'] });
     if (res.success) { closeModal(); load(1, isMountedRef); }

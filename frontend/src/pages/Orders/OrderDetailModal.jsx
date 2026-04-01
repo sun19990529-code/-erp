@@ -52,7 +52,9 @@ const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProdu
                 </>
               )}
               {item?.status === 'processing' && (
-                <button onClick={() => updateOrderStatus(item.id, 'completed')} className="px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 text-sm"><i className="fas fa-check-double mr-1"></i>完成订单</button>
+                <span className="text-sm text-gray-500 italic">
+                  <i className="fas fa-info-circle mr-1"></i>订单将在所有工单完成后自动标记完成
+                </span>
               )}
             </div>
           </div>

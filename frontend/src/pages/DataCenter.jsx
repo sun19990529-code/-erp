@@ -160,7 +160,7 @@ const DataCenter = () => {
               </BarChart>
             </ResponsiveContainer>
             {financeData.length === 0 && !loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-[1px] text-gray-400">无数据</div>
+              <div className="absolute inset-0 flex items-center justify-center bg-white/90 text-gray-400">无数据</div>
             )}
           </div>
         </div>
@@ -192,7 +192,7 @@ const DataCenter = () => {
               </ComposedChart>
             </ResponsiveContainer>
             {productionData.length === 0 && !loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-[1px] text-gray-400">该区段无报工记录</div>
+              <div className="absolute inset-0 flex items-center justify-center bg-white/90 text-gray-400">该区段无报工记录</div>
             )}
           </div>
         </div>
@@ -216,7 +216,7 @@ const DataCenter = () => {
               </BarChart>
             </ResponsiveContainer>
             {inventoryData.length === 0 && !loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-[1px] text-gray-400">该区段无出入库流水</div>
+              <div className="absolute inset-0 flex items-center justify-center bg-white/90 text-gray-400">该区段无出入库流水</div>
             )}
           </div>
         </div>

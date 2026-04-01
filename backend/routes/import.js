@@ -82,7 +82,7 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
         if (!code || !name) {
           errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`);
           skipped++;
-          return;
+          continue;
         }
 
         // 支持中文和英文分类名
@@ -95,7 +95,7 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
         if (!normalizedCategory) {
           errors.push(`第 ${index + 2} 行：分类「${category}」无效（可填：原材料/半成品/成品），已跳过`);
           skipped++;
-          return;
+          continue;
         }
 
         // 去重检查
@@ -103,7 +103,7 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
         if (existing) {
           errors.push(`第 ${index + 2} 行：编码「${code}」已存在，已跳过`);
           skipped++;
-          return;
+          continue;
         }
 
         const categoryDbMap = { raw: '原材料', semi: '半成品', finished: '成品' };
@@ -135,7 +135,7 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
         );
         imported++;
       }
-    })();
+    });
 
     writeLog(req.db, req.user?.id, '批量导入产品', 'product', null, `导入 ${imported} 条，跳过 ${skipped} 条`);
     res.json({ success: true, data: { imported, skipped, total: rows.length, errors } });
@@ -162,10 +162,10 @@ router.post('/suppliers', requirePermission('basic_data_create'), upload.single(
         const row = rows[index];
         const code = (row['供应商编码*'] || row['供应商编码'] || '').toString().trim();
         const name = (row['供应商名称*'] || row['供应商名称'] || '').toString().trim();
-        if (!code || !name) { errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`); skipped++; return; }
+        if (!code || !name) { errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`); skipped++; continue; }
 
         const existing = await req.db.get('SELECT id FROM suppliers WHERE code = ? OR name = ?', [code, name]);
-        if (existing) { errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`); skipped++; return; }
+        if (existing) { errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`); skipped++; continue; }
 
         await req.db.run(
           `INSERT INTO suppliers (code, name, contact_person, phone, email, address) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -178,7 +178,7 @@ router.post('/suppliers', requirePermission('basic_data_create'), upload.single(
         );
         imported++;
       }
-    })();
+    });
 
     writeLog(req.db, req.user?.id, '批量导入供应商', 'supplier', null, `导入 ${imported} 条，跳过 ${skipped} 条`);
     res.json({ success: true, data: { imported, skipped, total: rows.length, errors } });
@@ -205,10 +205,10 @@ router.post('/customers', requirePermission('basic_data_create'), upload.single(
         const row = rows[index];
         const code = (row['客户编码*'] || row['客户编码'] || '').toString().trim();
         const name = (row['客户名称*'] || row['客户名称'] || '').toString().trim();
-        if (!code || !name) { errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`); skipped++; return; }
+        if (!code || !name) { errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`); skipped++; continue; }
 
         const existing = await req.db.get('SELECT id FROM customers WHERE code = ? OR name = ?', [code, name]);
-        if (existing) { errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`); skipped++; return; }
+        if (existing) { errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`); skipped++; continue; }
 
         await req.db.run(
           `INSERT INTO customers (code, name, contact_person, phone, email, address, credit_level) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -222,7 +222,7 @@ router.post('/customers', requirePermission('basic_data_create'), upload.single(
         );
         imported++;
       }
-    })();
+    });
 
     writeLog(req.db, req.user?.id, '批量导入客户', 'customer', null, `导入 ${imported} 条，跳过 ${skipped} 条`);
     res.json({ success: true, data: { imported, skipped, total: rows.length, errors } });

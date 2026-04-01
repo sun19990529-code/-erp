@@ -67,8 +67,10 @@ router.delete('/:id', validateId, async (req, res) => {
 });
 
 // ========== 通知发送工具函数 ==========
+const { pushWebhook, pushWebhookBatch } = require('../utils/webhook');
+
 /**
- * 发送通知给指定用户
+ * 发送通知给指定用户（站内通知 + 群机器人推送）
  * @param {object} db - 数据库实例
  * @param {number|null} userId - 目标用户ID，null 则发给所有管理员
  * @param {string} type - 通知类型：warning/info/success/error
@@ -77,22 +79,27 @@ router.delete('/:id', validateId, async (req, res) => {
  * @param {string} module - 来源模块
  * @param {number} targetId - 关联对象ID
  */
-function sendNotification(db, userId, type, title, content, module = '', targetId = null) {
+async function sendNotification(db, userId, type, title, content, module = '', targetId = null) {
   try {
+    // 1. 站内通知入库
     if (userId) {
-      db.run('INSERT INTO notifications (user_id, type, title, content, module, target_id) VALUES (?, ?, ?, ?, ?, ?)',
+      await db.run('INSERT INTO notifications (user_id, type, title, content, module, target_id) VALUES (?, ?, ?, ?, ?, ?)',
         [userId, type, title, content, module, targetId]);
     } else {
       // 发给所有管理员
-      const admins = db.all("SELECT u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.code = 'admin'");
-      admins.forEach(admin => {
-        db.run('INSERT INTO notifications (user_id, type, title, content, module, target_id) VALUES (?, ?, ?, ?, ?, ?)',
+      const admins = await db.all("SELECT u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.code = 'admin'");
+      for (const admin of admins) {
+        await db.run('INSERT INTO notifications (user_id, type, title, content, module, target_id) VALUES (?, ?, ?, ?, ?, ?)',
           [admin.id, type, title, content, module, targetId]);
-      });
+      }
     }
+    // 2. 群机器人推送（异步，不阻塞主流程）
+    pushWebhook(title, content, type).catch(e =>
+      console.error('[webhook] 群推送异常:', e.message)
+    );
   } catch (e) {
     console.error('[notifications] 发送通知失败:', e.message);
   }
 }
 
-module.exports = { router, sendNotification };
+module.exports = { router, sendNotification, pushWebhookBatch };

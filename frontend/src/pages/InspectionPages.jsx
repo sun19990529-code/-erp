@@ -16,16 +16,18 @@ import InspectionFormFields from '../components/InspectionFormFields';
 
 const InboundInspection = () => {
   const [data, setData] = useState([]);
+  const [pagination, setPagination] = useState({ total_pages: 1, current_page: 1 });
   const [inbounds, setInbounds] = useState([]);
   const [inspectedProducts, setInspectedProducts] = useState({}); // 记录已检验的产品
   const [selectedInbound, setSelectedInbound] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [modal, setModal] = useState({ open: false, item: null });
   
-  const load = () => {
-    api.get('/inspection/inbound').then(res => {
+  const load = (page = 1) => {
+    api.get(`/inspection/inbound?page=${page}`).then(res => {
       if (res.success) {
         setData(res.data);
+        setPagination(res.pagination || { total_pages: 1, current_page: 1 });
         // 构建已检验产品的映射
         const inspected = {};
         res.data.forEach(item => {
@@ -141,6 +143,11 @@ const InboundInspection = () => {
           { key: 'result', title: '结果', render: v => v === 'pass' ? <span className="text-green-600">合格</span> : v === 'fail' ? <span className="text-red-600">不合格</span> : '-' },
           { key: 'inspector', title: '检验员' }
         ]} data={data} />
+        {pagination.total_pages > 1 && (
+          <div className="p-4 border-t border-gray-100">
+            <Pagination currentPage={pagination.current_page} totalPages={pagination.total_pages} onPageChange={load} />
+          </div>
+        )}
       </div>
       <Modal isOpen={modal.open} onClose={() => { setModal({ open: false, item: null }); setSelectedInbound(null); }} title="新增入库检验" size="max-w-3xl">
         <form onSubmit={save} className="space-y-4">
@@ -206,13 +213,19 @@ const InboundInspection = () => {
 
 const PatrolInspection = () => {
   const [data, setData] = useState([]);
+  const [pagination, setPagination] = useState({ total_pages: 1, current_page: 1 });
   const [productions, setProductions] = useState([]);
   const [processes, setProcesses] = useState([]);
   const [products, setProducts] = useState([]);
   const [modal, setModal] = useState({ open: false, item: null });
   
-  const load = () => {
-    api.get('/inspection/patrol').then(res => res.success && setData(res.data));
+  const load = (page = 1) => {
+    api.get(`/inspection/patrol?page=${page}`).then(res => {
+      if (res.success) {
+        setData(res.data);
+        setPagination(res.pagination || { total_pages: 1, current_page: 1 });
+      }
+    });
     api.get('/production?status=processing').then(res => res.success && setProductions(res.data));
     api.get('/production/processes').then(res => res.success && setProcesses(res.data));
     api.get('/products').then(res => res.success && setProducts(res.data));
@@ -240,6 +253,11 @@ const PatrolInspection = () => {
           { key: 'product_name', title: '产品' }, { key: 'result', title: '结果', render: v => v === 'pass' ? <span className="text-green-600">合格</span> : v === 'fail' ? <span className="text-red-600">不合格</span> : '-' },
           { key: 'defect_count', title: '不良数' }, { key: 'inspector', title: '检验员' }
         ]} data={data} />
+        {pagination.total_pages > 1 && (
+          <div className="p-4 border-t border-gray-100">
+            <Pagination currentPage={pagination.current_page} totalPages={pagination.total_pages} onPageChange={load} />
+          </div>
+        )}
       </div>
       <Modal isOpen={modal.open} onClose={() => setModal({ open: false, item: null })} title="新增巡检">
         <form onSubmit={save} className="space-y-4">
@@ -294,13 +312,19 @@ const PatrolInspection = () => {
 
 const OutsourcingInspection = () => {
   const [data, setData] = useState([]);
+  const [pagination, setPagination] = useState({ total_pages: 1, current_page: 1 });
   const [outsourcings, setOutsourcings] = useState([]);
   const [selectedOutsourcing, setSelectedOutsourcing] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [modal, setModal] = useState({ open: false, item: null });
   
-  const load = () => {
-    api.get('/inspection/outsourcing').then(res => res.success && setData(res.data));
+  const load = (page = 1) => {
+    api.get(`/inspection/outsourcing?page=${page}`).then(res => {
+      if (res.success) {
+        setData(res.data);
+        setPagination(res.pagination || { total_pages: 1, current_page: 1 });
+      }
+    });
     api.get('/outsourcing?status=processing').then(res => res.success && setOutsourcings(res.data));
   };
   useEffect(() => { load(); }, []);
@@ -358,6 +382,11 @@ const OutsourcingInspection = () => {
           { key: 'result', title: '结果', render: v => v === 'pass' ? <span className="text-green-600">合格</span> : <span className="text-red-600">不合格</span> },
           { key: 'inspector', title: '检验员' }
         ]} data={data} />
+        {pagination.total_pages > 1 && (
+          <div className="p-4 border-t border-gray-100">
+            <Pagination currentPage={pagination.current_page} totalPages={pagination.total_pages} onPageChange={load} />
+          </div>
+        )}
       </div>
       <Modal isOpen={modal.open} onClose={() => { setModal({ open: false, item: null }); setSelectedOutsourcing(null); setSelectedProduct(null); }} title="新增委外加工检验">
         <form onSubmit={save} className="space-y-4">
@@ -402,13 +431,19 @@ const OutsourcingInspection = () => {
 
 const FinalInspection = () => {
   const [data, setData] = useState([]);
+  const [pagination, setPagination] = useState({ total_pages: 1, current_page: 1 });
   const [productions, setProductions] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedProduction, setSelectedProduction] = useState(null);
   const [modal, setModal] = useState({ open: false, item: null });
   
-  const load = () => {
-    api.get('/inspection/final').then(res => res.success && setData(res.data));
+  const load = (page = 1) => {
+    api.get(`/inspection/final?page=${page}`).then(res => {
+      if (res.success) {
+        setData(res.data);
+        setPagination(res.pagination || { total_pages: 1, current_page: 1 });
+      }
+    });
     api.get('/production?status=processing').then(res => res.success && setProductions(res.data));
     api.get('/products?category=成品').then(res => res.success && setProducts(res.data));
   };
@@ -458,6 +493,11 @@ const FinalInspection = () => {
           { key: 'result', title: '结果', render: v => v === 'pass' ? <span className="text-green-600">合格</span> : <span className="text-red-600">不合格</span> },
           { key: 'inspector', title: '检验员' }
         ]} data={data} />
+        {pagination.total_pages > 1 && (
+          <div className="p-4 border-t border-gray-100">
+            <Pagination currentPage={pagination.current_page} totalPages={pagination.total_pages} onPageChange={load} />
+          </div>
+        )}
       </div>
       <Modal isOpen={modal.open} onClose={() => { setModal({ open: false, item: null }); setSelectedProduction(null); }} title="新增成品检验">
         <form onSubmit={save} className="space-y-4">

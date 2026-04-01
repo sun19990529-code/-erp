@@ -286,6 +286,43 @@ async function updateOrderProgress(db, orderId, completedProductionId) {
   const newStatus = avgProgress >= 100 ? 'completed' : avgProgress > 0 ? 'processing' : 'pending';
   await db.run('UPDATE orders SET progress = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
     [avgProgress, newStatus, orderId]);
+
+  // 【修复】订单完成时自动创建成品出库单（与 production.js 逻辑一致）
+  if (newStatus === 'completed') {
+    const existingOutbound = await db.get(`SELECT * FROM outbound_orders WHERE order_id = ? AND type = 'finished'`, [orderId]);
+    if (!existingOutbound) {
+      const order = await db.get('SELECT * FROM orders WHERE id = ?', [orderId]);
+      const warehouse = await db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
+      if (order && warehouse) {
+        const orderItems = await db.all('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
+        if (orderItems.length > 0) {
+          // 检查库存是否充足
+          let stockOk = true;
+          for (const item of orderItems) {
+            const inv = await db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [warehouse.id, item.product_id]);
+            if (!inv || inv.total < item.quantity) { stockOk = false; break; }
+          }
+          if (stockOk) {
+            const outNo = generateOrderNo('OUT');
+            const outResult = await db.run(`INSERT INTO outbound_orders (order_no, type, warehouse_id, order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
+              [outNo, warehouse.id, orderId, `订单完成自动出库 - 销售订单: ${order.order_no}`]);
+            const outboundId = outResult.lastInsertRowid;
+            for (const item of orderItems) {
+              let remaining = item.quantity;
+              const batches = await db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [warehouse.id, item.product_id]);
+              for (const batch of batches) {
+                if (remaining <= 0) break;
+                const deduct = Math.min(remaining, batch.quantity);
+                await db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
+                await db.run(`INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, ?)`, [outboundId, item.product_id, batch.batch_no, deduct, item.unit_price || 0]);
+                remaining -= deduct;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 

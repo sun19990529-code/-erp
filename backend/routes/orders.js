@@ -5,7 +5,6 @@ const { requirePermission } = require('../middleware/permission');
 const { validate, validateId } = require('../middleware/validate');
 const { orderCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
-const { createReceivable } = require('./finance');
 
 // ==================== 订单管理 ====================
 router.get('/', requirePermission('order_view'), async (req, res) => {
@@ -75,10 +74,10 @@ router.post('/', requirePermission('order_create'), validate(orderCreate), async
 router.put('/:id/status', validateId, requirePermission('order_edit'), async (req, res) => {
   try {
     const { status } = req.body;
-    // 【安全】状态值白名单校验
-    const validStatuses = ['pending', 'confirmed', 'processing', 'completed', 'shipped', 'cancelled'];
+    // 【安全】状态值白名单校验（completed 和 shipped 由系统自动管理，不允许手动设置）
+    const validStatuses = ['pending', 'confirmed', 'processing', 'cancelled'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
+      return res.status(400).json({ success: false, message: `非法状态值: ${status}。订单完成和发货由系统自动管理。` });
     }
     const orderId = req.params.id;
     
@@ -89,7 +88,7 @@ router.put('/:id/status', validateId, requirePermission('order_edit'), async (re
           const items = await req.db.all('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
           for (const item of items) {
             const existing = await req.db.get('SELECT id FROM production_orders WHERE order_id = ? AND product_id = ?', [orderId, item.product_id]);
-            if (existing) return;
+            if (existing) continue;
             const poNo = generateOrderNo('PO');
             const result = await req.db.run(`INSERT INTO production_orders (order_no, order_id, product_id, quantity, remark, status) VALUES (?, ?, ?, ?, ?, 'pending')`,
               [poNo, orderId, item.product_id, item.quantity, '订单自动生成']);
@@ -102,21 +101,6 @@ router.put('/:id/status', validateId, requirePermission('order_edit'), async (re
         }
       }
       await req.db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, orderId]);
-      
-      // 【财务联动】订单发货时自动生成应收账款
-      if (status === 'shipped') {
-        const order = await req.db.get('SELECT * FROM orders WHERE id = ?', [orderId]);
-        if (order && order.total_amount > 0) {
-          await createReceivable(req.db, {
-            type: '销售应收',
-            sourceType: 'order',
-            sourceId: orderId,
-            customerId: order.customer_id,
-            amount: order.total_amount,
-            remark: `订单 ${order.order_no} 发货自动生成`
-          });
-        }
-      }
     });
     res.json({ success: true });
   } catch (error) {

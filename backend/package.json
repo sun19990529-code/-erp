@@ -1,6 +1,6 @@
 {
   "name": "mingsheng-management-system",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "铭晟管理系统",
   "main": "server.js",
   "scripts": {

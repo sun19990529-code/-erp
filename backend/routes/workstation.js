@@ -171,6 +171,8 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
     const poId = parseInt(req.params.poId);
     const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [poId]);
     if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
+    if (production.status === 'quality_hold') return res.status(400).json({ success: false, message: '该工单已被质检暂停，请处理质量问题后再报工' });
+    if (['completed', 'cancelled'].includes(production.status)) return res.status(400).json({ success: false, message: `该工单状态为「${production.status}」，无法报工` });
 
     await req.db.transaction(async () => {
       // 更新工序记录
@@ -216,7 +218,7 @@ router.post('/screen/:code/:poId/inspect', async (req, res) => {
       if (inspResult === 'fail') {
         await req.db.run("UPDATE production_orders SET status = 'quality_hold', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'processing'", [poId]);
         const processInfo = await req.db.get('SELECT name FROM processes WHERE id = ?', [station.pid]);
-        sendNotification(req.db, null, 'error', '工位巡检不合格',
+        await sendNotification(req.db, null, 'error', '工位巡检不合格',
           `工位 ${station.name} 工单 ${production.order_no} 工序「${processInfo?.name || ''}」巡检未通过`, 'production', poId);
       }
     });

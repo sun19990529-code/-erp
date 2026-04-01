@@ -6,6 +6,7 @@ const { inboundCreate, outboundCreate, transferCreate } = require('../validators
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
 const { convertToKg } = require('../utils/unit-convert');
+const { createReceivable } = require('./finance');
 
 
 // ==================== 仓库 ====================
@@ -201,7 +202,12 @@ router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'
 router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     const { warehouse_id, supplier_id, operator, remark, items } = req.body;
-    
+    // 【安全】禁止编辑已入库的单据（库存已变动）
+    const existingOrder = await req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
+    if (!existingOrder) return res.status(404).json({ success: false, message: '入库单不存在' });
+    if (existingOrder.status === 'completed' || existingOrder.status === 'approved') {
+      return res.status(400).json({ success: false, message: '已入库的单据不能修改，如需调整请创建新单据' });
+    }
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
     for (const id of productIds) {
@@ -210,8 +216,7 @@ router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), asyn
     }
     
     await req.db.transaction(async () => {
-      const existingOrder = await req.db.get('SELECT order_no FROM inbound_orders WHERE id = ?', [req.params.id]);
-      const baseOrderNo = existingOrder ? existingOrder.order_no : `MOD-${req.params.id}`;
+      const baseOrderNo = existingOrder.order_no || `MOD-${req.params.id}`;
       
       await req.db.run('UPDATE inbound_orders SET warehouse_id = ?, supplier_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [warehouse_id, supplier_id || null, operator, remark, req.params.id]);
@@ -387,9 +392,23 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
             [item.quantity, order.warehouse_id, item.product_id, batch]);
         }
         
-        // 【改进#6】成品出库完成后更新关联订单为已发货
+        // 【改进#6】成品出库完成后更新关联订单为已发货 + 生成应收账款
         if (order.type === 'finished' && order.order_id) {
-          await req.db.run("UPDATE orders SET status = 'shipped', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'completed'", [order.order_id]);
+          const salesOrder = await req.db.get('SELECT * FROM orders WHERE id = ?', [order.order_id]);
+          if (salesOrder && salesOrder.status === 'completed') {
+            await req.db.run("UPDATE orders SET status = 'shipped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.order_id]);
+            // 财务联动：自动生成应收账款
+            if (salesOrder.total_amount > 0) {
+              await createReceivable(req.db, {
+                type: '销售应收',
+                sourceType: 'order',
+                sourceId: order.order_id,
+                customerId: salesOrder.customer_id,
+                amount: salesOrder.total_amount,
+                remark: `订单 ${salesOrder.order_no} 发货自动生成`
+              });
+            }
+          }
         }
       }
       await req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
@@ -407,7 +426,12 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
 router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     const { warehouse_id, order_id, operator, remark, items } = req.body;
-    
+    // 【安全】禁止编辑已出库的单据（库存已变动）
+    const existingOrder = await req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
+    if (!existingOrder) return res.status(404).json({ success: false, message: '出库单不存在' });
+    if (existingOrder.status === 'completed' || existingOrder.status === 'approved') {
+      return res.status(400).json({ success: false, message: '已出库的单据不能修改' });
+    }
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
     for (const id of productIds) {

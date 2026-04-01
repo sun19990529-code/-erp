@@ -173,12 +173,17 @@ if (!process.env.JWT_SECRET) {
 }
 const whiteList = ['/api/users/login', '/api/users/refresh'];
 const screenWhitePrefix = '/api/workstation/screen/';
+const botWhitePrefix = '/api/bot/';  // 机器人回调免鉴权
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api') || whiteList.includes(req.path)) {
     return next();
   }
   if (req.method === 'GET' && req.path.startsWith(screenWhitePrefix)) {
+    return next();
+  }
+  // 机器人回调接口免鉴权
+  if (req.path.startsWith(botWhitePrefix)) {
     return next();
   }
   const authHeader = req.headers.authorization;
@@ -244,6 +249,9 @@ app.use('/api/workstation', workstationRoutes);
 const printTemplateRoutes = require('./routes/printTemplate');
 app.use('/api/print-templates', printTemplateRoutes);
 
+const { router: botRoutes, queryProductionSummary } = require('./routes/bot');
+app.use('/api/bot', botRoutes);
+
 // ==================== 全局错误处理中间件 ====================
 app.use((err, req, res, next) => {
   console.error('[GlobalError]', err.stack || err.message);
@@ -268,6 +276,37 @@ async function startServer() {
 
   // 启动自动备份（PostgreSQL 模式下使用 pg_dump）
   startAutoBackup(() => pool, saveDatabase);
+
+  // 定时生产日报推送（每天 8:00）
+  const { pushWebhook } = require('./utils/webhook');
+  function scheduleDailyReport() {
+    const now = new Date();
+    const next8am = new Date(now);
+    next8am.setHours(8, 0, 0, 0);
+    if (now >= next8am) next8am.setDate(next8am.getDate() + 1);
+    const delay = next8am.getTime() - now.getTime();
+    setTimeout(async () => {
+      try {
+        const report = await queryProductionSummary(dbHelper);
+        await pushWebhook(report.title, report.content, 'info');
+        console.log('[日报] 生产日报已推送');
+      } catch (e) {
+        console.error('[日报] 推送失败:', e.message);
+      }
+      // 设置下一次（24小时后）
+      setInterval(async () => {
+        try {
+          const report = await queryProductionSummary(dbHelper);
+          await pushWebhook(report.title, report.content, 'info');
+          console.log('[日报] 生产日报已推送');
+        } catch (e) {
+          console.error('[日报] 推送失败:', e.message);
+        }
+      }, 24 * 60 * 60 * 1000);
+    }, delay);
+    console.log(`生产日报定时推送已启动，下次推送: ${next8am.toLocaleString()}`);
+  }
+  scheduleDailyReport();
 
   setupSwagger(app);
 
