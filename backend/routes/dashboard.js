@@ -13,7 +13,7 @@ router.get('/', requirePermission('dashboard_view'), async (req, res) => {
       SELECT p.name, p.code, p.unit, p.min_stock as alert_threshold, SUM(COALESCE(i.quantity, 0)) as quantity 
       FROM products p 
       LEFT JOIN inventory i ON i.product_id = p.id 
-      WHERE p.status = 1
+      WHERE p.status = 1 AND (p.is_deleted IS NULL OR p.is_deleted = 0)
       GROUP BY p.id, p.name, p.code, p.unit, p.min_stock
       HAVING p.min_stock > 0 AND SUM(COALESCE(i.quantity, 0)) < p.min_stock
     `);

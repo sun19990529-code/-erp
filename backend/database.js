@@ -121,6 +121,7 @@ function createTablesIfNotExist(db) {
     checkAndAddCol('inbound_orders', 'production_order_id', "ALTER TABLE inbound_orders ADD COLUMN production_order_id INTEGER REFERENCES production_orders(id);");
     checkAndAddCol('inbound_orders', 'purchase_order_id', "ALTER TABLE inbound_orders ADD COLUMN purchase_order_id INTEGER REFERENCES purchase_orders(id);");
     checkAndAddCol('production_orders', 'material_ready', "ALTER TABLE production_orders ADD COLUMN material_ready INTEGER DEFAULT 0;");
+    checkAndAddCol('production_orders', 'scrap_value', "ALTER TABLE production_orders ADD COLUMN scrap_value REAL DEFAULT 0;");
     checkAndAddCol('products', 'material_category_id', "ALTER TABLE products ADD COLUMN material_category_id INTEGER REFERENCES material_categories(id);");
     
     // 调拨功能：出库单增加目标仓库字段
@@ -226,6 +227,13 @@ function createIndexesIfNotExist(db) {
     { name: 'idx_outbound_target_warehouse', sql: 'CREATE INDEX IF NOT EXISTS idx_outbound_target_warehouse ON outbound_orders(target_warehouse_id)' },
     { name: 'idx_inbound_order_no', sql: 'CREATE INDEX IF NOT EXISTS idx_inbound_order_no ON inbound_orders(order_no)' },
     { name: 'idx_inventory_batch', sql: 'CREATE INDEX IF NOT EXISTS idx_inventory_batch ON inventory(batch_no)' },
+    
+    // 全链路溯源核心高频索引补充 (v1.7.2)
+    { name: 'idx_pick_orders_production', sql: 'CREATE INDEX IF NOT EXISTS idx_pick_orders_production ON pick_orders(production_order_id)' },
+    { name: 'idx_pick_items_batch', sql: 'CREATE INDEX IF NOT EXISTS idx_pick_items_batch ON pick_items(batch_no)' },
+    { name: 'idx_inbound_items_batch', sql: 'CREATE INDEX IF NOT EXISTS idx_inbound_items_batch ON inbound_items(batch_no)' },
+    { name: 'idx_outbound_items_batch', sql: 'CREATE INDEX IF NOT EXISTS idx_outbound_items_batch ON outbound_items(batch_no)' },
+    { name: 'idx_pmc_batch', sql: 'CREATE INDEX IF NOT EXISTS idx_pmc_batch ON production_material_consumption(batch_no)' },
   ];
   
   indexes.forEach(idx => {

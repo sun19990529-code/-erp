@@ -25,7 +25,8 @@ function createCRUDRouter(config) {
     searchFields = [],
     checkRelations = [],
     hasTimestamps = true,
-    permissionPrefix
+    permissionPrefix,
+    softDelete = false
   } = config;
 
   if (!ALLOWED_TABLES.includes(table)) {
@@ -35,10 +36,11 @@ function createCRUDRouter(config) {
   // 权限中间件：有 permissionPrefix 时自动挂载，否则跳过
   const perm = (action) => permissionPrefix ? requirePermission(`${permissionPrefix}_${action}`) : (req, res, next) => next();
 
-  // 列表
+  // 列表（软删除时自动过滤已标记记录）
   router.get('/', perm('view'), async (req, res) => {
     try {
-      const data = await req.db.all(`SELECT * FROM ${table} ORDER BY ${orderBy}`);
+      const whereClause = softDelete ? 'WHERE (is_deleted IS NULL OR is_deleted = 0)' : '';
+      const data = await req.db.all(`SELECT * FROM ${table} ${whereClause} ORDER BY ${orderBy}`);
       res.json({ success: true, data });
     } catch (error) {
       console.error(`[crud-${table}]`, error.message);
@@ -58,7 +60,7 @@ function createCRUDRouter(config) {
       res.json({ success: true, data: { id: info.lastInsertRowid } });
     } catch (error) {
       console.error(`[crud-${table}]`, error.message);
-      if (error.message && error.message.includes('UNIQUE')) {
+      if (error.code === '23505') {
         return res.status(400).json({ success: false, message: '编码已存在' });
       }
       res.status(500).json({ success: false, message: '服务器错误' });
@@ -94,14 +96,14 @@ function createCRUDRouter(config) {
       res.json({ success: true });
     } catch (error) {
       console.error(`[crud-${table}]`, error.message);
-      if (error.message && error.message.includes('UNIQUE')) {
+      if (error.code === '23505') {
         return res.status(400).json({ success: false, message: '编码已存在' });
       }
       res.status(500).json({ success: false, message: '服务器错误' });
     }
   });
 
-  // 删除（带级联保护）
+  // 删除（带级联保护 + 软删除支持）
   router.delete('/:id', validateId, perm('delete'), async (req, res) => {
     try {
       // 检查关联关系
@@ -111,7 +113,12 @@ function createCRUDRouter(config) {
           return res.status(400).json({ success: false, message: rel.message || `该记录已被其他数据引用，无法删除` });
         }
       }
-      await req.db.run(`DELETE FROM ${table} WHERE id = ?`, [req.params.id]);
+      if (softDelete) {
+        // 软删除：仅标记，保留记录以供历史单据关联查询
+        await req.db.run(`UPDATE ${table} SET is_deleted = 1${hasTimestamps ? ', updated_at = CURRENT_TIMESTAMP' : ''} WHERE id = ?`, [req.params.id]);
+      } else {
+        await req.db.run(`DELETE FROM ${table} WHERE id = ?`, [req.params.id]);
+      }
       res.json({ success: true });
     } catch (error) {
       console.error(`[crud-${table}]`, error.message);

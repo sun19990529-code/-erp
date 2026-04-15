@@ -23,7 +23,7 @@ router.get('/', requirePermission('basic_data_view'), async (req, res) => {
         (SELECT COUNT(*) FROM product_processes pp WHERE pp.product_id = p.id) as process_count
       FROM products p
       LEFT JOIN suppliers s ON p.supplier_id = s.id
-      WHERE 1=1
+      WHERE (p.is_deleted IS NULL OR p.is_deleted = 0)
     `;
     const params = [];
     if (category) {
@@ -139,14 +139,8 @@ router.delete('/:id', validateId, requirePermission('basic_data_delete'), async 
     if (invCount && invCount.count > 0) {
       return res.status(400).json({ success: false, message: '该产品有库存记录，无法删除' });
     }
-    await req.db.transaction(async () => {
-      await req.db.run('DELETE FROM product_suppliers WHERE product_id = ?', [req.params.id]);
-      await req.db.run('DELETE FROM product_customers WHERE product_id = ?', [req.params.id]);
-      await req.db.run('DELETE FROM product_bound_materials WHERE product_id = ?', [req.params.id]);
-      await req.db.run('DELETE FROM process_materials WHERE product_process_id IN (SELECT id FROM product_processes WHERE product_id = ?)', [req.params.id]);
-      await req.db.run('DELETE FROM product_processes WHERE product_id = ?', [req.params.id]);
-      await req.db.run('DELETE FROM products WHERE id = ?', [req.params.id]);
-    });
+    // 软删除：仅标记为已删除，保留产品记录以供历史单据关联查询
+    await req.db.run('UPDATE products SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
     console.error(`[products.js]`, error.message);
@@ -236,6 +230,7 @@ router.get('/:id/process-materials', validateId, requirePermission('basic_data_v
       SELECT pm.*, pp.sequence as process_sequence, pp.process_id,
         p.name as material_name, p.code as material_code,
         p.unit as material_unit, p.category as material_category,
+        p.outer_diameter, p.wall_thickness, p.length,
         pr.name as process_name
       FROM process_materials pm
       JOIN product_processes pp ON pm.product_process_id = pp.id

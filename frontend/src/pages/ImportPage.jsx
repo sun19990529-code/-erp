@@ -14,19 +14,10 @@ const ImportPage = () => {
     { id: 'customers', label: '客户', icon: 'fa-users', desc: '导入客户名称、联系人、电话等' }
   ];
 
-  const getAuthToken = () => {
-    try {
-      const saved = localStorage.getItem('erp_user_auth');
-      if (saved) { const { user } = JSON.parse(saved); return user?.token || null; }
-    } catch { /* ignore */ }
-    return null;
-  };
-
   const downloadTemplate = async () => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/import/template?type=${activeType}`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        credentials: 'include'
       });
       if (!res.ok) throw new Error('下载失败');
       const blob = await res.blob();
@@ -54,10 +45,9 @@ const ImportPage = () => {
     formData.append('file', file);
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/import/${activeType}`, {
         method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        credentials: 'include',
         body: formData
       });
       const data = await res.json();

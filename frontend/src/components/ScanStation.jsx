@@ -1,37 +1,79 @@
 import React, { useState } from 'react';
 import { useScanner } from '../hooks/useScanner';
+import NumberKeypad from './NumberKeypad';
+import { parseBarcode } from '../utils/barcodeParser';
 
 const ScanStation = ({ onActiveMenuChange }) => {
   const [scanLog, setScanLog] = useState([]);
+  
+  // 大键盘弹窗控制
+  const [isKeypadOpen, setIsKeypadOpen] = useState(false);
+  const [keypadTitle, setKeypadTitle] = useState('');
+  const [pendingItemCode, setPendingItemCode] = useState('');
+
   const handleScan = (code) => {
-    if (code) {
-      setScanLog(prev => [{ time: new Date().toLocaleTimeString(), code }, ...prev].slice(0, 20));
-      if (code.startsWith('PO-')) {
-        onActiveMenuChange('production-orders');
-        setTimeout(() => window.__toast?.warning(`扫码识别为生产工单: ${code}，已跳转！`), 100);
-      } else if (code.startsWith('IN-')) {
-        onActiveMenuChange('inbound');
-        setTimeout(() => window.__toast?.warning(`扫码识别为入库单: ${code}，已跳转！`), 100);
-      } else {
-        // 识别工位二维码 URL
-        const wsMatch = code.match(/\/ws\/([A-Za-z0-9_-]+)/);
-        if (wsMatch) {
-          window.open(`/ws/${wsMatch[1]}`, '_blank');
-          setTimeout(() => window.__toast?.success(`识别到工位码: ${wsMatch[1]}，已打开工位屏幕`), 100);
+    if (!code) return;
+    
+    // 调用智能解析器
+    const parsed = parseBarcode(code);
+    
+    if (parsed.type === 'composite') {
+        const { product_code, batch_no, heat_no, quantity } = parsed;
+        const displayLabel = `物料 ${product_code} / 炉号 ${heat_no || batch_no}`;
+        
+        if (quantity !== null && quantity !== undefined) {
+             // 分支A：标签已自带重量，一秒免输直接入账
+             setScanLog(prev => [{ 
+                 time: new Date().toLocaleTimeString(), 
+                 code: `[极速入库] ${displayLabel}，重量: ${quantity} (自动解析)` 
+             }, ...prev].slice(0, 20));
+             window.__toast?.success(`复合条码解析成功并入口：${quantity}`);
         } else {
-          try {
-            const parsed = JSON.parse(code);
-            if(parsed.type === 'product') {
-               onActiveMenuChange('inventory');
-               setTimeout(() => window.__toast?.warning(`识别到物料编码: ${parsed.id}，进入库存检索`), 100);
-            }
-          } catch(err) { 
-            // 如果解析 JSON 失败，可能只是一串原生字符
-            window.__toast?.info(`已扫描条码: ${code}`);
-          }
+             // 分支B：只有炉号等业务字段，没有重量，呼唤大键盘补全
+             setScanLog(prev => [{ 
+                 time: new Date().toLocaleTimeString(), 
+                 code: `[扫码] ${displayLabel} (等待录入重量)` 
+             }, ...prev].slice(0, 20));
+             
+             // 这里可以将 pendingItemCode 设定为更加丰富的上下文以便后续利用
+             setPendingItemCode(code); // 这里存原始码，后续可以改为存对象
+             setKeypadTitle(`请输入 [${product_code}] 炉号 [${heat_no || '-'}] 的实际称重/数量`);
+             setIsKeypadOpen(true);
+             window.__toast?.info(`已扫描，等待确认重量`);
         }
-      }
+    } else if (parsed.type === 'production_order') {
+        onActiveMenuChange('production-orders');
+        setScanLog(prev => [{ time: new Date().toLocaleTimeString(), code: `[打开工单] ${parsed.id}` }, ...prev].slice(0, 20));
+        setTimeout(() => window.__toast?.warning(`扫码识别为生产工单: ${parsed.id}，已跳转！`), 100);
+    } else if (parsed.type === 'inbound_order') {
+        onActiveMenuChange('inbound');
+        setScanLog(prev => [{ time: new Date().toLocaleTimeString(), code: `[打开单据] ${parsed.id}` }, ...prev].slice(0, 20));
+        setTimeout(() => window.__toast?.warning(`扫码识别为入库单: ${parsed.id}，已跳转！`), 100);
+    } else if (parsed.type === 'workstation') {
+        setScanLog(prev => [{ time: new Date().toLocaleTimeString(), code: `[登入终端] ${parsed.station_id}` }, ...prev].slice(0, 20));
+        window.open(`/ws/${parsed.station_id}`, '_blank');
+        setTimeout(() => window.__toast?.success(`识别到工位码: ${parsed.station_id}，已打开工位屏幕`), 100);
+    } else if (parsed.type === 'product') {
+        onActiveMenuChange('inventory');
+        setScanLog(prev => [{ time: new Date().toLocaleTimeString(), code: `[查看库存] ${parsed.product_code}` }, ...prev].slice(0, 20));
+        setTimeout(() => window.__toast?.warning(`识别到物料编码: ${parsed.product_code}，进入库存检索`), 100);
+    } else {
+        // 兜底分支：传统单维码（比如直接就是一个钢管编号 MAT-123）
+        setPendingItemCode(parsed.raw);
+        setKeypadTitle(`请输入物料 [${parsed.raw}] 的实际称重或数量`);
+        setIsKeypadOpen(true);
+        setScanLog(prev => [{ time: new Date().toLocaleTimeString(), code: `[扫码] ${parsed.raw} (等待数量录入)` }, ...prev].slice(0, 20));
     }
+  };
+
+  const handleKeypadConfirm = (value) => {
+    // 将最终录入的数量追加到操作日志作为沙盘推演完成
+    setScanLog(prev => [{ 
+      time: new Date().toLocaleTimeString(), 
+      code: `[完成录入] 物料 ${pendingItemCode} → ${value} (kg/件)` 
+    }, ...prev].slice(0, 20));
+    setIsKeypadOpen(false);
+    window.__toast?.success(`已确认录入: ${value}`);
   };
 
   // 挂载 PDA 全局防抖扫码监听器
@@ -72,6 +114,14 @@ const ScanStation = ({ onActiveMenuChange }) => {
           )}
         </div>
       </div>
+
+      {/* 挂载大数字键盘 (Scan & Input) */}
+      <NumberKeypad 
+        isOpen={isKeypadOpen}
+        title={keypadTitle}
+        onClose={() => setIsKeypadOpen(false)}
+        onConfirm={handleKeypadConfirm}
+      />
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import Modal from '../components/Modal';
+import { formatAmount } from '../utils/format';
 import Pagination from '../components/Pagination';
 
 const FinancePages = ({ type = 'payable' }) => {
@@ -31,7 +32,9 @@ const FinancePages = ({ type = 'payable' }) => {
   useEffect(() => { load(); }, [type]);
 
   const openPay = async (item) => {
-    setModal({ open: true, item, amount: '' });
+    const paid = isPayable ? (item.paid_amount || 0) : (item.received_amount || 0);
+    const remaining = Math.round((item.amount - paid) * 100) / 100;
+    setModal({ open: true, item, amount: remaining > 0 ? remaining : '' });
     // 加载该单的付款记录
     const param = isPayable ? `payable_id=${item.id}` : `receivable_id=${item.id}`;
     const res = await api.get(`/finance/payment-records?${param}`);
@@ -93,11 +96,11 @@ const FinancePages = ({ type = 'payable' }) => {
           </div>
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <div className="text-gray-500 text-xs font-medium uppercase mb-1">已{isPayable ? '付款' : '收款'}</div>
-            <div className="text-2xl font-bold text-green-600">¥{((isPayable ? overview.paid : overview.received) || 0).toLocaleString()}</div>
+            <div className="text-2xl font-bold text-green-600">¥{formatAmount((isPayable ? overview.paid : overview.received) || 0)}</div>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <div className="text-gray-500 text-xs font-medium uppercase mb-1">未{isPayable ? '付' : '收'}余额</div>
-            <div className="text-2xl font-bold text-red-600">¥{(unpaidInfo?.amount || 0).toLocaleString()}</div>
+            <div className="text-2xl font-bold text-red-600">¥{formatAmount(unpaidInfo?.amount || 0)}</div>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <div className="text-gray-500 text-xs font-medium uppercase mb-1">待处理笔数</div>
@@ -136,9 +139,9 @@ const FinancePages = ({ type = 'payable' }) => {
                   <td className="px-4 py-3 text-sm font-mono text-teal-600 font-medium">{item.order_no}</td>
                   <td className="px-4 py-3 text-sm font-medium">{isPayable ? item.supplier_name : item.customer_name || '-'}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">{item.type}</td>
-                  <td className="px-4 py-3 text-sm text-right font-mono font-bold">¥{(item.amount || 0).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm text-right font-mono text-green-600">¥{(paid || 0).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm text-right font-mono text-red-600 font-bold">¥{remaining.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-sm text-right font-mono font-bold">¥{formatAmount(item.amount || 0)}</td>
+                  <td className="px-4 py-3 text-sm text-right font-mono text-green-600">¥{formatAmount(paid || 0)}</td>
+                  <td className="px-4 py-3 text-sm text-right font-mono text-red-600 font-bold">¥{formatAmount(remaining)}</td>
                   <td className="px-4 py-3 text-sm">
                     <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${statusColor[item.status] || 'bg-gray-100 text-gray-600'}`}>
                       {statusMap[item.status] || item.status}
@@ -172,9 +175,9 @@ const FinancePages = ({ type = 'payable' }) => {
           <div className="space-y-4">
             <div className="bg-gray-50 rounded-lg p-4 text-sm grid grid-cols-2 gap-3">
               <div><span className="text-gray-500">{isPayable ? '供应商' : '客户'}：</span><span className="font-medium">{isPayable ? modal.item.supplier_name : modal.item.customer_name}</span></div>
-              <div><span className="text-gray-500">总金额：</span><span className="font-bold">¥{(modal.item.amount || 0).toFixed(2)}</span></div>
-              <div><span className="text-gray-500">已{isPayable ? '付' : '收'}：</span><span className="text-green-600 font-medium">¥{((isPayable ? modal.item.paid_amount : modal.item.received_amount) || 0).toFixed(2)}</span></div>
-              <div><span className="text-gray-500">余额：</span><span className="text-red-600 font-bold">¥{(modal.item.amount - ((isPayable ? modal.item.paid_amount : modal.item.received_amount) || 0)).toFixed(2)}</span></div>
+              <div><span className="text-gray-500">总金额：</span><span className="font-bold">¥{formatAmount(modal.item.amount || 0)}</span></div>
+              <div><span className="text-gray-500">已{isPayable ? '付' : '收'}：</span><span className="text-green-600 font-medium">¥{formatAmount((isPayable ? modal.item.paid_amount : modal.item.received_amount) || 0)}</span></div>
+              <div><span className="text-gray-500">余额：</span><span className="text-red-600 font-bold">¥{formatAmount(modal.item.amount - ((isPayable ? modal.item.paid_amount : modal.item.received_amount) || 0))}</span></div>
             </div>
             
             {/* 历史记录 */}
@@ -185,7 +188,7 @@ const FinancePages = ({ type = 'payable' }) => {
                   {payRecords.map(r => (
                     <div key={r.id} className="flex justify-between items-center bg-gray-50 rounded px-3 py-2 text-sm">
                       <span className="text-gray-500">{r.created_at?.slice(0, 16)}</span>
-                      <span className="font-mono text-green-600 font-bold">¥{(r.amount || 0).toFixed(2)}</span>
+                      <span className="font-mono text-green-600 font-bold">¥{formatAmount(r.amount || 0)}</span>
                       <span className="text-gray-400 text-xs">{r.payment_method === 'bank' ? '银行转账' : r.payment_method === 'cash' ? '现金' : r.payment_method || '-'}</span>
                     </div>
                   ))}
@@ -197,8 +200,17 @@ const FinancePages = ({ type = 'payable' }) => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{isPayable ? '付款' : '收款'}金额 *</label>
-                  <input name="amount" type="number" step="0.01" required className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    placeholder="输入金额" max={modal.item.amount - (isPayable ? modal.item.paid_amount : modal.item.received_amount || 0)} />
+                  <div className="flex gap-2">
+                    <input name="amount" type="number" step="0.01" required className="flex-1 border border-gray-300 rounded-lg px-3 py-2"
+                      defaultValue={modal.amount || ''} placeholder="输入金额" max={modal.item.amount - (isPayable ? modal.item.paid_amount : modal.item.received_amount || 0)} key={modal.item?.id} />
+                    <button type="button" onClick={(e) => {
+                      const remaining = Math.round((modal.item.amount - ((isPayable ? modal.item.paid_amount : modal.item.received_amount) || 0)) * 100) / 100;
+                      const input = e.target.closest('.flex').querySelector('input[name="amount"]');
+                      if (input) { const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; setter.call(input, remaining); input.dispatchEvent(new Event('input', { bubbles: true })); }
+                    }} className="px-2.5 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 text-xs whitespace-nowrap font-medium" title="一键填入全部余额">
+                      全额
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">方式</label>

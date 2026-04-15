@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
+import { formatAmount, formatQuantity } from '../utils/format';
 import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
 import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
@@ -12,6 +13,7 @@ import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import { useConfirm } from '../components/ConfirmModal';
 import OperatorSelect from '../components/OperatorSelect';
+import OutsourcingFormModal from '../components/OutsourcingFormModal';
 
 const OutsourcingManager = () => {
   const [data, setData] = useState([]);
@@ -30,16 +32,27 @@ const OutsourcingManager = () => {
   };
   
   // 初始化数据只加载一次
-  useEffect(() => {
-    api.get('/suppliers').then(res => res.success && setSuppliers(res.data));
-    api.get('/products').then(res => res.success && setProducts(res.data));
-    api.get('/production/processes').then(res => res.success && setProcesses(res.data));
-  }, []);
+  const loadStatic = async () => {
+    const [sRes, pRes, procRes] = await Promise.all([
+      api.get('/suppliers'),
+      api.get('/products'),
+      api.get('/production/processes')
+    ]);
+    if (sRes.success) setSuppliers(sRes.data);
+    if (pRes.success) setProducts(pRes.data);
+    if (procRes.success) setProcesses(procRes.data);
+  };
+  useEffect(() => { loadStatic(); }, []);
 
-  const load = () => {
-    api.get('/outsourcing').then(res => res.success && setData(res.data));
-    api.get('/production?status=processing').then(res => res.success && setProductions(res.data));
-    api.get('/outsourcing/pending').then(res => res.success && setPendingOutsourcing(res.data));
+  const load = async () => {
+    const [oRes, prodRes, penRes] = await Promise.all([
+      api.get('/outsourcing'),
+      api.get('/production?status=processing'),
+      api.get('/outsourcing/pending')
+    ]);
+    if (oRes.success) setData(oRes.data);
+    if (prodRes.success) setProductions(prodRes.data);
+    if (penRes.success) setPendingOutsourcing(penRes.data);
   };
   useEffect(() => { load(); }, []);
   
@@ -65,7 +78,7 @@ const OutsourcingManager = () => {
   };
   
   const openCreate = () => {
-    setModal({ open: true, item: null, items: [{ product_id: '', quantity: 1 }], mode: 'create' });
+    setModal({ open: true, item: null, items: [{ product_id: '', quantity: 1, unit_price: '' }], mode: 'create' });
   };
   
   // 从待委外列表快速创建
@@ -73,7 +86,7 @@ const OutsourcingManager = () => {
     setModal({ 
       open: true, 
       item: null, 
-      items: [{ product_id: item.product_id, quantity: item.quantity }], 
+      items: [{ product_id: item.product_id, quantity: item.quantity, unit_price: '' }], 
       mode: 'create',
       productionOrder: item,
       processId: item.process_id
@@ -134,12 +147,12 @@ const OutsourcingManager = () => {
   };
 
   const addRow = () => {
-    setModal({ ...modal, items: [...(modal.items || []), { product_id: '', quantity: 1 }] });
+    setModal({ ...modal, items: [...(modal.items || []), { product_id: '', quantity: 1, unit_price: '' }] });
   };
   
   const removeRow = (index) => {
     const newItems = (modal.items || []).filter((_, i) => i !== index);
-    setModal({ ...modal, items: newItems.length ? newItems : [{ product_id: '', quantity: 1 }] });
+    setModal({ ...modal, items: newItems.length ? newItems : [{ product_id: '', quantity: 1, unit_price: '' }] });
   };
   
   const updateItem = (index, field, value) => {
@@ -250,8 +263,10 @@ const OutsourcingManager = () => {
           editPermission="outsourcing_edit" 
           deletePermission="outsourcing_delete" />
       </div>
-      <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? '委外详情' : modal.mode === 'edit' ? '编辑委外单' : '新增委外'} size="max-w-3xl">
-        {modal.mode === 'view' ? (
+      
+      {/* 区分查看态与（新建/编辑）态，编辑态走新版 RHF 组件 */}
+      <Modal isOpen={modal.open && modal.mode === 'view'} onClose={closeModal} title="委外详情" size="max-w-3xl">
+        {modal.mode === 'view' && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
               <div><strong>委外单号：</strong>{modal.item?.order_no}</div>
@@ -265,12 +280,16 @@ const OutsourcingManager = () => {
               <table className="w-full border">
                 <thead className="bg-gray-50"><tr>
                   <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
-                  <th className="px-3 py-2 text-left text-xs">数量</th>
+                  <th className="px-3 py-2 text-right text-xs">数量</th>
+                  <th className="px-3 py-2 text-right text-xs">单价(¥)</th>
+                  <th className="px-3 py-2 text-right text-xs">金额(¥)</th>
                 </tr></thead>
                 <tbody>
                   {(modal.item?.items || []).map((it, i) => (
                     <tr key={i} className="border-t"><td className="px-3 py-2 text-sm">{it.code}</td><td className="px-3 py-2 text-sm">{it.name}</td>
-                      <td className="px-3 py-2 text-sm">{it.quantity}</td>
+                      <td className="px-3 py-2 text-sm text-right">{formatQuantity(it.quantity)}</td>
+                      <td className="px-3 py-2 text-sm text-right">¥{formatAmount(it.unit_price || 0)}</td>
+                      <td className="px-3 py-2 text-sm text-right font-medium">¥{formatAmount((it.unit_price || 0) * (it.quantity || 0))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -282,8 +301,9 @@ const OutsourcingManager = () => {
                   <div>
                     <div className="font-medium text-gray-800 text-sm">{it.name}</div>
                     <div className="text-xs text-gray-500 font-mono">{it.code}</div>
+                    <div className="text-xs text-gray-500">单价: ¥{formatAmount(it.unit_price || 0)}</div>
                   </div>
-                  <div className="text-lg font-bold text-teal-700">{it.quantity}</div>
+                  <div className="text-lg font-bold text-teal-700">{formatQuantity(it.quantity)}</div>
                 </div>
               ))}
             </div>
@@ -320,82 +340,31 @@ const OutsourcingManager = () => {
               <button onClick={closeModal} className="w-full sm:w-auto px-4 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">关闭</button>
             </div>
           </div>
-        ) : (
-          <form onSubmit={save} className="space-y-4">
-            {modal.productionOrder && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-blue-800 text-sm">
-                <i className="fas fa-link mr-2"></i>
-                关联生产工单：<strong>{modal.productionOrder.order_no}</strong> - 
-                工序：<strong>{modal.productionOrder.process_name}</strong> - 
-                数量：<strong>{modal.productionOrder.quantity} {modal.productionOrder.unit || '件'}</strong>
-              </div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium mb-1">供应商 *</label>
-                <select name="supplier_id" className="w-full border rounded-lg px-3 py-2" required>
-                  <option value="">请选择</option>
-                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div><label className="block text-sm font-medium mb-1">关联生产工单</label>
-                <select name="production_order_id" className="w-full border rounded-lg px-3 py-2" defaultValue={modal.productionOrder?.id || ''}>
-                  <option value="">无</option>
-                  {productions.map(p => <option key={p.id} value={p.id}>{p.order_no} - {p.product_name}</option>)}
-                </select>
-              </div>
-              <div><label className="block text-sm font-medium mb-1">关联工序</label>
-                <select name="process_id" className="w-full border rounded-lg px-3 py-2" defaultValue={modal.processId || ''}>
-                  <option value="">无</option>
-                  {processes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div><label className="block text-sm font-medium mb-1">预计完成日期</label><input name="expected_date" type="date" className="w-full border rounded-lg px-3 py-2" /></div>
-              <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect /></div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">加工明细</label>
-              <div className="border rounded-lg p-3 space-y-2">
-                {(modal.items || []).map((it, i) => (
-                  <div key={i} className="flex flex-wrap lg:flex-nowrap gap-2 items-center bg-gray-50 rounded-lg p-2">
-                    <select value={it.product_id} onChange={e => updateItem(i, 'product_id', e.target.value)} className="border rounded px-2 py-1">
-                      <option value="">选择产品</option>
-                      {(() => {
-                        const raw = products.filter(p => p.category === '原材料');
-                        const semi = products.filter(p => p.category === '半成品');
-                        const fin = products.filter(p => p.category === '成品');
-                        const fmtS = (p) => { const s = p.suppliers?.length ? `[${p.suppliers.map(x => x.supplier_name).join('/')}] ` : ''; return `${s}${p.name}`; };
-                        const fmtC = (p) => { const c = p.customers?.length ? `[${p.customers.map(x => x.customer_name).join('/')}] ` : ''; return `${c}${p.name}`; };
-                        return (<>
-                          {raw.length > 0 && <optgroup label="原材料">{raw.map(p => <option key={p.id} value={p.id}>{fmtS(p)}</option>)}</optgroup>}
-                          {semi.length > 0 && <optgroup label="半成品">{semi.map(p => <option key={p.id} value={p.id}>{fmtS(p)}</option>)}</optgroup>}
-                          {fin.length > 0 && <optgroup label="成品">{fin.map(p => <option key={p.id} value={p.id}>{fmtC(p)}</option>)}</optgroup>}
-                        </>);
-                      })()}
-                    </select>
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-gray-500 whitespace-nowrap">数量</span>
-                      <input type="number" value={it.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 0)} className="border rounded px-2 py-1 w-16" />
-                    </div>
-                    <select value={it.unit || '公斤'} onChange={e => updateItem(i, 'unit', e.target.value)} className="border rounded px-2 py-1 text-sm">
-                      <option value="公斤">公斤</option>
-                      <option value="支">支</option>
-                      <option value="吨">吨</option>
-                    </select>
-                    <span className="text-xs text-gray-400">{it.unit || '公斤'}</span>
-                    <button type="button" onClick={() => removeRow(i)} className="text-red-600"><i className="fas fa-trash"></i></button>
-                  </div>
-                ))}
-                <button type="button" onClick={addRow} className="text-teal-600 text-sm"><i className="fas fa-plus mr-1"></i>添加明细</button>
-              </div>
-            </div>
-            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
-              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">提交</button>
-            </div>
-          </form>
         )}
       </Modal>
+
+      {/* RHF 现代试点表单 */}
+      {(modal.mode === 'create' || modal.mode === 'edit') && (
+        <OutsourcingFormModal 
+          isOpen={modal.open}
+          onClose={closeModal}
+          mode={modal.mode}
+          initialData={
+            modal.mode === 'create' 
+              ? { 
+                  production_order_id: modal.productionOrder?.id || '', 
+                  process_id: modal.processId || '',
+                  items: modal.items 
+                } 
+              : modal.item
+          }
+          onSuccess={() => { closeModal(); load(); window.__toast?.success('保存成功'); }}
+          suppliers={suppliers}
+          products={products}
+          productions={productions}
+          processes={processes}
+        />
+      )}
     </div>
   );
 };

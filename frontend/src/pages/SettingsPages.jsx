@@ -144,8 +144,8 @@ const BackupSettings = () => {
               <label className="block text-sm font-medium mb-1">备份间隔（小时）</label>
               <input
                 type="number"
-                value={config.intervalHours}
-                onChange={e => setConfig({ ...config, intervalHours: parseInt(e.target.value) || 24 })}
+                value={config.intervalHours !== undefined ? config.intervalHours : ''}
+                onChange={e => setConfig({ ...config, intervalHours: e.target.value === '' ? '' : parseInt(e.target.value) })}
                 className="w-full border rounded-lg px-3 py-2"
                 min="1"
                 max="168"
@@ -156,8 +156,8 @@ const BackupSettings = () => {
               <label className="block text-sm font-medium mb-1">保留备份数量</label>
               <input
                 type="number"
-                value={config.maxBackups}
-                onChange={e => setConfig({ ...config, maxBackups: parseInt(e.target.value) || 30 })}
+                value={config.maxBackups !== undefined ? config.maxBackups : ''}
+                onChange={e => setConfig({ ...config, maxBackups: e.target.value === '' ? '' : parseInt(e.target.value) })}
                 className="w-full border rounded-lg px-3 py-2"
                 min="1"
                 max="100"

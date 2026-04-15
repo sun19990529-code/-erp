@@ -3,12 +3,13 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './context/ToastContext';
 import { AuthContext } from './context/AuthContext';
+import { useAuthStore } from './store/useAuthStore';
 import LoginPage from './pages/LoginPage';
 import Sidebar from './pages/Sidebar';
 import NotificationBell from './components/NotificationBell';
 import { ROUTE_CONFIG, MENU_ROUTES, PATH_TO_MENU, WorkshopMonitor, ScanStation, WorkstationScreen } from './routes.config';
 
-const AUTH_KEY = 'erp_user_auth';
+
 
 // 路由感知的主内容组件
 const AppContent = ({ user, permissions, handleLogout }) => {
@@ -101,40 +102,22 @@ const AppContent = ({ user, permissions, handleLogout }) => {
 };
 
 const App = () => {
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_KEY);
-      if (saved) {
-        const { user: savedUser, expireAt } = JSON.parse(saved);
-        if (expireAt && Date.now() < expireAt) return savedUser;
-        localStorage.removeItem(AUTH_KEY);
-      }
-    } catch { localStorage.removeItem(AUTH_KEY); }
-    return null;
-  });
-  const [permissions, setPermissions] = useState(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_KEY);
-      if (saved) return JSON.parse(saved)?.user?.permissions || [];
-    } catch { /* ignore */ }
-    return [];
-  });
+  const { user, permissions, login, logout, isReady, fetchSelf } = useAuthStore();
 
-  const handleLogin = (userData) => {
-    const expireAt = Date.now() + 24 * 60 * 60 * 1000;
-    localStorage.setItem(AUTH_KEY, JSON.stringify({ user: userData, expireAt }));
-    setUser(userData);
-    setPermissions(userData.permissions || []);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem(AUTH_KEY);
-    setUser(null);
-    setPermissions([]);
-  };
+  React.useEffect(() => {
+    if (user && !isReady) {
+      fetchSelf();
+    }
+  }, [user, isReady, fetchSelf]);
 
   if (!user) return (
-    <ToastProvider><LoginPage onLogin={handleLogin} /></ToastProvider>
+    <ToastProvider><LoginPage onLogin={login} /></ToastProvider>
+  );
+
+  if (!isReady) return (
+    <div className="flex h-screen items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+    </div>
   );
 
   return (
@@ -149,9 +132,7 @@ const App = () => {
           } />
           {/* 其他所有路由：需要登录 */}
           <Route path="*" element={
-            <AuthContext.Provider value={{ user, permissions, isAdmin: user?.role_code === 'admin', hasPermission: (code) => user?.role_code === 'admin' || permissions.includes(code), onLogout: handleLogout }}>
-              <AppContent user={user} permissions={permissions} handleLogout={handleLogout} />
-            </AuthContext.Provider>
+            <AppContent user={user} permissions={permissions} handleLogout={logout} />
           } />
         </Routes>
       </ToastProvider>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Modal from '../../components/Modal';
 import { api } from '../../api';
+import { formatAmount } from '../../utils/format';
 
 const OrderFormModal = ({ isOpen, onClose, item, onSubmitSuccess }) => {
   const [customers, setCustomers] = useState([]);
@@ -12,7 +13,13 @@ const OrderFormModal = ({ isOpen, onClose, item, onSubmitSuccess }) => {
   useEffect(() => {
     let cancelled = false;
     if (isOpen) {
-      setItems(item?.items?.length ? [...item.items] : [{ product_id: '', quantity: 1 }]);
+      const loadedItems = item?.items?.length 
+        ? item.items.map(it => ({
+            ...it,
+            total_amount: it.total_amount || (typeof it.unit_price === 'number' && typeof it.quantity === 'number' ? parseFloat((it.unit_price * it.quantity).toFixed(2)) : '')
+          }))
+        : [{ product_id: '', quantity: 1 }];
+      setItems(loadedItems);
       setSelectedCustomerId(item?.customer_id || '');
       
       api.get('/customers').then(res => !cancelled && res.success && setCustomers(res.data));
@@ -69,7 +76,10 @@ const OrderFormModal = ({ isOpen, onClose, item, onSubmitSuccess }) => {
   const save = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const validItems = items.filter(i => i.product_id);
+    const validItems = items.filter(i => i.product_id).map(it => ({
+      ...it,
+      unit_price: (it.total_amount && it.quantity) ? parseFloat((it.total_amount / it.quantity).toFixed(4)) : (it.unit_price || 0)
+    }));
     
     if (validItems.length === 0) {
       window.__toast?.warning('请至少添加一个产品明细');
@@ -138,11 +148,14 @@ const OrderFormModal = ({ isOpen, onClose, item, onSubmitSuccess }) => {
                       : <option disabled>{selectedCustomerId ? '该客户无关联产品' : '请先选择客户'}</option>}
                   </select>
                 </div>
-                <div className="w-[45%] lg:w-32 flex items-center">
-                  <input type="number" value={it.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 0)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none" placeholder="销售数量" />
+                <div className="w-[30%] lg:w-28 flex items-center">
+                  <input type="number" value={it.quantity !== undefined ? it.quantity : ''} onChange={e => updateItem(i, 'quantity', e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none" placeholder="销售数量" />
                 </div>
                 <div className="w-16 text-sm text-gray-500 flex items-center">
                   {products.find(p => String(p.id) === String(it.product_id))?.unit || '-'}
+                </div>
+                <div className="w-[30%] lg:w-28 flex items-center">
+                  <input type="number" step="0.01" value={it.total_amount !== undefined ? it.total_amount : ''} onChange={e => updateItem(i, 'total_amount', e.target.value === '' ? '' : parseFloat(e.target.value))} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none" placeholder="销售总额(¥)" />
                 </div>
                 
                 <div className="w-full lg:w-16 flex items-center justify-end border-t lg:border-t-0 lg:border-l border-gray-200 pt-2 lg:pt-0 lg:pl-3 mt-1 lg:mt-0">
@@ -155,6 +168,9 @@ const OrderFormModal = ({ isOpen, onClose, item, onSubmitSuccess }) => {
             <button type="button" onClick={addRow} className="w-full py-2.5 border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2">
               <i className="fas fa-plus-circle"></i> 继续添加明细
             </button>
+          </div>
+          <div className="text-right mt-2 font-bold text-gray-700">
+            订单预计总金额: ¥{formatAmount(items.reduce((sum, it) => sum + (parseFloat(it.total_amount) || 0), 0))}
           </div>
         </div>
         

@@ -106,8 +106,8 @@ const ProcessConfigPanel = ({
                 <div className="flex items-center gap-2 mb-2 md:mb-0">
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-xs text-gray-400 hidden md:inline">序号</span>
-                    <input type="number" value={p.sequence}
-                      onChange={e => updateProcessRow(i, 'sequence', parseInt(e.target.value) || 1)}
+                    <input type="number" value={p.sequence !== undefined ? p.sequence : ''}
+                      onChange={e => updateProcessRow(i, 'sequence', e.target.value === '' ? '' : parseInt(e.target.value))}
                       className="w-12 border border-gray-200 rounded-lg px-2 py-2 md:py-1 text-center text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500" />
                   </div>
                   <select value={p.process_id}

@@ -97,10 +97,24 @@ async function pushToDingtalk(title, content, type) {
  * @param {string} type - 通知类型 error/warning/success/info
  */
 async function pushWebhook(title, content, type = 'info') {
+  // 使用企微长连接智能狗推送（樱桃单条解决核心）
+  let smartPush = Promise.resolve();
+  try {
+    const { broadcastWechatMsg } = require('../services/wechatBot');
+    if (typeof broadcastWechatMsg === 'function') {
+      const emoji = TYPE_EMOJI[type] || '📢';
+      const markdownMsg = `### ${emoji} ${title}\n${content}\n> 来源：铭晟ERP-MES (首选企微智能推送)`;
+      smartPush = broadcastWechatMsg(markdownMsg);
+    }
+  } catch (e) {
+    // wechatBot 模块可能未安装，静默忽略
+  }
+
   // 并行推送（互不阻塞）
   await Promise.allSettled([
     pushToWechat(title, content, type),
     pushToDingtalk(title, content, type),
+    smartPush
   ]);
 }
 

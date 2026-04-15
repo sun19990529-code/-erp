@@ -1,0 +1,61 @@
+﻿[dotenv@17.3.1] injecting env (7) from .env -- tip: 鈿★笍 secrets for agents: https://dotenvx.com/as2
+node : 鈿狅笍  [瀹夊叏璀﹀憡] 
+JWT_SECRET 浣跨敤榛樿鍊硷紝鐢熶骇鐜璇
+疯缃幆澧冨彉閲?JWT_SECRET
+所在位置 行:1 字符: 1
++ node server.js 2>&1 | 
+Out-File -FilePath 
+startup_log.txt -Encoding 
+ut ...
++ ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo         
+     : NotSpecified: (鈿狅笍  
+    [瀹夊叏璀﹀憡] J...澧冨彉閲?JW   
+ T_SECRET:String) [], R    
+emoteException
+    + FullyQualifiedErrorI 
+   d : NativeCommandError
+ 
+PostgreSQL 杩炴帴鎴愬姛: PostgreSQL 18.3 on x86_64-windows
+[2026-04-02T13:58:18.984Z] [AiBotSDK] [INFO] Establishing WebSocket connection...
+[2026-04-02T13:58:18.984Z] [AiBotSDK] [INFO] Connecting to WebSocket: wss://openws.work.weixin.qq.com...
+鑷姩澶囦唤宸插惎鍔紝闂撮殧: 6 灏忔椂
+鐢熶骇鏃ユ姤瀹氭椂鎺ㄩ€佸凡鍚姩锛屼笅娆℃帹閫? 2026骞?鏈?鏃?涓婂崍8:00:00
+馃摎 API 鏂囨。宸叉寕杞? http://localhost:3198/api-docs
+(node:24712) [DEP0169] 
+DeprecationWarning: 
+`url.parse()` behavior is 
+not standardized and prone 
+to errors that have 
+security implications. Use 
+the WHATWG URL API 
+instead. CVEs are not 
+issued for `url.parse()` 
+vulnerabilities.
+(Use `node 
+--trace-deprecation ...` 
+to show where the warning 
+was created)
+[uncaughtException] 
+鏈崟鑾风殑寮傚父: Error: listen 
+EADDRINUSE: address 
+already in use :::3198
+    at 
+Server.setupListenHandle 
+[as _listen2] 
+(node:net:2008:16)
+    at listenInCluster 
+(node:net:2065:12)
+    at Server.listen 
+(node:net:2170:7)
+    at app.listen (D:\椤圭洰\e
+rp-mes-system\backend\node_
+modules\express\lib\applica
+tion.js:635:24)
+    at startServer (D:\椤圭洰\
+erp-mes-system\backend\serv
+er.js:326:7)
+    at process.processTicks
+AndRejections (node:interna
+l/process/task_queues:104:5
+)

@@ -3,6 +3,13 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { api } from '../api';
 import { useSafeFetch } from '../hooks/useSafeFetch';
 
+const CHART_STYLES = {
+  axisTick: { fontSize: 12, fill: '#64748b' },
+  tooltipContent: { borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' },
+  tooltipLabel: { fontWeight: 'bold', color: '#334155', marginBottom: '4px' },
+  legendWrapper: { fontSize: '12px', paddingTop: '10px' }
+};
+
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [chartData, setChartData] = useState(null);
@@ -142,13 +149,13 @@ const Dashboard = () => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b'}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b'}} />
+                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={CHART_STYLES.axisTick} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={CHART_STYLES.axisTick} />
                 <RechartsTooltip 
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
-                  labelStyle={{ fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}
+                  contentStyle={CHART_STYLES.tooltipContent}
+                  labelStyle={CHART_STYLES.tooltipLabel}
                 />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                <Legend iconType="circle" wrapperStyle={CHART_STYLES.legendWrapper} />
                 <Area type="monotone" name="新接销售订单" dataKey="orders" stroke="#14b8a6" strokeWidth={3} fillOpacity={1} fill="url(#colorOrders)" />
                 <Area type="monotone" name="下达生产工单" dataKey="productions" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorProd)" />
               </AreaChart>
@@ -168,7 +175,7 @@ const Dashboard = () => {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                  <RechartsTooltip contentStyle={CHART_STYLES.tooltipContent} />
                   <Legend layout="vertical" verticalAlign="middle" align="right" iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
                 </PieChart>
               </ResponsiveContainer>

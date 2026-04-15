@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const Decimal = require('decimal.js');
 const { requirePermission } = require('../middleware/permission');
+const { validateId, validate } = require('../middleware/validate');
+const { scrapValueSchema } = require('../validators/production');
+
+// 高精度工具函数
+const D = (v) => new Decimal(v || 0);
+const toNum = (d, dp = 2) => parseFloat(d.toFixed(dp));
 
 /**
  * 生产追踪 API
@@ -8,7 +15,7 @@ const { requirePermission } = require('../middleware/permission');
  */
 
 // ==================== 工单维度追踪 ====================
-router.get('/production/:id/tracking', requirePermission('production_view'), async (req, res) => {
+router.get('/production/:id/tracking', validateId, requirePermission('production_view'), async (req, res) => {
   try {
     const productionId = req.params.id;
 
@@ -77,13 +84,13 @@ router.get('/production/:id/tracking', requirePermission('production_view'), asy
     `, [productionId]);
     const semiOutput = semiOutputRows.reduce((sum, r) => sum + (r.quantity || 0), 0);
 
-    // 6. 工序进度
+    // 6. 工序进度（过滤掉占位的 pending 记录）
     const processRecords = await req.db.all(`
       SELECT ppr.*, pr.name as process_name, pr.code as process_code
       FROM production_process_records ppr
       JOIN processes pr ON ppr.process_id = pr.id
-      WHERE ppr.production_order_id = ?
-      ORDER BY pr.sequence
+      WHERE ppr.production_order_id = ? AND ppr.status != 'pending'
+      ORDER BY pr.sequence, ppr.created_at
     `, [productionId]);
 
     // 7. 损耗计算
@@ -110,8 +117,8 @@ router.get('/production/:id/tracking', requirePermission('production_view'), asy
         loss: {
           total_input: totalPicked,
           total_output: totalOutput,
-          loss_quantity: parseFloat(lossQty.toFixed(4)),
-          loss_rate: parseFloat(lossRate.toFixed(2))
+          loss_quantity: toNum(D(lossQty), 4),
+          loss_rate: toNum(D(lossRate), 2)
         }
       }
     });
@@ -167,8 +174,8 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), async (req, 
         ...po,
         picked_total: pickedTotal,
         output_total: outputTotal,
-        loss_quantity: parseFloat(lossQty.toFixed(4)),
-        loss_rate: parseFloat(lossRate.toFixed(2))
+        loss_quantity: toNum(D(lossQty), 4),
+        loss_rate: toNum(D(lossRate), 2)
       };
     });
 
@@ -205,8 +212,8 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), async (req, 
           total_produced: totalProduced,
           remaining: Math.max(0, totalOrdered - totalProduced),
           total_picked: totalPicked,
-          total_loss: parseFloat(totalLoss.toFixed(4)),
-          overall_loss_rate: parseFloat(overallLossRate.toFixed(2))
+          total_loss: toNum(D(totalLoss), 4),
+          overall_loss_rate: toNum(D(overallLossRate), 2)
         }
       }
     });
@@ -225,6 +232,8 @@ router.get('/orders/:id/tracking', requirePermission('order_view'), async (req, 
 router.get('/cost-summary', requirePermission('production_view'), async (req, res) => {
   try {
     const { status, page = 1, pageSize = 20 } = req.query;
+    const safePage = Math.max(1, parseInt(page) || 1);
+    const safePageSize = Math.min(Math.max(1, parseInt(pageSize) || 20), 100);
     let sql = `SELECT po.id, po.order_no, po.status, po.quantity, po.completed_quantity,
       po.created_at, po.end_time,
       p.code as product_code, p.name as product_name, p.unit, p.specification, p.unit_price as selling_price,
@@ -237,7 +246,7 @@ router.get('/cost-summary', requirePermission('production_view'), async (req, re
     if (status) { sql += ' AND po.status = ?'; params.push(status); }
     sql += ' ORDER BY po.created_at DESC';
 
-    const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+    const result = await req.db.paginate(sql, params, safePage, safePageSize);
 
     // 批量查询所有工单的成本数据
     const poIds = result.data.map(po => po.id);
@@ -273,7 +282,7 @@ router.get('/cost-summary', requirePermission('production_view'), async (req, re
     materialCostRows.forEach(r => {
       const price = materialPriceMap[r.material_id] || 0;
       const current = materialCostMap[r.production_order_id] || 0;
-      materialCostMap[r.production_order_id] = Math.round((current + r.total_qty * price) * 100) / 100;
+      materialCostMap[r.production_order_id] = toNum(D(current).plus(D(r.total_qty).times(price)));
     });
 
     // 委外成本
@@ -286,46 +295,46 @@ router.get('/cost-summary', requirePermission('production_view'), async (req, re
     const outsourcingCostMap = Object.fromEntries(outsourcingCostRows.map(r => [r.production_order_id, r.outsourcing_cost || 0]));
 
     const data = result.data.map(po => {
-      const materialCost = materialCostMap[po.id] || 0;
-      const outsourcingCost = outsourcingCostMap[po.id] || 0;
-      const totalCost = materialCost + outsourcingCost;
-      const completedQty = po.completed_quantity || 0;
-      const unitCost = completedQty > 0 ? parseFloat((totalCost / completedQty).toFixed(2)) : 0;
-      const sellingPrice = po.selling_price || 0;
-      const revenue = completedQty * sellingPrice;
-      const profit = revenue - totalCost;
-      const profitRate = revenue > 0 ? parseFloat((profit / revenue * 100).toFixed(1)) : 0;
+      const materialCost = D(materialCostMap[po.id] || 0);
+      const outsourcingCost = D(outsourcingCostMap[po.id] || 0);
+      const totalCost = materialCost.plus(outsourcingCost);
+      const completedQty = D(po.completed_quantity || 0);
+      const unitCost = completedQty.gt(0) ? toNum(totalCost.div(completedQty)) : 0;
+      const sellingPrice = D(po.selling_price || 0);
+      const revenue = completedQty.times(sellingPrice);
+      const profit = revenue.minus(totalCost);
+      const profitRate = revenue.gt(0) ? toNum(profit.div(revenue).times(100), 1) : 0;
 
       return {
         ...po,
-        material_cost: parseFloat(materialCost.toFixed(2)),
-        outsourcing_cost: parseFloat(outsourcingCost.toFixed(2)),
-        total_cost: parseFloat(totalCost.toFixed(2)),
+        material_cost: toNum(materialCost),
+        outsourcing_cost: toNum(outsourcingCost),
+        total_cost: toNum(totalCost),
         unit_cost: unitCost,
-        revenue: parseFloat(revenue.toFixed(2)),
-        profit: parseFloat(profit.toFixed(2)),
+        revenue: toNum(revenue),
+        profit: toNum(profit),
         profit_rate: profitRate
       };
     });
 
     // 汇总统计
-    const totalMaterial = data.reduce((s, r) => Math.round((s + r.material_cost) * 100) / 100, 0);
-    const totalOutsourcing = data.reduce((s, r) => Math.round((s + r.outsourcing_cost) * 100) / 100, 0);
-    const totalAmount = data.reduce((s, r) => Math.round((s + r.total_cost) * 100) / 100, 0);
-    const totalRevenue = data.reduce((s, r) => Math.round((s + r.revenue) * 100) / 100, 0);
-    const totalProfit = data.reduce((s, r) => Math.round((s + r.profit) * 100) / 100, 0);
+    const totalMaterial = data.reduce((s, r) => D(s).plus(r.material_cost).toNumber(), 0);
+    const totalOutsourcing = data.reduce((s, r) => D(s).plus(r.outsourcing_cost).toNumber(), 0);
+    const totalAmount = data.reduce((s, r) => D(s).plus(r.total_cost).toNumber(), 0);
+    const totalRevenue = data.reduce((s, r) => D(s).plus(r.revenue).toNumber(), 0);
+    const totalProfit = data.reduce((s, r) => D(s).plus(r.profit).toNumber(), 0);
 
     res.json({
       success: true,
       data,
       pagination: result.pagination,
       summary: {
-        total_material_cost: parseFloat(totalMaterial.toFixed(2)),
-        total_outsourcing_cost: parseFloat(totalOutsourcing.toFixed(2)),
-        total_cost: parseFloat(totalAmount.toFixed(2)),
-        total_revenue: parseFloat(totalRevenue.toFixed(2)),
-        total_profit: parseFloat(totalProfit.toFixed(2)),
-        avg_profit_rate: totalRevenue > 0 ? parseFloat((totalProfit / totalRevenue * 100).toFixed(1)) : 0
+        total_material_cost: toNum(D(totalMaterial)),
+        total_outsourcing_cost: toNum(D(totalOutsourcing)),
+        total_cost: toNum(D(totalAmount)),
+        total_revenue: toNum(D(totalRevenue)),
+        total_profit: toNum(D(totalProfit)),
+        avg_profit_rate: totalRevenue > 0 ? toNum(D(totalProfit).div(totalRevenue).times(100), 1) : 0
       }
     });
   } catch (error) {
@@ -338,15 +347,16 @@ router.get('/cost-summary', requirePermission('production_view'), async (req, re
  * 单个工单成本卡明细
  * GET /production/:id/cost
  */
-router.get('/production/:id/cost', requirePermission('production_view'), async (req, res) => {
+router.get('/production/:id/cost', validateId, requirePermission('production_view'), async (req, res) => {
   try {
     const productionId = req.params.id;
 
-    // 1. 工单基本信息
+    // 1. 工单基本信息（后续查询依赖 product_id，必须先获取）
     const production = await req.db.get(`
       SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit,
              p.unit_price as selling_price,
-             o.order_no as sales_order_no, o.customer_name
+             o.order_no as sales_order_no, o.customer_name,
+             COALESCE(po.scrap_value, 0) as scrap_value
       FROM production_orders po
       JOIN products p ON po.product_id = p.id
       LEFT JOIN orders o ON po.order_id = o.id
@@ -354,124 +364,127 @@ router.get('/production/:id/cost', requirePermission('production_view'), async (
     `, [productionId]);
     if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
 
-    // 2. 物料最新入库单价（预查）
-    const materialIdRows = await req.db.all(`
-      SELECT DISTINCT pi.material_id FROM pick_items pi
-      JOIN pick_orders pk ON pi.pick_order_id = pk.id
-      WHERE pk.production_order_id = ? AND pk.status = 'completed'
-    `, [productionId]);
+    // 2. 并行查询：这7条SQL之间互不依赖
+    const [materialIdRows, materialDetails, processMaterials, outsourcingDetails, consumptionDetails, processFunnelRecords, outputRecords] = await Promise.all([
+      // 物料ID列表（用于后续价格查询）
+      req.db.all(`SELECT DISTINCT pi.material_id FROM pick_items pi JOIN pick_orders pk ON pi.pick_order_id = pk.id WHERE pk.production_order_id = ? AND pk.status = 'completed'`, [productionId]),
+      // 领料明细
+      req.db.all(`SELECT pi.material_id, pi.quantity, p.code, p.name, p.unit, pk.order_no as pick_order_no, pk.created_at as pick_time FROM pick_items pi JOIN pick_orders pk ON pi.pick_order_id = pk.id JOIN products p ON pi.material_id = p.id WHERE pk.production_order_id = ? AND pk.status = 'completed' ORDER BY pk.created_at ASC`, [productionId]),
+      // 理论耗量
+      req.db.all(`SELECT pm.material_id, SUM(pm.quantity) as base_quantity FROM process_materials pm JOIN product_processes pp ON pm.product_process_id = pp.id WHERE pp.product_id = ? GROUP BY pm.material_id`, [production.product_id]),
+      // 委外成本
+      req.db.all(`SELECT oo.id, oo.order_no, oo.total_amount, oo.status, oo.created_at, s.name as supplier_name, pr.name as process_name FROM outsourcing_orders oo LEFT JOIN suppliers s ON oo.supplier_id = s.id LEFT JOIN processes pr ON oo.process_id = pr.id WHERE oo.production_order_id = ? AND oo.status != 'cancelled' ORDER BY oo.created_at ASC`, [productionId]),
+      // 实际消耗记录
+      req.db.all(`SELECT pmc.*, p.name as material_name, p.code as material_code, p.unit as material_unit, pr.name as process_name FROM production_material_consumption pmc JOIN products p ON pmc.material_id = p.id JOIN processes pr ON pmc.process_id = pr.id WHERE pmc.production_order_id = ? ORDER BY pmc.created_at ASC`, [productionId]),
+      // 漏斗数据
+      req.db.all(`SELECT pr.id as process_id, pr.name as process_name, pr.sequence, COALESCE(SUM(ppr.input_quantity), 0) as input_qty, COALESCE(SUM(ppr.output_quantity), 0) as output_qty, COALESCE(SUM(ppr.defect_quantity), 0) as defect_qty FROM production_process_records ppr JOIN processes pr ON ppr.process_id = pr.id WHERE ppr.production_order_id = ? AND ppr.status = 'completed' GROUP BY pr.id, pr.name, pr.sequence ORDER BY pr.sequence ASC`, [productionId]),
+      // 成品产出
+      req.db.all(`SELECT ii.quantity, io.order_no, io.created_at FROM inbound_items ii JOIN inbound_orders io ON ii.inbound_id = io.id WHERE io.production_order_id = ? AND io.type = 'finished' AND io.status != 'cancelled'`, [productionId])
+    ]);
+
+    // 3. 物料单价查询（依赖 materialIdRows 结果）
     const materialIds = materialIdRows.map(r => r.material_id);
     const detailPriceMap = {};
     if (materialIds.length > 0) {
       const mp = materialIds.map(() => '?').join(',');
-      const detailPriceRows = await req.db.all(`SELECT product_id, unit_price FROM inbound_items
-        WHERE id IN (SELECT MAX(id) FROM inbound_items WHERE unit_price > 0 AND product_id IN (${mp}) GROUP BY product_id)
-      `, materialIds);
+      const detailPriceRows = await req.db.all(`SELECT product_id, unit_price FROM inbound_items WHERE id IN (SELECT MAX(id) FROM inbound_items WHERE unit_price > 0 AND product_id IN (${mp}) GROUP BY product_id)`, materialIds);
       detailPriceRows.forEach(r => { detailPriceMap[r.product_id] = r.unit_price; });
     }
 
-    // 3. 物料成本明细（每笔领料）
-    const materialDetails = await req.db.all(`
-      SELECT pi.material_id, pi.quantity, p.code, p.name, p.unit,
-             pk.order_no as pick_order_no, pk.created_at as pick_time
-      FROM pick_items pi
-      JOIN pick_orders pk ON pi.pick_order_id = pk.id
-      JOIN products p ON pi.material_id = p.id
-      WHERE pk.production_order_id = ? AND pk.status = 'completed'
-      ORDER BY pk.created_at ASC
-    `, [productionId]);
-
-    // 计算每行金额（使用预查单价）
+    // 4. 纯内存计算
     const materialItems = materialDetails.map(m => ({
       ...m,
       unit_price: detailPriceMap[m.material_id] || 0,
-      amount: parseFloat(((detailPriceMap[m.material_id] || 0) * m.quantity).toFixed(2))
+      amount: toNum(D(detailPriceMap[m.material_id] || 0).times(m.quantity))
     }));
-    const materialCost = materialItems.reduce((s, m) => Math.round((s + m.amount) * 100) / 100, 0);
+    const materialCost = materialItems.reduce((s, m) => D(s).plus(m.amount).toNumber(), 0);
 
-    // 3. 按物料汇总
+    const theoreticalMap = {};
+    processMaterials.forEach(pm => {
+      theoreticalMap[pm.material_id] = pm.base_quantity * (production.quantity || 0);
+    });
+
     const materialSummary = {};
     materialItems.forEach(m => {
       if (!materialSummary[m.material_id]) {
-        materialSummary[m.material_id] = { code: m.code, name: m.name, unit: m.unit, total_qty: 0, total_amount: 0, unit_price: m.unit_price };
+        materialSummary[m.material_id] = { 
+          code: m.code, name: m.name, unit: m.unit, 
+          total_qty: 0, required_qty: theoreticalMap[m.material_id] || 0,
+          total_amount: 0, unit_price: m.unit_price 
+        };
       }
       materialSummary[m.material_id].total_qty += m.quantity;
-      materialSummary[m.material_id].total_amount = Math.round((materialSummary[m.material_id].total_amount + m.amount) * 100) / 100;
+      materialSummary[m.material_id].total_amount = D(materialSummary[m.material_id].total_amount).plus(m.amount).toNumber();
     });
 
-    // 4. 委外成本明细
-    const outsourcingDetails = await req.db.all(`
-      SELECT oo.id, oo.order_no, oo.total_amount, oo.status, oo.created_at,
-             s.name as supplier_name,
-             pr.name as process_name
-      FROM outsourcing_orders oo
-      LEFT JOIN suppliers s ON oo.supplier_id = s.id
-      LEFT JOIN processes pr ON oo.process_id = pr.id
-      WHERE oo.production_order_id = ? AND oo.status != 'cancelled'
-      ORDER BY oo.created_at ASC
-    `, [productionId]);
-    const outsourcingCost = outsourcingDetails.reduce((s, o) => Math.round((s + (o.total_amount || 0)) * 100) / 100, 0);
+    const outsourcingCost = outsourcingDetails.reduce((s, o) => D(s).plus(o.total_amount || 0).toNumber(), 0);
 
-    // 5. 实际物料消耗记录（工序级）
-    const consumptionDetails = await req.db.all(`
-      SELECT pmc.*, p.name as material_name, p.code as material_code, p.unit as material_unit,
-             pr.name as process_name
-      FROM production_material_consumption pmc
-      JOIN products p ON pmc.material_id = p.id
-      JOIN processes pr ON pmc.process_id = pr.id
-      WHERE pmc.production_order_id = ?
-      ORDER BY pmc.created_at ASC
-    `, [productionId]);
+    const funnelData = processFunnelRecords.map(f => {
+      const invisibleLoss = Math.max(0, parseInt(f.input_qty) - parseInt(f.output_qty) - parseInt(f.defect_qty));
+      const yieldRate = parseInt(f.input_qty) > 0 ? toNum(D(f.output_qty).div(f.input_qty).times(100), 1) : 0;
+      return { ...f, invisible_loss: invisibleLoss, yield_rate: yieldRate };
+    });
 
-    // 6. 成品产出
-    const outputRecords = await req.db.all(`
-      SELECT ii.quantity, io.order_no, io.created_at
-      FROM inbound_items ii
-      JOIN inbound_orders io ON ii.inbound_id = io.id
-      WHERE io.production_order_id = ? AND io.type = 'finished' AND io.status != 'cancelled'
-    `, [productionId]);
     const totalOutput = outputRecords.reduce((s, r) => s + (r.quantity || 0), 0);
 
-    // 7. 汇总计算
-    const totalCost = materialCost + outsourcingCost;
-    const completedQty = production.completed_quantity || totalOutput || 0;
-    const unitCost = completedQty > 0 ? parseFloat((totalCost / completedQty).toFixed(2)) : 0;
-    const sellingPrice = production.selling_price || 0;
-    const revenue = completedQty * sellingPrice;
-    const profit = revenue - totalCost;
-    const profitRate = revenue > 0 ? parseFloat((profit / revenue * 100).toFixed(1)) : 0;
+    // 5. 汇总计算
+    const scrapValue = D(production.scrap_value || 0);
+    const netTotalCost = D(materialCost).plus(outsourcingCost).minus(scrapValue);
+    const completedQty = D(production.completed_quantity || totalOutput || 0);
+    const unitCost = completedQty.gt(0) ? toNum(netTotalCost.div(completedQty)) : 0;
+    const sellingPrice = D(production.selling_price || 0);
+    const revenue = completedQty.times(sellingPrice);
+    const profit = revenue.minus(netTotalCost);
+    const profitRate = revenue.gt(0) ? toNum(profit.div(revenue).times(100), 1) : 0;
 
     res.json({
       success: true,
       data: {
         production,
         cost: {
-          material_cost: parseFloat(materialCost.toFixed(2)),
-          outsourcing_cost: parseFloat(outsourcingCost.toFixed(2)),
-          total_cost: parseFloat(totalCost.toFixed(2)),
+          material_cost: toNum(D(materialCost)),
+          outsourcing_cost: toNum(D(outsourcingCost)),
+          scrap_value: scrapValue.toNumber(),
+          total_cost: toNum(netTotalCost),
           unit_cost: unitCost,
-          selling_price: sellingPrice,
-          revenue: parseFloat(revenue.toFixed(2)),
-          profit: parseFloat(profit.toFixed(2)),
+          selling_price: sellingPrice.toNumber(),
+          revenue: toNum(revenue),
+          profit: toNum(profit),
           profit_rate: profitRate,
-          completed_quantity: completedQty
+          completed_quantity: completedQty.toNumber()
         },
         material: {
           items: materialItems,
           summary: Object.values(materialSummary),
-          total: parseFloat(materialCost.toFixed(2))
+          total: toNum(D(materialCost))
         },
         outsourcing: {
           items: outsourcingDetails,
-          total: parseFloat(outsourcingCost.toFixed(2))
+          total: toNum(D(outsourcingCost))
         },
         consumption: consumptionDetails,
+        funnel: funnelData,
         output: outputRecords
       }
     });
   } catch (error) {
     console.error('[tracking/cost]', error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+/**
+ * 录入废料残值
+ * PUT /tracking/production/:id/scrap-value
+ */
+router.put('/production/:id/scrap-value', validateId, requirePermission('production_edit'), validate(scrapValueSchema), async (req, res) => {
+  try {
+    const { scrap_value } = req.body;
+    await req.db.run('UPDATE production_orders SET scrap_value = ? WHERE id = ?', [scrap_value, req.params.id]);
+    res.json({ success: true, message: '已更新残值回收金额' });
+  } catch (error) {
+    console.error('[tracking/scrap-value]', error.message);
+    res.status(500).json({ success: false, message: '系统保存残值失败' });
   }
 });
 

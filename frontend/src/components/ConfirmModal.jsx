@@ -1,7 +1,9 @@
 import React, { useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * ConfirmModal - 替代原生 window.confirm 的统一确认弹窗
+ * 使用 React Portal 挂载到 document.body，确保始终在最顶层
  * 使用方式：const [confirm, ConfirmDialog] = useConfirm();
  *          if (await confirm('确定删除？')) { ... }
  */
@@ -15,8 +17,8 @@ const ConfirmModal = ({ isOpen, title, message, type, onConfirm, onCancel }) => 
   };
   const style = iconMap[type] || iconMap.info;
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={onCancel}>
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" onClick={onCancel}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm fade-in" onClick={e => e.stopPropagation()}>
         <div className="p-5 text-center">
           <div className={`w-12 h-12 ${style.bg} rounded-full flex items-center justify-center mx-auto mb-3`}>
@@ -41,7 +43,8 @@ const ConfirmModal = ({ isOpen, title, message, type, onConfirm, onCancel }) => 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

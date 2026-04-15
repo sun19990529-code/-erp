@@ -14,6 +14,11 @@ import { useConfirm } from '../components/ConfirmModal';
 import OperatorSelect from '../components/OperatorSelect';
 import { doPrint } from '../utils/printEngine';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
+import { useScanner } from '../hooks/useScanner';
+import NumberKeypad from '../components/NumberKeypad';
+import { parseBarcode } from '../utils/barcodeParser';
+import { formatAmount, formatQuantity } from '../utils/format';
+import WarehouseFormModal from '../components/WarehouseFormModal';
 
 const PrintableQRCode = ({ value, label }) => (
   <div className="flex flex-col items-center">
@@ -114,24 +119,43 @@ const WarehouseOrderManager = ({ orderType }) => {
   const [warehouses, setWarehouses] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
-  const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
-  const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
-  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  
+  const formRef = useRef(null);
+  
+  // 大键盘弹窗控制与扫码拦截 (PDA)
+  const [isKeypadOpen, setIsKeypadOpen] = useState(false);
+  const [keypadTitle, setKeypadTitle] = useState('');
+  const [pendingScanItem, setPendingScanItem] = useState(null);
   
   const title = orderType === 'inbound' ? '仓储统一入库' : '仓储统一出库';
   const apiPath = orderType === 'inbound' ? 'inbound' : 'outbound';
   
-  const load = () => {
-    api.get(`/${apiPath}?type=${activeType}`).then(res => res.success && setData(res.data));
-    api.get(`/warehouses?type=${activeType}`).then(res => res.success && setWarehouses(res.data));
-    api.get('/suppliers').then(res => res.success && setSuppliers(res.data));
+  const load = async () => {
     const category = activeType === 'raw' ? '原材料' : activeType === 'semi' ? '半成品' : '成品';
-    api.get(`/products?category=${category}`).then(res => res.success && setProducts(res.data));
+    const [dRes, wRes, sRes, pRes] = await Promise.all([
+      api.get(`/${apiPath}?type=${activeType}`),
+      api.get(`/warehouses?type=${activeType}`),
+      api.get('/suppliers'),
+      api.get(`/products?category=${category}`)
+    ]);
+    if (dRes.success) setData(dRes.data);
+    if (wRes.success) setWarehouses(wRes.data);
+    if (sRes.success) setSuppliers(sRes.data);
+    if (pRes.success) setProducts(pRes.data);
   };
   useEffect(() => { load(); setSelectedSupplierId(''); }, [activeType, orderType]);
   
+  // 构建产品查找索引，加速 PDA 扫码时的产品匹配 (#8)
+  const productIndexMap = React.useMemo(() => {
+    const map = new Map();
+    products.forEach(p => {
+      if (p.code) map.set(String(p.code), p);
+      if (p.id) map.set(String(p.id), p);
+    });
+    return map;
+  }, [products]);
+
   const typeLabel = activeType === 'raw' ? '原材料' : activeType === 'semi' ? '半成品' : '成品';
   
   const filteredData = data.filter(item => {
@@ -152,45 +176,19 @@ const WarehouseOrderManager = ({ orderType }) => {
   };
   
   const openCreate = () => {
-    setModal({ open: true, item: null, items: [{ product_id: '', quantity: 1 }], mode: 'create' });
+    setModal({ open: true, item: null, items: [], mode: 'create' });
   };
   
   const closeModal = () => {
     setModal({ open: false, item: null, items: [], mode: 'list' });
   };
   
-  const save = async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const warehouseId = fd.get('warehouse_id');
-    const items = (modal.items || []).filter(i => i.product_id);
-    
-    // 验证必须选择仓库
-    if (!warehouseId) {
-      window.__toast?.warning('请选择仓库');
-      return;
-    }
-    
-    // 验证必须选择产品
-    if (items.length === 0) {
-      window.__toast?.warning('请至少选择一个产品');
-      return;
-    }
-    
-    // 验证数量为正数
-    for (const item of items) {
-      if (!item.quantity || item.quantity <= 0) {
-        window.__toast?.warning('数量必须大于0');
-        return;
-      }
-    }
-    
+  const save = async (formData) => {
     // 出库时验证库存是否足够
     if (orderType === 'outbound') {
       const invRes = await api.get(`/inventory?warehouse_type=${activeType}`);
       if (invRes.success) {
-        // 使用 String() 转换确保类型一致
-        const warehouseIdStr = String(warehouseId);
+        const warehouseIdStr = String(formData.warehouse_id);
         const inventory = invRes.data.filter(i => String(i.warehouse_id) === warehouseIdStr);
         
         if (inventory.length === 0) {
@@ -198,53 +196,45 @@ const WarehouseOrderManager = ({ orderType }) => {
           return;
         }
         
-        for (const item of items) {
+        for (const item of formData.items) {
           const productIdStr = String(item.product_id);
           const batchNo = item.batch_no || 'DEFAULT_BATCH';
           const inv = inventory.find(i => String(i.product_id) === productIdStr && i.batch_no === batchNo);
           const product = products.find(p => String(p.id) === productIdStr);
           
           if (!inv) {
-            window.__toast?.warning(`${product?.name || '产品'} (批次: ${batchNo}) 在该仓库无可扣减库存`);
+             window.__toast?.warning(`${product?.name || '产品'} 在该仓库无可扣减库存`);
             return;
           }
-          
           if (Number(inv.quantity) < Number(item.quantity)) {
-            window.__toast?.warning(`${product?.name || '产品'} (批次: ${batchNo}) 库存不足！\n当前库存: ${inv.quantity} 公斤\n出库申请: ${item.quantity} 公斤`);
+             window.__toast?.warning(`${product?.name || '产品'} 库存不足！当前库存: ${inv.quantity} 公斤, 申请出库: ${item.quantity} 公斤`);
             return;
           }
         }
       }
     }
     
-    // 确保items包含input_quantity和input_unit字段
-    const processedItems = items.map(item => ({
-      ...item,
-      input_quantity: item.input_quantity || item.quantity,
-      input_unit: item.input_unit || '公斤'
-    }));
-    
+    // 聚合提交数据
     const obj = { 
       type: activeType, 
-      warehouse_id: warehouseId, 
-      supplier_id: fd.get('supplier_id') || null, 
-      operator: fd.get('operator'), 
-      remark: fd.get('remark'), 
-      items: processedItems 
+      warehouse_id: formData.warehouse_id, 
+      supplier_id: formData.supplier_id || null, 
+      operator: formData.operator, 
+      remark: formData.remark, 
+      items: formData.items 
     };
+    
     try {
       const res = modal.mode === 'edit'
         ? await api.put(`/${apiPath}/${modal.item.id}`, obj, { invalidate: ['inventory'] })
         : await api.post(`/${apiPath}`, obj, { invalidate: ['inventory'] });
-      if (res.success) { closeModal(); load(); }
-      else {
-        window.__toast?.error('提交失败: ' + (res.message || '未知错误'));
-      }
-    } catch (err) {
-      window.__toast?.error('请求异常: ' + err.message);
+      if (res.success) { closeModal(); load(); window.__toast?.success('保存成功'); }
+      else window.__toast?.error(res.message);
+    } catch (e) {
+      window.__toast?.error('网络错误');
     }
   };
-  
+
   const updateStatus = async (item, status) => {
     const res = await api.put(`/${apiPath}/${item.id}/status`, { status }, { invalidate: ['inventory'] });
     if (res.success) load();
@@ -291,52 +281,63 @@ const WarehouseOrderManager = ({ orderType }) => {
     else window.__toast?.error(res.message);
   };
 
-  const addRow = () => {
-    setModal({ ...modal, items: [...(modal.items || []), { product_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }] });
-  };
-  
-  const removeRow = (index) => {
-    const newItems = (modal.items || []).filter((_, i) => i !== index);
-    setModal({ ...modal, items: newItems.length ? newItems : [{ product_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }] });
-  };
-  
-  // 单位转换函数：支持"支"转"公斤"的换算
-  // 公式：((外径-壁厚)*壁厚)*0.02491*长度=单支公斤
-  const convertToKg = (quantity, unit, productId) => {
-    if (unit === '吨') return quantity * 1000;
-    if (unit === '支') {
-      // 获取产品尺寸信息
-      const product = products.find(p => String(p.id) === String(productId));
-      if (product && product.outer_diameter && product.wall_thickness && product.length) {
-        const outerDiameter = parseFloat(product.outer_diameter) || 0;
-        const wallThickness = parseFloat(product.wall_thickness) || 0;
-        const length = parseFloat(product.length) || 0;
-        // 公式：((外径-壁厚)*壁厚)*0.02491*长度=单支公斤
-        const kgPerPiece = ((outerDiameter - wallThickness) * wallThickness) * 0.02491 * length;
-        return quantity * kgPerPiece;
-      }
-      // 如果没有产品尺寸信息，无法转换
-      return 0;
+  // ====== PDA 扫码核心逻辑 ======
+  const appendScanRow = (newItem) => {
+    if (formRef.current) {
+      formRef.current.appendRow(newItem);
     }
-    return quantity;
   };
-  
-  const updateItem = (index, field, value) => {
-    const newItems = [...(modal.items || [])];
-    newItems[index] = { ...newItems[index], [field]: value };
-    
-    // 如果修改了输入数量或产品，重新计算公斤数量
-    const item = newItems[index];
-    if (field === 'input_quantity' || field === 'product_id') {
-      const product = products.find(p => String(p.id) === String(item.product_id));
-      const unit = product?.unit || '公斤';
-      const inputQuantity = item.input_quantity || item.quantity || 0;
-      item.quantity = convertToKg(inputQuantity, unit, item.product_id);
-      item.input_unit = unit; // 自动设置单位为产品绑定的单位
+
+  const handleScan = (code) => {
+    // 仅在新增或编辑表单开启时生效 (列表页和查看详情时不拦截)
+    if (!modal.open || modal.mode === 'view' || isKeypadOpen || !code) return;
+
+    const parsed = parseBarcode(code);
+    if (parsed.type !== 'composite' && parsed.type !== 'raw_material') return;
+
+    const queryCode = parsed.product_code;
+    if (!queryCode) return;
+
+    const product = productIndexMap.get(queryCode);
+    if (!product) {
+      window.__toast?.error(`未在“${typeLabel}”库中找到物料 [${queryCode}]，请检查！`);
+      return;
     }
-    
-    setModal({ ...modal, items: newItems });
+
+    const baseUnit = product.unit || '公斤';
+    const newItem = {
+      product_id: product.id,
+      batch_no: parsed.batch_no || '',
+      heat_no: parsed.heat_no || '',
+      supplier_batch_no: parsed.supplier_batch_no || '',
+      input_unit: parsed.unit || baseUnit
+    };
+
+    if (parsed.type === 'composite' && parsed.quantity !== null && parsed.quantity !== undefined) {
+      // 携带重量 => 极速入账
+      newItem.input_quantity = Number(parsed.quantity);
+      appendScanRow(newItem);
+      window.__toast?.success(`${product.name} × ${parsed.quantity} ${newItem.input_unit} 扫码添加成功`);
+    } else {
+      // 未携带重量 => 弹大键盘
+      setPendingScanItem(newItem);
+      setKeypadTitle(`请输入物料 [${product.name}] 炉号 [${parsed.heat_no||'-'}] 的数量 (${newItem.input_unit})`);
+      setIsKeypadOpen(true);
+    }
   };
+
+  const handleKeypadConfirm = (value) => {
+    if (!pendingScanItem) return;
+    const scanItem = { ...pendingScanItem };
+    scanItem.input_quantity = parseFloat(value) || 0;
+    
+    appendScanRow(scanItem);
+    setIsKeypadOpen(false);
+    setPendingScanItem(null);
+    window.__toast?.success(`已记录: ${scanItem.input_quantity} ${scanItem.input_unit}`);
+  };
+
+  useScanner(handleScan);
 
   return (
     <div className="fade-in">
@@ -399,6 +400,7 @@ const WarehouseOrderManager = ({ orderType }) => {
                 <th className="px-3 py-2 text-left text-xs">入库批号</th>
                 <th className="px-3 py-2 text-left text-xs">输入数量</th>
                 <th className="px-3 py-2 text-left text-xs">库存数量(公斤)</th>
+                {orderType === 'inbound' && <th className="px-3 py-2 text-right text-xs">单价/预计总金</th>}
               </tr></thead>
               <tbody>
                 {(modal.item?.items || []).map((it, i) => (
@@ -410,6 +412,12 @@ const WarehouseOrderManager = ({ orderType }) => {
                     <td className="px-3 py-2 text-sm text-teal-700 font-medium">{it.batch_no || '-'}</td>
                     <td className="px-3 py-2 text-sm">{it.input_quantity || it.quantity} {it.input_unit || '公斤'}</td>
                     <td className="px-3 py-2 text-sm">{it.quantity} 公斤</td>
+                    {orderType === 'inbound' && (
+                      <td className="px-3 py-2 text-right text-sm">
+                        <div className="text-gray-500 text-xs">¥{formatAmount(it.unit_price || 0)}</div>
+                        <div className="font-medium">¥{formatAmount((it.unit_price || 0) * (it.quantity || 0))}</div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -481,9 +489,14 @@ const WarehouseOrderManager = ({ orderType }) => {
                       <div className="w-[20%] lg:w-24">
                         <input type="text" value={it.heat_no || ''} onChange={e => updateItem(i, 'heat_no', e.target.value)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="炉号(选填)" />
                       </div>
-                      <div className="w-[30%] lg:w-28">
-                        <input type="number" value={it.input_quantity || it.quantity} onChange={e => updateItem(i, 'input_quantity', parseFloat(e.target.value) || 0)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="输入数量" />
+                      <div className="w-[20%] lg:w-24">
+                        <input type="number" value={it.input_quantity ?? it.quantity ?? ''} onChange={e => updateItem(i, 'input_quantity', e.target.value === '' ? '' : parseFloat(e.target.value))} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="输入数量" />
                       </div>
+                      {orderType === 'inbound' && (
+                        <div className="w-[20%] lg:w-24">
+                          <input type="number" step="0.01" value={it.total_amount ?? ''} onChange={e => updateItem(i, 'total_amount', e.target.value === '' ? '' : parseFloat(e.target.value))} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="入库总额(¥)" />
+                        </div>
+                      )}
                       <div className="w-[30%] lg:w-auto flex flex-col lg:flex-row items-start lg:items-center gap-2">
                         <div className="flex items-center gap-1.5">
                           <span className="px-2 py-1 bg-white border border-gray-200 text-gray-700 rounded-md text-xs font-medium shadow-sm">{unit}</span>
@@ -492,10 +505,10 @@ const WarehouseOrderManager = ({ orderType }) => {
                           )}
                         </div>
                         {unit !== '公斤' && (
-                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0">= {kgQuantity.toFixed(2)} kg</span>
+                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0">= {formatQuantity(kgQuantity)} kg</span>
                         )}
                         {unit === '公斤' && (
-                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0 lg:hidden">= {kgQuantity.toFixed(2)} kg</span>
+                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0 lg:hidden">= {formatQuantity(kgQuantity)} kg</span>
                         )}
                       </div>
                       
@@ -522,6 +535,14 @@ const WarehouseOrderManager = ({ orderType }) => {
           </form>
         )}
       </Modal>
+
+      {/* 大数字键盘 */}
+      <NumberKeypad 
+        isOpen={isKeypadOpen}
+        title={keypadTitle}
+        onClose={() => setIsKeypadOpen(false)}
+        onConfirm={handleKeypadConfirm}
+      />
     </div>
   );
 };
@@ -535,10 +556,15 @@ const TransferManager = () => {
   const [form, setForm] = useDraftForm('transfer_form', { from_warehouse_id: '', to_warehouse_id: '', operator: '', remark: '', items: [] });
   const [newItem, setNewItem] = useState({ product_id: '', quantity: '' });
 
-  const load = () => {
-    api.get('/transfer').then(res => res.success && setData(res.data));
-    api.get('/warehouses').then(res => res.success && setWarehouses(res.data));
-    api.get('/products').then(res => res.success && setProducts(res.data));
+  const load = async () => {
+    const [tRes, wRes, pRes] = await Promise.all([
+      api.get('/transfer'),
+      api.get('/warehouses'),
+      api.get('/products')
+    ]);
+    if (tRes.success) setData(tRes.data);
+    if (wRes.success) setWarehouses(wRes.data);
+    if (pRes.success) setProducts(pRes.data);
   };
   useEffect(() => { load(); }, []);
 

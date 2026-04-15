@@ -335,12 +335,12 @@ const WorkstationScreen = () => {
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">产出数量 *</label>
-                <input type="number" value={form.output_quantity || ''} onChange={e => setForm({ ...form, output_quantity: parseInt(e.target.value) || '' })}
+                <input type="number" value={form.output_quantity !== undefined ? form.output_quantity : ''} onChange={e => setForm({ ...form, output_quantity: e.target.value === '' ? '' : parseInt(e.target.value) })}
                   className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none text-lg" placeholder="请输入产出数量" />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">不良数</label>
-                <input type="number" value={form.defect_quantity || ''} onChange={e => setForm({ ...form, defect_quantity: parseInt(e.target.value) || 0 })}
+                <input type="number" value={form.defect_quantity !== undefined ? form.defect_quantity : ''} onChange={e => setForm({ ...form, defect_quantity: e.target.value === '' ? '' : parseInt(e.target.value) })}
                   className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none" placeholder="0" />
               </div>
               <div>
@@ -384,7 +384,7 @@ const WorkstationScreen = () => {
               {form.result === 'fail' && (
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">不良数量</label>
-                  <input type="number" value={form.defect_quantity || ''} onChange={e => setForm({ ...form, defect_quantity: parseInt(e.target.value) || 0 })}
+                  <input type="number" value={form.defect_quantity !== '' ? form.defect_quantity : ''} onChange={e => setForm({ ...form, defect_quantity: e.target.value === '' ? '' : parseInt(e.target.value) })}
                     className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-red-500 focus:outline-none" />
                 </div>
               )}

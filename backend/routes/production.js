@@ -1,106 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const Decimal = require('decimal.js');
 const { generateOrderNo } = require('../utils/order-number');
 const { requirePermission } = require('../middleware/permission');
-const { validateId } = require('../middleware/validate');
+const { validate, validateId } = require('../middleware/validate');
 const { writeLog } = require('./logs');
-
-const { ENTITY_STATUS } = require('../constants/status');
-
-// 辅助函数：为委外工序自动创建委外加工单
-async function createOutsourcingOrderForProcess(db, production, processInfo, quantity) {
-  const existing = await db.get(`SELECT * FROM outsourcing_orders WHERE production_order_id = ? AND process_id = ?`, [production.id, processInfo.process_id]);
-  if (existing) return existing;
-  const defaultSupplier = await db.get("SELECT id FROM suppliers WHERE status = ? ORDER BY id LIMIT 1", [ENTITY_STATUS.ACTIVE]) || await db.get('SELECT id FROM suppliers LIMIT 1');
-  if (!defaultSupplier) { console.warn('[production] 无可用供应商，无法自动创建委外单'); return null; }
-  const orderNo = generateOrderNo('WW');
-  const result = await db.run(`
-    INSERT INTO outsourcing_orders
-      (order_no, supplier_id, production_order_id, process_id, total_amount, operator, remark, status)
-    VALUES (?, ?, ?, ?, 0, '系统自动', ?, 'pending')
-  `, [orderNo, defaultSupplier.id, production.id, processInfo.process_id, `自动创建 - 工序: ${processInfo.process_name}`]);
-  const orderId = result.lastInsertRowid;
-  await db.run('INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, 0)', [orderId, production.product_id, quantity || production.quantity]);
-  return { id: orderId, order_no: orderNo, process_id: processInfo.process_id, process_name: processInfo.process_name };
-}
-
-// 辅助函数：生产完成时自动创建成品入库单
-async function createFinishedProductInbound(db, production, quantity) {
-  const warehouse = await db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
-  if (!warehouse) return null;
-  const orderNo = generateOrderNo('IN');
-  const result = await db.run(`INSERT INTO inbound_orders (order_no, type, warehouse_id, production_order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
-    [orderNo, warehouse.id, production.id, `生产完成自动入库 - 生产工单: ${production.order_no}`]);
-  const inboundId = result.lastInsertRowid;
-  const batchNo = `PRD-${production.order_no}`;
-  await db.run(`INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, 0)`, [inboundId, production.product_id, batchNo, quantity]);
-  const inventory = await db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse.id, production.product_id, batchNo]);
-  if (inventory) {
-    await db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [quantity, inventory.id]);
-  } else {
-    await db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [warehouse.id, production.product_id, batchNo, quantity]);
-  }
-  return { id: inboundId, order_no: orderNo };
-}
-
-// 辅助函数：更新订单进度
-async function updateOrderProgress(db, orderId) {
-  const productionOrders = await db.all('SELECT * FROM production_orders WHERE order_id = ?', [orderId]);
-  if (productionOrders.length === 0) return;
-  let totalProgress = 0;
-  for (const po of productionOrders) {
-    if (po.status === 'completed') { totalProgress += 100; }
-    else {
-      const productProcesses = await db.all(`SELECT pp.id FROM product_processes pp WHERE pp.product_id = ? ORDER BY pp.sequence`, [po.product_id]);
-      const completedProcesses = await db.all(`SELECT DISTINCT ppr.process_id FROM production_process_records ppr WHERE ppr.production_order_id = ? AND ppr.status = 'completed'`, [po.id]);
-      if (productProcesses.length > 0) { totalProgress += Math.round((completedProcesses.length / productProcesses.length) * 100); }
-    }
-  }
-  const avgProgress = Math.round(totalProgress / productionOrders.length);
-  let newStatus = 'pending';
-  if (avgProgress > 0 && avgProgress < 100) newStatus = 'processing';
-  else if (avgProgress >= 100) newStatus = 'completed';
-  await db.run('UPDATE orders SET progress = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [avgProgress, newStatus, orderId]);
-  if (newStatus === 'completed') { await createFinishedProductOutbound(db, orderId); }
-}
-
-// 辅助函数：订单完成时自动创建出库单
-async function createFinishedProductOutbound(db, orderId) {
-  const existing = await db.get(`SELECT * FROM outbound_orders WHERE order_id = ? AND type = 'finished'`, [orderId]);
-  if (existing) return existing;
-  const order = await db.get('SELECT * FROM orders WHERE id = ?', [orderId]);
-  if (!order) return null;
-  const warehouse = await db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
-  if (!warehouse) return null;
-  const orderItems = await db.all('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
-  if (orderItems.length === 0) return null;
-  
-  // 【修复#3】先检查所有产品库存是否充足
-  for (const item of orderItems) {
-    const inv = await db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [warehouse.id, item.product_id]);
-    if (!inv || inv.total < item.quantity) {
-      // 库存不足，不创建出库单，等待库存到位后手动出库
-      return { pending: true, message: `成品库存不足，请入库后手动创建出库单` };
-    }
-  }
-  
-  const orderNo = generateOrderNo('OUT');
-  const result = await db.run(`INSERT INTO outbound_orders (order_no, type, warehouse_id, order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
-    [orderNo, warehouse.id, orderId, `订单完成自动出库 - 销售订单: ${order.order_no}`]);
-  const outboundId = result.lastInsertRowid;
-  for (const item of orderItems) {
-    let remaining = item.quantity;
-    const batches = await db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [warehouse.id, item.product_id]);
-    for (const batch of batches) {
-      if (remaining <= 0) break;
-      const deduct = Math.min(remaining, batch.quantity);
-      await db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
-      await db.run(`INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, ?)`, [outboundId, item.product_id, batch.batch_no, deduct, item.unit_price || 0]);
-      remaining -= deduct;
-    }
-  }
-  return { id: outboundId, order_no: orderNo };
-}
+const { BusinessError } = require('../utils/BusinessError');
+const ProductionService = require('../services/ProductionService');
+const { processReportSchema, productionStatusSchema, createProductionSchema, updateProductionSchema, reworkSchema } = require('../validators/production');
 
 
 // ==================== 工序 ====================
@@ -119,17 +26,105 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
   try {
     const { status, process, processCode, order_id, page = 1, pageSize = 20 } = req.query;
     if (processCode) {
-      const sql = `SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit, o.order_no, o.customer_name FROM production_orders po JOIN products p ON po.product_id = p.id LEFT JOIN orders o ON po.order_id = o.id WHERE po.status != 'completed' AND po.current_process = ? ORDER BY po.created_at DESC`;
+      // 查询在该工序有可用工作的所有活跃工单
+      // «有可用工作» = 该工序属于工单产品的工艺路线，且：
+      //   首道工序 → 工单活跃即可
+      //   非首道 → 前一道工序有累计产出
+      const sql = `SELECT DISTINCT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit,
+              p.outer_diameter, p.wall_thickness, p.length,
+              o.order_no as ref_order_no, o.customer_name
+            FROM production_orders po
+            JOIN products p ON po.product_id = p.id
+            LEFT JOIN orders o ON po.order_id = o.id
+            JOIN product_processes pp ON pp.product_id = po.product_id
+            JOIN processes pr ON pr.id = pp.process_id
+            WHERE po.status != 'completed' AND pr.code = ?
+              AND (
+                pp.sequence = (SELECT MIN(pp2.sequence) FROM product_processes pp2 WHERE pp2.product_id = po.product_id)
+                OR (
+                  SELECT COALESCE(SUM(ppr.output_quantity), 0)
+                  FROM production_process_records ppr
+                  JOIN product_processes prev_pp ON prev_pp.product_id = po.product_id AND prev_pp.process_id = ppr.process_id
+                  WHERE ppr.production_order_id = po.id AND ppr.status = 'completed'
+                    AND prev_pp.sequence = pp.sequence - 1
+                ) > 0
+              )
+            ORDER BY po.created_at DESC`;
       const orders = await req.db.all(sql, [processCode]);
       return res.json({ success: true, data: orders });
     }
-    let sql = `SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit, o.order_no, o.customer_name FROM production_orders po JOIN products p ON po.product_id = p.id LEFT JOIN orders o ON po.order_id = o.id WHERE 1=1`;
+    let sql = `SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit, p.outer_diameter, p.wall_thickness, p.length, o.order_no as ref_order_no, o.customer_name FROM production_orders po JOIN products p ON po.product_id = p.id LEFT JOIN orders o ON po.order_id = o.id WHERE 1=1`;
     const params = [];
-    if (status) { sql += ' AND po.status = ?'; params.push(status); }
+    if (status) {
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        sql += ' AND po.status = ?'; params.push(statuses[0]);
+      } else {
+        sql += ` AND po.status IN (${statuses.map(() => '?').join(',')})`; params.push(...statuses);
+      }
+    }
     if (process) { sql += ' AND po.current_process = ?'; params.push(process); }
     if (order_id) { sql += ' AND po.order_id = ?'; params.push(order_id); }
     sql += ' ORDER BY po.created_at DESC';
     const result = await req.db.paginate(sql, params, parseInt(page), parseInt(pageSize));
+
+    // 批量附加精简进度信息（process_step + next_process_name）
+    if (result.data.length > 0) {
+      const poIds = result.data.map(po => po.id);
+      const prodIds = [...new Set(result.data.map(po => po.product_id))];
+      const poPh = poIds.map(() => '?').join(',');
+      const prodPh = prodIds.map(() => '?').join(',');
+
+      // 批量查询各产品的工序配置
+      const allPP = await req.db.all(
+        `SELECT pp.product_id, pr.code as process_code, pr.name as process_name, pp.sequence
+         FROM product_processes pp JOIN processes pr ON pp.process_id = pr.id
+         WHERE pp.product_id IN (${prodPh}) ORDER BY pp.sequence`, prodIds
+      );
+      // 批量查询各工单各工序的累计产出
+      const allOutputs = await req.db.all(
+        `SELECT ppr.production_order_id, pr.code as process_code, COALESCE(SUM(ppr.output_quantity), 0) as output
+         FROM production_process_records ppr JOIN processes pr ON ppr.process_id = pr.id
+         WHERE ppr.production_order_id IN (${poPh}) AND ppr.status = 'completed'
+         GROUP BY ppr.production_order_id, pr.code`, poIds
+      );
+      const outputMap = {};
+      allOutputs.forEach(r => {
+        if (!outputMap[r.production_order_id]) outputMap[r.production_order_id] = {};
+        outputMap[r.production_order_id][r.process_code] = parseFloat(r.output) || 0;
+      });
+
+      for (const po of result.data) {
+        const ppList = allPP.filter(pp => pp.product_id === po.product_id);
+        const poOutputs = outputMap[po.id] || {};
+        let completedCount = 0;
+        let currentName = null, nextName = null;
+        let weightedSum = new Decimal(0);
+        for (let i = 0; i < ppList.length; i++) {
+          const out = poOutputs[ppList[i].process_code] || 0;
+          const target = po.quantity || 0;
+          if (out >= target) {
+            completedCount++;
+            weightedSum = weightedSum.plus(1);
+          } else if (target > 0) {
+            // 部分完成也计入加权进度
+            weightedSum = weightedSum.plus(new Decimal(out).div(target));
+          }
+          if (out < target && !currentName) {
+            currentName = ppList[i].process_name;
+            nextName = i < ppList.length - 1 ? ppList[i + 1].process_name : null;
+          }
+        }
+        po.process_step = `${completedCount}/${ppList.length}`;
+        // 加权百分比：每道工序按 min(产出/目标, 1) 求均值
+        po.process_percentage = ppList.length > 0
+          ? weightedSum.div(ppList.length).times(100).toDecimalPlaces(1).toNumber()
+          : 0;
+        po.current_process_name = currentName || (ppList.length > 0 ? '已完成' : '无工序');
+        po.next_process_name = nextName;
+      }
+    }
+
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[production.js]`, error.message);
@@ -139,21 +134,81 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
 
 router.get('/:id', validateId, requirePermission('production_view'), async (req, res) => {
   try {
-    const order = await req.db.get(`SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit, o.order_no as ref_order_no, o.customer_name FROM production_orders po JOIN products p ON po.product_id = p.id LEFT JOIN orders o ON po.order_id = o.id WHERE po.id = ?`, [req.params.id]);
-    const processRecords = await req.db.all(`SELECT ppr.*, pr.name as process_name, pr.code as process_code FROM production_process_records ppr JOIN processes pr ON ppr.process_id = pr.id WHERE ppr.production_order_id = ? ORDER BY pr.sequence`, [req.params.id]);
-    const outsourcingOrders = await req.db.all(`SELECT oo.id, oo.order_no, oo.status, oo.created_at, s.name as supplier_name, pr.name as process_name FROM outsourcing_orders oo LEFT JOIN suppliers s ON oo.supplier_id = s.id LEFT JOIN processes pr ON oo.process_id = pr.id WHERE oo.production_order_id = ? ORDER BY oo.created_at DESC`, [req.params.id]);
-    const inboundOrders = await req.db.all(`SELECT io.*, w.name as warehouse_name FROM inbound_orders io LEFT JOIN warehouses w ON io.warehouse_id = w.id WHERE io.production_order_id = ? ORDER BY io.created_at DESC`, [req.params.id]);
-    res.json({ success: true, data: { ...order, processRecords, outsourcingOrders, inboundOrders } });
+    const id = req.params.id;
+    const order = await req.db.get(`SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit, p.outer_diameter, p.wall_thickness, p.length, o.order_no as ref_order_no, o.customer_name FROM production_orders po JOIN products p ON po.product_id = p.id LEFT JOIN orders o ON po.order_id = o.id WHERE po.id = ?`, [id]);
+    if (!order) return res.status(404).json({ success: false, message: '工单不存在' });
+
+    // 并行查询：这6条SQL之间互不依赖
+    const [processRecords, outsourcingOrders, inboundOrders, processSummary, productProcesses, pickedMaterials] = await Promise.all([
+      req.db.all(`SELECT ppr.*, pr.name as process_name, pr.code as process_code FROM production_process_records ppr JOIN processes pr ON ppr.process_id = pr.id WHERE ppr.production_order_id = ? AND ppr.status != 'pending' ORDER BY pr.sequence, ppr.created_at`, [id]),
+      req.db.all(`SELECT oo.id, oo.order_no, oo.status, oo.created_at, s.name as supplier_name, pr.name as process_name FROM outsourcing_orders oo LEFT JOIN suppliers s ON oo.supplier_id = s.id LEFT JOIN processes pr ON oo.process_id = pr.id WHERE oo.production_order_id = ? ORDER BY oo.created_at DESC`, [id]),
+      req.db.all(`SELECT io.*, w.name as warehouse_name FROM inbound_orders io LEFT JOIN warehouses w ON io.warehouse_id = w.id WHERE io.production_order_id = ? ORDER BY io.created_at DESC`, [id]),
+      req.db.all(`SELECT pr.code as process_code, pr.name as process_name, COALESCE(SUM(ppr.output_quantity), 0) as cumulative_output, COALESCE(SUM(ppr.defect_quantity), 0) as cumulative_defect FROM production_process_records ppr JOIN processes pr ON ppr.process_id = pr.id WHERE ppr.production_order_id = ? AND ppr.status = 'completed' GROUP BY ppr.process_id, pr.code, pr.name ORDER BY MIN(pr.sequence)`, [id]),
+      req.db.all(`SELECT pp.*, pr.name as process_name, pr.code as process_code FROM product_processes pp JOIN processes pr ON pp.process_id = pr.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [order.product_id]),
+      req.db.all(`SELECT pi.material_id, p.name as material_name, p.code as material_code, p.unit, p.outer_diameter, p.wall_thickness, p.length as material_length, SUM(pi.quantity) as picked_quantity FROM pick_items pi JOIN pick_orders pk ON pi.pick_order_id = pk.id JOIN products p ON pi.material_id = p.id WHERE pk.production_order_id = ? AND pk.type = 'pick' AND pk.status = 'completed' GROUP BY pi.material_id, p.name, p.code, p.unit, p.outer_diameter, p.wall_thickness, p.length`, [id])
+    ]);
+
+    // ========== 工序进度全景图（纯内存计算）==========
+    const summaryMap = Object.fromEntries(
+      processSummary.map(s => [s.process_code, { output: parseFloat(s.cumulative_output) || 0, defect: parseFloat(s.cumulative_defect) || 0 }])
+    );
+    const processFlow = productProcesses.map((pp, idx) => {
+      const data = summaryMap[pp.process_code] || { output: 0, defect: 0 };
+      const prevCode = idx > 0 ? productProcesses[idx - 1].process_code : null;
+      const target = prevCode ? (summaryMap[prevCode]?.output || 0) : (order.quantity || 0);
+      let status = 'pending';
+      if (data.output >= (order.quantity || 0)) status = 'completed';
+      else if (data.output > 0) status = 'in_progress';
+      return {
+        process_id: pp.process_id, process_name: pp.process_name, process_code: pp.process_code,
+        sequence: pp.sequence, is_outsourced: pp.is_outsourced,
+        output: data.output, defect: data.defect, target,
+        percentage: target > 0 ? new Decimal(data.output).div(target).times(100).toDecimalPlaces(1).toNumber() : 0,
+        status
+      };
+    });
+    const currentIdx = processFlow.findIndex(p => p.status !== 'completed');
+    const currentProcessName = currentIdx >= 0 ? processFlow[currentIdx].process_name : (processFlow.length > 0 ? '已完成' : '无工序');
+    const nextProcessName = currentIdx >= 0 && currentIdx < processFlow.length - 1 ? processFlow[currentIdx + 1].process_name : null;
+    const completedCount = processFlow.filter(p => p.status === 'completed').length;
+    const processStep = `${completedCount}/${processFlow.length}`;
+
+    res.json({ success: true, data: {
+      ...order, processRecords, outsourcingOrders, inboundOrders, processSummary,
+      processFlow, currentProcessName, nextProcessName, processStep, pickedMaterials
+    } });
   } catch (error) {
     console.error(`[production.js]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
 
-router.post('/', requirePermission('production_create'), async (req, res) => {
+router.post('/', requirePermission('production_create'), validate(createProductionSchema), async (req, res) => {
   try {
     const { order_id, product_id, quantity, operator, remark, start_time, end_time } = req.body;
-    if (!product_id || !quantity) return res.status(400).json({ success: false, message: '缺少必要参数：product_id 或 quantity' });
+    
+    // 【防呆】检验销售订单剩余可派发产出量（考虑良品率反馈逻辑）
+    if (order_id) {
+      const orderItem = await req.db.get('SELECT quantity FROM order_items WHERE order_id = ? AND product_id = ?', [order_id, product_id]);
+      if (orderItem) {
+        // 计算属于该订单&同产品的工单已占用的产能
+        // 如果状态是已完成，则取真实出产报工数量(良品数 completed_quantity)；如果是进行中，则视全部入投 quantity 已经被占用。取消的则剔除。
+        const relatedOrders = await req.db.all("SELECT status, quantity, completed_quantity FROM production_orders WHERE order_id = ? AND product_id = ? AND status != 'cancelled'", [order_id, product_id]);
+        let consumed = 0;
+        for (const po of relatedOrders) {
+          if (po.status === 'completed') {
+            consumed += (po.completed_quantity || 0);
+          } else {
+            consumed += (po.quantity || 0);
+          }
+        }
+        const remaining = orderItem.quantity - consumed;
+        if (quantity > remaining) {
+          return res.status(400).json({ success: false, message: `您超发了！订单总需 ${orderItem.quantity} 件，除去在制与已完工良品后，当前最多只允许再投产 ${Math.max(0, remaining)} 件。` });
+        }
+      }
+    }
+
     const orderNo = generateOrderNo('PO');
     let productionId;
     
@@ -176,222 +231,64 @@ router.post('/', requirePermission('production_create'), async (req, res) => {
 });
 
 // 工序操作
-router.post('/:id/process', validateId, requirePermission('production_edit'), async (req, res) => {
+router.post('/:id/process', validateId, requirePermission('production_edit'), validate(processReportSchema), async (req, res) => {
   try {
-    const { process_id, operator, input_quantity, output_quantity, defect_quantity, remark, outsourcing_id, materials } = req.body;
-    const productionId = req.params.id;
-    
-    let responseData = { success: true };
-    
-    // 参数校验
-    if (!process_id || typeof process_id !== 'number' && isNaN(Number(process_id))) {
-      return res.status(400).json({ success: false, message: '工序ID无效' });
-    }
-    if ((output_quantity != null && output_quantity < 0) || (defect_quantity != null && defect_quantity < 0)) {
-      return res.status(400).json({ success: false, message: '数量不能为负数' });
-    }
-    
+    let responseData;
     await req.db.transaction(async () => {
-      // 每次报工都插入新记录（支持多次报工）
-      await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, operator, input_quantity, output_quantity, defect_quantity, status, start_time, end_time, remark, outsourcing_id) VALUES (?, ?, ?, ?, ?, ?, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)`,
-        [productionId, process_id, operator, input_quantity, output_quantity, defect_quantity, remark, outsourcing_id || null]);
-      
-      const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [productionId]);
-      const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code, p.name as process_name FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [production.product_id]);
-      const currentProcess = await req.db.get('SELECT * FROM processes WHERE id = ?', [process_id]);
-      const currentIndex = productProcesses.findIndex(pp => pp.process_id == process_id);
-      
-      // 计算该工序的累计产出量
-      const processTotal = await req.db.get('SELECT COALESCE(SUM(output_quantity), 0) as total_output, COALESCE(SUM(defect_quantity), 0) as total_defect FROM production_process_records WHERE production_order_id = ? AND process_id = ?', [productionId, process_id]);
-      const cumulativeOutput = processTotal.total_output;
-      
-      // ========== 首道工序：扣减原材料库存 + 记录实际消耗 ==========
-      if (currentIndex === 0) {
-        const productProcessId = productProcesses[0].id;
-        const processMaterials = await req.db.all(`SELECT pm.*, p.name as material_name, p.code as material_code, p.unit as material_unit FROM process_materials pm JOIN products p ON pm.material_id = p.id WHERE pm.product_process_id = ?`, [productProcessId]);
-        
-        if (processMaterials.length > 0 && processMaterials.some(m => m.quantity > 0)) {
-          const rawWarehouse = await req.db.get("SELECT id FROM warehouses WHERE type = 'raw' LIMIT 1");
-          if (!rawWarehouse) {
-            throw new Error('系统中未找到原材料仓库，请先在仓库管理中创建');
-          }
-          
-          const actualQty = output_quantity || 0;
-          const consumedMaterials = [];
-          // 前端传来的实际用量映射：{ material_id: actual_quantity }
-          const materialOverrides = {};
-          if (Array.isArray(materials)) {
-            materials.forEach(m => {
-              if (m.material_id && m.actual_quantity != null) {
-                const val = parseFloat(m.actual_quantity);
-                if (!isNaN(val) && val >= 0) {
-                  materialOverrides[m.material_id] = val;
-                }
-              }
-            });
-          }
-          
-          for (const mat of processMaterials) {
-            if (mat.quantity <= 0) continue;
-            // 计划消耗 = 单位用量 × 产出数
-            const plannedQty = mat.quantity * actualQty;
-            // 实际消耗：前端传了用实际值，否则用计划值
-            const consumeQty = materialOverrides[mat.material_id] !== undefined 
-              ? materialOverrides[mat.material_id] 
-              : plannedQty;
-            if (consumeQty <= 0) continue;
-            
-            const inventory = await req.db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [rawWarehouse.id, mat.material_id]);
-            const availableQty = inventory?.total || 0;
-            
-            if (availableQty < consumeQty) {
-              throw new Error(`原材料「${mat.material_name}」库存不足！需要 ${consumeQty} ${mat.unit || '公斤'}，当前库存 ${availableQty} ${mat.material_unit || '公斤'}`);
-            }
-            
-            let remaining = consumeQty;
-            let traceSupplierBatch = null, traceHeatNo = null, traceBatchNo = null;
-            const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [rawWarehouse.id, mat.material_id]);
-            for (const batch of batches) {
-              if (remaining <= 0) break;
-              const deduct = Math.min(remaining, batch.quantity);
-              await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
-              // 取第一个被扣减批次的追溯信息（FIFO）
-              if (!traceSupplierBatch) traceSupplierBatch = batch.supplier_batch_no;
-              if (!traceHeatNo) traceHeatNo = batch.heat_no;
-              if (!traceBatchNo) traceBatchNo = batch.batch_no;
-              remaining -= deduct;
-            }
-            
-            // 写入材料消耗记录表（含追溯字段）
-            await req.db.run(
-              `INSERT INTO production_material_consumption (production_order_id, process_id, material_id, planned_quantity, actual_quantity, unit, operator, supplier_batch_no, heat_no, batch_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [productionId, process_id, mat.material_id, plannedQty, consumeQty, mat.unit || '公斤', operator, traceSupplierBatch || null, traceHeatNo || null, traceBatchNo || null]
-            );
-            
-            consumedMaterials.push({ name: mat.material_name, quantity: consumeQty, unit: mat.unit || '公斤' });
-          }
-          
-          responseData.consumedMaterials = consumedMaterials;
-        }
-      }
-      
-      // ========== 流转逻辑：累计产出 >= 目标才流转 ==========
-      const targetQty = production.quantity;
-      let outsourcingOrder = null;
-      
-      // 更新工单状态为 processing
-      if (production.status === 'pending') {
-        await req.db.run('UPDATE production_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['processing', productionId]);
-      }
-      
-      // 更新工单的累计完成数量
-      const totalCompleted = await req.db.get('SELECT COALESCE(SUM(output_quantity), 0) as total FROM production_process_records WHERE production_order_id = ? AND process_id = (SELECT process_id FROM product_processes WHERE product_id = ? ORDER BY sequence DESC LIMIT 1)', [productionId, production.product_id]);
-      await req.db.run('UPDATE production_orders SET completed_quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [totalCompleted?.total || 0, productionId]);
-      
-      // ========== 半成品库存联动 ==========
-      const currentPP = productProcesses[currentIndex];
-      const actualOutput = output_quantity || 0;
-      const semiWarehouse = await req.db.get("SELECT id FROM warehouses WHERE type = 'semi' LIMIT 1");
-      const finishedWarehouse = await req.db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
-      
-      // 非首道工序：扣减上一道工序的输出产物库存
-      if (currentIndex > 0 && actualOutput > 0) {
-        const prevPP = productProcesses[currentIndex - 1];
-        if (prevPP.output_product_id) {
-          if (semiWarehouse) {
-            const prevProduct = await req.db.get('SELECT name FROM products WHERE id = ?', [prevPP.output_product_id]);
-            const inv = await req.db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [semiWarehouse.id, prevPP.output_product_id]);
-            const available = inv?.total || 0;
-            if (available < actualOutput) {
-              throw new Error(`半成品「${prevProduct?.name || prevPP.output_product_id}」库存不足！需要 ${actualOutput}，当前 ${available}`);
-            }
-            let remaining = actualOutput;
-            const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [semiWarehouse.id, prevPP.output_product_id]);
-            for (const batch of batches) {
-              if (remaining <= 0) break;
-              const deduct = Math.min(remaining, batch.quantity);
-              await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
-              remaining -= deduct;
-            }
-          }
-        }
-      }
-      
-      // 当前工序有输出产物：入库半成品仓
-      if (currentPP.output_product_id && actualOutput > 0) {
-        const isLastProcess = currentIndex === productProcesses.length - 1;
-        const targetWarehouse = isLastProcess ? finishedWarehouse : semiWarehouse;
-        if (targetWarehouse) {
-          const batchNo = `PRD-${production.order_no}`;
-          const existingInv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [targetWarehouse.id, currentPP.output_product_id, batchNo]);
-          if (existingInv) {
-            await req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [actualOutput, existingInv.id]);
-          } else {
-            await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [targetWarehouse.id, currentPP.output_product_id, batchNo, actualOutput]);
-          }
-          responseData.semiProductInbound = {
-            product_id: currentPP.output_product_id,
-            quantity: actualOutput,
-            warehouse_type: isLastProcess ? 'finished' : 'semi'
-          };
-        }
-      }
-      
-      if (cumulativeOutput >= targetQty) {
-        // 该工序累计完成目标 → 判断是否流转
-        if (currentIndex < productProcesses.length - 1) {
-          const nextProcess = productProcesses[currentIndex + 1];
-          await req.db.run('UPDATE production_orders SET current_process = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextProcess.process_code, productionId]);
-          if (nextProcess.is_outsourced === 1) {
-            outsourcingOrder = await createOutsourcingOrderForProcess(req.db, production, nextProcess, cumulativeOutput);
-          }
-        } else {
-          // 最后一道工序且累计完成 → 工单完工
-          await req.db.run('UPDATE production_orders SET current_process = ?, status = ?, completed_quantity = ?, end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [currentProcess.code, 'completed', cumulativeOutput, productionId]);
-          // 如果没有设置 output_product_id，走旧的成品入库逻辑
-          if (!currentPP.output_product_id) {
-            const inboundOrder = await createFinishedProductInbound(req.db, production, cumulativeOutput);
-            responseData.inboundOrder = inboundOrder;
-          }
-          if (production.order_id) { await updateOrderProgress(req.db, production.order_id); }
-        }
-      }
-      
-      // 返回累计追踪数据
-      responseData.processProgress = {
-        cumulative_output: cumulativeOutput,
-        target_quantity: targetQty,
-        remaining: Math.max(0, targetQty - cumulativeOutput),
-        is_completed: cumulativeOutput >= targetQty
-      };
-      
-      responseData.outsourcingOrder = outsourcingOrder;
+      responseData = await ProductionService.submitProcessReport(req.db, req.params.id, req.body);
     });
     // 【修复#2】res.json 移到事务外部，确保事务回滚时不会返回假成功
     res.json(responseData);
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    if (error.message && (error.message.includes('库存不足') || error.message.includes('未找到') || error.message.includes('半成品'))) {
-      return res.status(400).json({ success: false, message: error.message });
+    if (error instanceof BusinessError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
 
-router.put('/:id/status', validateId, requirePermission('production_edit'), async (req, res) => {
+router.post('/:id/sync-processes', validateId, requirePermission('production_edit'), async (req, res) => {
+  try {
+    const order = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ success: false, message: '生产工单不存在' });
+    
+    // 检查是否有已经开始处理的工序
+    const processing = await req.db.get("SELECT count(*) as count FROM production_process_records WHERE production_order_id = ? AND status != 'pending'", [req.params.id]);
+    if (processing.count > 0) {
+      return res.status(400).json({ success: false, message: '已有工序开始报工，无法同步新流程' });
+    }
+    
+    await req.db.transaction(async () => {
+      await req.db.run('DELETE FROM production_process_records WHERE production_order_id = ?', [req.params.id]);
+      
+      const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [order.product_id]);
+      if (productProcesses.length > 0) {
+        for (const pp of productProcesses) { 
+          await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [req.params.id, pp.process_id]); 
+        }
+        await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, req.params.id]);
+      } else {
+        await req.db.run('UPDATE production_orders SET current_process = NULL WHERE id = ?', [req.params.id]);
+      }
+    });
+    
+    res.json({ success: true, message: '已成功同步最新工序' });
+  } catch (error) {
+    console.error(`[production.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.put('/:id/status', validateId, requirePermission('production_edit'), validate(productionStatusSchema), async (req, res) => {
   try {
     const { status } = req.body;
-    // 【安全】状态值白名单校验
-    const validStatuses = ['pending', 'processing', 'completed', 'quality_hold', 'cancelled'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
-    }
     await req.db.transaction(async () => {
       const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
       await req.db.run('UPDATE production_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
       // 【联动】手动标完成时也触发订单进度更新 + 成品入库
       if (status === 'completed' && production && production.order_id) {
-        await updateOrderProgress(req.db, production.order_id);
+        await ProductionService.updateOrderProgress(req.db, production.order_id);
       }
     });
     res.json({ success: true });
@@ -401,7 +298,7 @@ router.put('/:id/status', validateId, requirePermission('production_edit'), asyn
   }
 });
 
-router.put('/:id', validateId, requirePermission('production_edit'), async (req, res) => {
+router.put('/:id', validateId, requirePermission('production_edit'), validate(updateProductionSchema), async (req, res) => {
   try {
     const { order_id, product_id, quantity, operator, remark, start_time, end_time } = req.body;
     const order = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
@@ -464,11 +361,9 @@ router.delete('/:id', validateId, requirePermission('production_delete'), async 
 });
 
 // ==================== 返工流程 ====================
-router.post('/:id/rework', validateId, requirePermission('production_edit'), async (req, res) => {
+router.post('/:id/rework', validateId, requirePermission('production_edit'), validate(reworkSchema), async (req, res) => {
   try {
     const { target_process_id, quantity, reason, operator } = req.body;
-    if (!target_process_id) return res.status(400).json({ success: false, message: '请选择返工回退到的目标工序' });
-    if (!reason) return res.status(400).json({ success: false, message: '请填写返工原因' });
 
     const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
     if (!production) return res.status(404).json({ success: false, message: '工单不存在' });

@@ -43,10 +43,9 @@ router.post('/', requirePermission('basic_data_create'), async (req, res) => {
     // 自动计算排序号：同级最大值 + 1
     let finalSort = sort_order;
     if (finalSort === undefined || finalSort === null || finalSort === 0) {
-      const max = await req.db.get(
-        'SELECT MAX(sort_order) as m FROM material_categories WHERE parent_id IS ?',
-        [parent_id || null]
-      );
+      const q = parent_id ? 'parent_id = ?' : 'parent_id IS NULL';
+      const p = parent_id ? [parent_id] : [];
+      const max = await req.db.get(`SELECT MAX(sort_order) as m FROM material_categories WHERE ${q}`, p);
       finalSort = (max?.m || 0) + 1;
     }
     const result = await req.db.run(
@@ -73,9 +72,11 @@ router.post('/reorder', requirePermission('basic_data_edit'), async (req, res) =
     // 找同级相邻元素
     const op = direction === 'up' ? '<' : '>';
     const order = direction === 'up' ? 'DESC' : 'ASC';
+    const q1 = current.parent_id ? 'parent_id = ?' : 'parent_id IS NULL';
+    const params = current.parent_id ? [current.parent_id, current.sort_order] : [current.sort_order];
     const sibling = await req.db.get(
-      `SELECT * FROM material_categories WHERE parent_id IS ? AND sort_order ${op} ? ORDER BY sort_order ${order} LIMIT 1`,
-      [current.parent_id || null, current.sort_order]
+      `SELECT * FROM material_categories WHERE ${q1} AND sort_order ${op} ? ORDER BY sort_order ${order} LIMIT 1`,
+      params
     );
     if (!sibling) return res.json({ success: true, message: '已在边界' });
 

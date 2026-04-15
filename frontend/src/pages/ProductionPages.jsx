@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
+import { formatAmount, formatQuantity } from '../utils/format';
 import Pagination from '../components/Pagination';
 import SearchFilter from '../components/SearchFilter';
 import SearchSelect, { SimpleSearchSelect } from '../components/SearchSelect';
@@ -16,6 +18,10 @@ import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { doPrint } from '../utils/printEngine';
 import { useConfirm } from '../components/ConfirmModal';
 import OperatorSelect from '../components/OperatorSelect';
+import { convertToKg as sharedConvertToKg, convertFromKg, calcKgPerPieceFromProduct } from '../utils/unitConvert';
+import NextStepActions from '../components/NextStepActions';
+import PickFormModal from '../components/PickFormModal';
+import { useScanner } from '../hooks/useScanner';
 
 const PrintableQRCode = ({ value, label }) => (
   <div className="flex flex-col items-center">
@@ -30,6 +36,7 @@ const PickMaterialManager = () => {
   const [confirm, ConfirmDialog] = useConfirm();
 
   const [orders, setOrders] = useState([]);
+  const [productionOrders, setProductionOrders] = useState([]); // 生产工单
   const [warehouses, setWarehouses] = useState([]);
   const [materials, setMaterials] = useState([]); // 原材料
   const [semiProducts, setSemiProducts] = useState([]); // 半成品
@@ -37,11 +44,34 @@ const PickMaterialManager = () => {
   const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
   const [selectedProductId, setSelectedProductId] = useState('');
   const [selectedProductQty, setSelectedProductQty] = useState(1);
+  const formRef = useRef(null);
+
+  useScanner((mac) => {
+    if (modal.open && (modal.mode === 'create' || modal.mode === 'edit') && formRef.current) {
+      const parsed = mac.match(/^M-(.+?)(?:-|$)/)?.[1];
+      const keyword = parsed || mac;
+      
+      const foundMat = materials.find(m => m.code === keyword || String(m.id) === keyword) ||
+                       semiProducts.find(m => m.code === keyword || String(m.id) === keyword);
+                       
+      if (foundMat) {
+        if (modal.boundMaterialIds && !modal.boundMaterialIds.includes(foundMat.id)) {
+           window.__toast?.warning(`产品 ${foundMat.name} 不属于当前过滤要求内`);
+           return;
+        }
+        formRef.current.appendRow(foundMat);
+        window.__toast?.success(`已扫码并装填物料: ${foundMat.name}`);
+      } else {
+        window.__toast?.error('库中未找到对应条形码或二维码，或者无对应库存权限！');
+      }
+    }
+  });
   
   const load = async () => {
-    const [pickRes, orderRes, whRes, rawRes, semiRes, finRes] = await Promise.all([
+    const [pickRes, orderRes, poRes, whRes, rawRes, semiRes, finRes] = await Promise.all([
       api.get('/pick'),
       api.get('/orders?status=pending,processing'),
+      api.get('/production?status=pending,processing'),
       api.get('/warehouses?type=raw'),
       api.get('/products?category=原材料'),
       api.get('/products?category=半成品'),
@@ -49,6 +79,7 @@ const PickMaterialManager = () => {
     ]);
     if (pickRes.success) setData(pickRes.data);
     if (orderRes.success) setOrders(orderRes.data);
+    if (poRes.success) setProductionOrders(poRes.data);
     if (whRes.success) setWarehouses(whRes.data);
     if (rawRes.success) setMaterials(rawRes.data);
     if (semiRes.success) setSemiProducts(semiRes.data);
@@ -56,8 +87,13 @@ const PickMaterialManager = () => {
   };
   useEffect(() => { load(); }, []);
   
-  // 所有可用材料（原材料 + 半成品）
-  const allMaterials = [...materials, ...semiProducts];
+  // O(1) 查找 Map（合并 allMaterials 到 useMemo 内部，避免每轮渲染新建数组导致缓存失效）
+  const allMaterials = useMemo(() => [...materials, ...semiProducts], [materials, semiProducts]);
+  const materialMap = useMemo(() => {
+    const map = new Map();
+    allMaterials.forEach(m => map.set(String(m.id), m));
+    return map;
+  }, [allMaterials]);
   
   // 下拉显示格式：[供应商/客户] 产品名
   const fmtProduct = (p) => {
@@ -131,7 +167,6 @@ const PickMaterialManager = () => {
     const matRes = await api.get(`/orders/${order.id}/materials`);
     const orderMaterials = matRes.data || [];
     
-    // 转换为领料明细
     const items = orderMaterials.map(m => ({
       material_id: m.material_id,
       material_name: m.name,
@@ -140,175 +175,28 @@ const PickMaterialManager = () => {
       quantity: Math.max(0, m.required_quantity - (m.picked_quantity || 0))
     })).filter(i => i.quantity > 0);
     
+    // 获取该订单所有绑定的物料ID，用于下拉列表过滤
+    const boundIds = orderMaterials.map(m => m.material_id);
+    
     setModal({ 
       open: true, 
       item: { order_id: order.id, order_no: order.order_no }, 
-      items: items.length ? items : [{ material_id: '', quantity: 1 }], 
+      items: items.length ? items : [{ material_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }], 
       mode: 'create',
-      orderMaterials 
+      orderMaterials,
+      boundMaterialIds: boundIds.length > 0 ? boundIds : null
     });
   };
   
   const closeModal = () => {
     setModal({ open: false, item: null, items: [], mode: 'list' });
   };
-  
-  const save = async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const warehouseId = fd.get('warehouse_id');
-    const items = (modal.items || []).filter(i => i.material_id && i.quantity > 0);
-    
-    if (items.length === 0) {
-      window.__toast?.warning('请添加领料明细');
-      return;
-    }
-    
-    // 验证数量为正数
-    for (const item of items) {
-      if (!item.quantity || item.quantity <= 0) {
-        window.__toast?.warning('领料数量必须大于0');
-        return;
-      }
-    }
-    
-    // 退料不检查库存
-    if (modal.type !== 'return') {
-    // 验证库存是否足够（以公斤为单位）
-    const invRes = await api.get(`/inventory?warehouse_type=raw`);
-    if (invRes.success) {
-      // 使用 String() 转换确保类型一致
-      const warehouseIdStr = String(warehouseId);
-      const inventory = invRes.data.filter(i => String(i.warehouse_id) === warehouseIdStr);
-      
-      if (inventory.length === 0) {
-        window.__toast?.warning('该仓库暂无库存记录，请检查仓库选择是否正确');
-        return;
-      }
-      
-      for (const item of items) {
-        const materialIdStr = String(item.material_id);
-        const inv = inventory.find(i => String(i.product_id) === materialIdStr);
-        const material = allMaterials.find(m => String(m.id) === materialIdStr);
-        
-        if (!inv) {
-          window.__toast?.warning(`${material?.name || '物料'} 在该仓库无库存记录`);
-          return;
-        }
-        
-        if (Number(inv.quantity) < Number(item.quantity)) {
-          window.__toast?.warning(`${material?.name || '物料'} 库存不足！\n当前库存: ${inv.quantity} 公斤\n领料数量: ${item.quantity} 公斤`);
-          return;
-        }
-        }
-    }
-    } // end if (modal.type !== 'return')
-    
-    // 确保items包含input_quantity和input_unit字段
-    const processedItems = items.map(item => ({
-      ...item,
-      input_quantity: item.input_quantity || item.quantity,
-      input_unit: item.input_unit || '公斤'
-    }));
-    
-    const obj = { 
-      order_id: fd.get('order_id') || null,
-      production_order_id: fd.get('production_order_id') || null,
-      warehouse_id: warehouseId, 
-      operator: fd.get('operator'), 
-      remark: fd.get('remark'), 
-      items: processedItems,
-      type: modal.type || 'pick'
-    };
-    const res = modal.mode === 'edit'
-      ? await api.put(`/pick/${modal.item.id}`, obj, { invalidate: ['inventory'] })
-      : await api.post('/pick', obj, { invalidate: ['inventory'] });
-    if (res.success) { closeModal(); load(); }
-    else window.__toast?.error(res.message);
-  };
-  
-  const updateStatus = async (item, status) => {
-    const res = await api.put(`/pick/${item.id}/status`, { status }, { invalidate: ['inventory'] });
-    if (res.success) load();
-    else window.__toast?.error(res.message);
-  };
-  
-  const openEdit = async (item) => {
-    const res = await api.get(`/pick/${item.id}`);
-    if (res.success) {
-      setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'edit' });
-    }
-  };
-  
-  const del = async (item) => {
-    // 如果已完成，管理员可以强制删除
-    if (item.status === 'completed') {
-      if (!isAdmin) {
-        window.__toast?.warning('已完成的领料单不能删除，如需删除请联系管理员');
-        return;
-      }
-      if (!await confirm('⚠️ 警告：此领料单已完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
-      const res = await api.del(`/pick/${item.id}?force=true`);
-      if (res.success) load();
-      else window.__toast?.error(res.message);
-      return;
-    }
-    
-    if (!await confirm('确定删除该领料单？')) return;
-    const res = await api.del(`/pick/${item.id}`);
-    if (res.success) load();
-    else window.__toast?.error(res.message);
-  };
-  
-  const addRow = () => {
-    setModal({ ...modal, items: [...(modal.items || []), { material_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }] });
-  };
-  
-  const removeRow = (index) => {
-    const newItems = (modal.items || []).filter((_, i) => i !== index);
-    setModal({ ...modal, items: newItems.length ? newItems : [{ material_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }] });
-  };
-  
-  // 单位转换函数：支持"支"转"公斤"的换算
-  // 公式：((外径-壁厚)*壁厚)*0.02491*长度=单支公斤
-  const convertToKg = (quantity, unit, materialId) => {
-    if (unit === '吨') return quantity * 1000;
-    if (unit === '支') {
-      // 获取物料尺寸信息
-      const material = allMaterials.find(m => String(m.id) === String(materialId));
-      if (material && material.outer_diameter && material.wall_thickness && material.length) {
-        const outerDiameter = parseFloat(material.outer_diameter) || 0;
-        const wallThickness = parseFloat(material.wall_thickness) || 0;
-        const length = parseFloat(material.length) || 0;
-        // 公式：((外径-壁厚)*壁厚)*0.02491*长度=单支公斤
-        const kgPerPiece = ((outerDiameter - wallThickness) * wallThickness) * 0.02491 * length;
-        return quantity * kgPerPiece;
-      }
-      // 如果没有物料尺寸信息，无法转换
-      return 0;
-    }
-    return quantity;
-  };
-  
-  const updateItem = (index, field, value) => {
-    const newItems = [...(modal.items || [])];
-    newItems[index] = { ...newItems[index], [field]: value };
-    
-    // 如果修改了输入数量或物料，重新计算公斤数量
-    const item = newItems[index];
-    if (field === 'input_quantity' || field === 'material_id') {
-      const material = allMaterials.find(m => String(m.id) === String(item.material_id));
-      const unit = material?.unit || '公斤';
-      const inputQuantity = item.input_quantity || item.quantity || 0;
-      item.quantity = convertToKg(inputQuantity, unit, item.material_id);
-      item.input_unit = unit; // 自动设置单位为物料绑定的单位
-    }
-    
-    setModal({ ...modal, items: newItems });
-  };
+    // 这些已被 RHF 移交组件内部管理，只保留外部框架的开关状态。
+  // updateItem, addRow, convertToKg 等已抽离至 PickFormModal
   
   return (
     <div className="fade-in">
+      <ConfirmDialog />
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">领料管理</h2>
         <div className="flex gap-2">
@@ -368,42 +256,10 @@ const PickMaterialManager = () => {
         </div>
       )}
       
-      {/* 按成品工序配置领料 */}
-      {finishedProducts.length > 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
-          <h3 className="font-bold text-green-800 mb-2"><i className="fas fa-cogs mr-2"></i>按成品工序配置领料</h3>
-          <p className="text-sm text-green-600 mb-3">选择成品和数量，系统将根据工序配置自动生成领料明细</p>
-          <div className="flex items-end gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-green-700 mb-1">选择成品</label>
-              <select value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} className="w-full border border-green-300 rounded-lg px-3 py-2">
-                <option value="">请选择成品</option>
-                {finishedProducts.map(p => <option key={p.id} value={p.id}>{fmtFinished(p)}</option>)}
-              </select>
-            </div>
-            <div className="w-32">
-              <label className="block text-sm font-medium text-green-700 mb-1">生产数量</label>
-              <input type="number" value={selectedProductQty} onChange={e => setSelectedProductQty(parseInt(e.target.value) || 1)} min="1" className="w-full border border-green-300 rounded-lg px-3 py-2" />
-            </div>
-            <button onClick={() => {
-              if (!selectedProductId) {
-                window.__toast?.warning('请选择成品');
-                return;
-              }
-              const product = finishedProducts.find(p => String(p.id) === String(selectedProductId));
-              if (product) {
-                openFromProductProcess(product, selectedProductQty);
-              }
-            }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 whitespace-nowrap">
-              <i className="fas fa-magic mr-2"></i>自动生成领料单
-            </button>
-          </div>
-        </div>
-      )}
-      
       <div className="bg-white rounded-xl shadow">
         <Table columns={[
           { key: 'order_no', title: '单号' },
+          { key: 'production_order_no', title: '关联工单', render: v => v ? <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{v}</span> : <span className="text-gray-400">-</span> },
           { key: 'type', title: '类型', render: v => (
             <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${v === 'return' ? 'bg-orange-100 text-orange-700' : 'bg-teal-100 text-teal-700'}`}>
               {v === 'return' ? '退料' : '领料'}
@@ -475,86 +331,37 @@ const PickMaterialManager = () => {
               </div>
             )}
             {modal.item?.status !== 'pending' && (
-              <div className="flex justify-end pt-4 border-t">
-                <button type="button" onClick={closeModal} className="w-full sm:w-auto px-4 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">关闭</button>
+              <div className="pt-4 border-t space-y-2">
+                {modal.item?.status === 'completed' && modal.item?.production_order_id && (
+                  <NextStepActions actions={[
+                    { icon: '🔧', label: '去车间报工', path: '/process/hub', onClick: closeModal },
+                  ]} title="领料已完成" />
+                )}
+                <div className="flex justify-end">
+                  <button type="button" onClick={closeModal} className="w-full sm:w-auto px-4 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">关闭</button>
+                </div>
               </div>
             )}
           </div>
         ) : (
-          <form onSubmit={save} className="space-y-4">
-            {modal.item?.order_no && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-blue-800 text-sm">
-                <i className="fas fa-link mr-2"></i>
-                关联订单：<strong>{modal.item.order_no}</strong>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">{modal.type === 'return' ? '退入仓库' : '领料仓库'} *</label>
-                <select name="warehouse_id" className="w-full border rounded-lg px-3 py-2" required>
-                  <option value="">请选择</option>
-                  {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">{modal.type === 'return' ? '退料人' : '领料人'}</label>
-                <OperatorSelect />
-              </div>
-              <input type="hidden" name="order_id" value={modal.item?.order_id || ''} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">{modal.type === 'return' ? '退料明细' : '领料明细'}</label>
-              <div className="border rounded-lg p-3 space-y-2">
-                {(modal.items || []).map((it, i) => {
-                  const material = allMaterials.find(m => String(m.id) === String(it.material_id));
-                  const unit = material?.unit || '公斤';
-                  const kgQuantity = convertToKg(it.input_quantity || it.quantity || 0, unit, it.material_id);
-                  
-                  return (
-                    <div key={i} className="flex flex-wrap lg:flex-nowrap gap-3 items-center bg-gray-50 p-2.5 rounded-lg border border-gray-100 mb-2 relative group hover:border-teal-200 transition-colors">
-                      <div className="w-full lg:flex-1 min-w-[200px]">
-                        <select value={it.material_id} onChange={e => updateItem(i, 'material_id', e.target.value)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none bg-white">
-                          <option value="">请选择物料</option>
-                          {filteredRawForPick.length > 0 && <optgroup label="原材料">{filteredRawForPick.map(m => <option key={m.id} value={m.id}>{fmtProduct(m)}</option>)}</optgroup>}
-                          {filteredSemiForPick.length > 0 && <optgroup label="半成品">{filteredSemiForPick.map(m => <option key={m.id} value={m.id}>{fmtProduct(m)}</option>)}</optgroup>}
-                        </select>
-                      </div>
-                      <div className="w-[30%] lg:w-32">
-                        <input type="number" value={it.input_quantity || it.quantity} onChange={e => updateItem(i, 'input_quantity', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 text-sm transition-all shadow-sm outline-none" placeholder="输入领用数量" />
-                      </div>
-                      <div className="w-[30%] lg:w-auto flex flex-col lg:flex-row items-start lg:items-center gap-2">
-                        <span className="px-2 py-1 bg-white border border-gray-200 text-gray-700 rounded-md text-xs font-medium shadow-sm">{unit}</span>
-                        {unit !== '公斤' && (
-                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0">= {kgQuantity.toFixed(2)} kg</span>
-                        )}
-                        {unit === '公斤' && (
-                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0 lg:hidden">= {kgQuantity.toFixed(2)} kg</span>
-                        )}
-                      </div>
-                      
-                      {/* 需求量及删除按钮区域 */}
-                      <div className="w-full lg:w-32 flex items-center justify-between border-t lg:border-t-0 lg:border-l border-gray-200 pt-2 lg:pt-0 lg:pl-3 mt-1 lg:mt-0">
-                        <div className="flex-1 flex items-center">
-                          {it.required_quantity ? (
-                            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded" title="根据工单和工序预估的需求量">需求: {it.required_quantity} {unit}</span>
-                          ) : <span className="text-xs text-gray-400 italic">额外领用</span>}
-                        </div>
-                        <button type="button" onClick={() => removeRow(i)} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors ml-2" title="移除该行">
-                          <i className="fas fa-trash-alt"></i>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                <button type="button" onClick={addRow} className="w-full py-2.5 border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2"><i className="fas fa-plus-circle"></i> 继续添加明细</button>
-              </div>
-            </div>
-            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
-              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">提交</button>
-            </div>
-          </form>
+          <PickFormModal 
+            ref={formRef}
+            isOpen={true}
+            onClose={closeModal}
+            mode={modal.mode}
+            pickType={modal.type || 'pick'}
+            initialData={
+              modal.mode === 'create' 
+                ? { type: modal.type || 'pick', pick_type: modal.pick_type || 'normal', items: modal.items, boundMaterialIds: modal.boundMaterialIds, order_id: modal.item?.order_id, production_order_id: modal.item?.production_order_id || modal.selectedPoId } 
+                : modal.item
+            }
+            onSuccess={() => { closeModal(); load(); }}
+            warehouses={warehouses}
+            materials={materials}
+            semiProducts={semiProducts}
+            productionOrders={productionOrders}
+            boundMaterialIds={modal.boundMaterialIds}
+          />
         )}
       </Modal>
     </div>
@@ -562,6 +369,7 @@ const PickMaterialManager = () => {
 };
 
 const ProductionOrderManager = () => {
+  const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const [confirm, ConfirmDialog] = useConfirm();
   const [data, setData] = useState([]);
@@ -579,8 +387,8 @@ const ProductionOrderManager = () => {
   const load = async () => {
     const [prodRes, orderRes, productRes, procRes] = await Promise.all([
       api.get('/production'),
-      api.get('/orders?status=pending,processing'),
-      api.get('/products?category=成品'),
+      api.get('/orders?status=pending,confirmed,processing&pageSize=1000'),
+      api.get('/products?category=成品&pageSize=1000'),
       api.get('/production/processes'),
     ]);
     if (prodRes.success) setData(prodRes.data);
@@ -607,6 +415,27 @@ const ProductionOrderManager = () => {
   const closeModal = () => {
     setModal({ open: false, item: null, mode: 'list' });
   };
+
+  // 智能下一步跳转 actions
+  const productionNextActions = useMemo(() => {
+    if (modal.mode !== 'view') return [];
+    const acts = [];
+    const st = modal.item?.status;
+    const hasPick = modal.item?.pickOrders?.length > 0;
+    const pickDone = hasPick && modal.item.pickOrders.some(p => p.status === 'completed');
+    const hasOutsource = modal.item?.outsourceOrders?.length > 0;
+    
+    if (st === 'pending' || st === 'processing') {
+      if (!hasPick || !pickDone) acts.push({ icon: '📦', label: '去领料', path: '/production/pick' });
+      if (pickDone) acts.push({ icon: '🔧', label: '去车间报工', path: '/process/hub' });
+      if (hasOutsource) acts.push({ icon: '🚚', label: '查看委外进度', path: '/outsourcing' });
+    }
+    if (st === 'completed') {
+      acts.push({ icon: '🔍', label: '去检验', path: '/inspection' });
+      acts.push({ icon: '📥', label: '查看入库', path: '/warehouse/inbound' });
+    }
+    return acts.map(a => ({ ...a, onClick: closeModal }));
+  }, [modal.mode, modal.item?.status, modal.item?.pickOrders, modal.item?.outsourceOrders]);
   
   const save = async (e) => {
     e.preventDefault();
@@ -659,6 +488,20 @@ const ProductionOrderManager = () => {
     else window.__toast?.error(res.message);
   };
   
+  const syncProcess = async (id) => {
+    if (!await confirm('确定要从产品同步最新的工序流程吗？\n\n如果产品工序已修改，将覆盖当前工单进度（仅限尚未开始报工的工单）。')) return;
+    const res = await api.post(`/production/${id}/sync-processes`, {}, { invalidate: ['production'] });
+    if (res.success) {
+      window.__toast?.success('同步成功');
+      load();
+      // 更新当前打开的 modal
+      const newDetail = await api.get(`/production/${id}`);
+      setModal(prev => ({ ...prev, item: newDetail.data }));
+    } else {
+      window.__toast?.error(res.message);
+    }
+  };
+  
   // 获取产品单位
   const getProductUnit = (productId) => {
     const product = products.find(p => String(p.id) === String(productId));
@@ -675,7 +518,7 @@ const ProductionOrderManager = () => {
       <div className="bg-white rounded-xl shadow">
         <Table columns={[
           { key: 'order_no', title: '生产工单' },
-          { key: 'order_id', title: '销售订单', render: (v, row) => row.order_no || '-' },
+          { key: 'order_id', title: '销售订单', render: (v, row) => row.ref_order_no || '-' },
           { key: 'product_name', title: '产品' },
           { key: 'quantity', title: '计划数量', render: (v, row) => `${v} ${row.unit || '件'}` },
           { key: 'completed_quantity', title: '完成数量', render: (v, row) => `${v || 0} ${row.unit || '件'}` },
@@ -733,7 +576,10 @@ const ProductionOrderManager = () => {
                       </tr>
                     ))}
                     {(!modal.item?.processRecords || modal.item?.processRecords.length === 0) && (
-                      <tr><td colSpan="6" className="px-3 py-4 text-center text-gray-500">该产品未配置工序流程，请在产品管理中设置</td></tr>
+                      <tr><td colSpan="6" className="px-3 py-4 text-center text-gray-500">
+                        该产品未配置工序流程，请在产品管理中设置
+                        <button type="button" onClick={() => syncProcess(modal.item.id)} className="ml-4 text-teal-600 hover:underline"><i className="fas fa-sync-alt mr-1"></i>尝试同步最新工序</button>
+                      </td></tr>
                     )}
                   </tbody>
                 </table>
@@ -757,7 +603,7 @@ const ProductionOrderManager = () => {
                     </thead>
                     <tbody>
                       {modal.item.outsourcingOrders.map((o, i) => (
-                        <tr key={i} className="border-t hover:bg-orange-50 cursor-pointer" onClick={() => { closeModal(); window.location.hash = 'outsourcing-query'; }}>
+                        <tr key={i} className="border-t hover:bg-orange-50 cursor-pointer" onClick={() => { closeModal(); navigate('/outsourcing'); }}>
                           <td className="px-3 py-2 text-sm font-medium text-orange-600">{o.order_no} <i className="fas fa-external-link-alt text-xs ml-1"></i></td>
                           <td className="px-3 py-2 text-sm">{o.process_name || '-'}</td>
                           <td className="px-3 py-2 text-sm">{o.supplier_name || '-'}</td>
@@ -795,7 +641,7 @@ const ProductionOrderManager = () => {
                     </thead>
                     <tbody>
                       {modal.item.inboundOrders.map((io, i) => (
-                        <tr key={i} className="border-t hover:bg-green-50 cursor-pointer" onClick={() => { closeModal(); window.location.hash = 'inbound-finished'; }}>
+                        <tr key={i} className="border-t hover:bg-green-50 cursor-pointer" onClick={() => { closeModal(); navigate('/warehouse/inbound'); }}>
                           <td className="px-3 py-2 text-sm font-medium text-green-600">{io.order_no} <i className="fas fa-external-link-alt text-xs ml-1"></i></td>
                           <td className="px-3 py-2 text-sm">{io.warehouse_name || '-'}</td>
                           <td className="px-3 py-2 text-sm">
@@ -825,6 +671,9 @@ const ProductionOrderManager = () => {
                 <PrintableQRCode value={modal.item.order_no} label="扫码进入报工终端" />
               </div>
             )}
+            
+            {/* 智能下一步跳转 */}
+            <NextStepActions actions={productionNextActions} />
             
             </>)}
           </div>

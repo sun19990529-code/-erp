@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const { AsyncLocalStorage } = require('async_hooks');
@@ -33,9 +34,77 @@ pool.on('error', (err) => {
 const txStorage = new AsyncLocalStorage();
 
 // SQL 占位符转换：? → $1, $2, $3...
+// 安全处理 PostgreSQL 的 '' 单引号、"" 双引号、$$ 美元符字符串、E'' 转义字符串
 function convertPlaceholders(sql) {
   let idx = 0;
-  return sql.replace(/\?/g, () => `$${++idx}`);
+  let i = 0;
+  let result = '';
+  const len = sql.length;
+
+  while (i < len) {
+    const char = sql[i];
+
+    // 处理 $tag$...$tag$ 美元符字符串（PostgreSQL 扩展语法）
+    if (char === '$' && i + 1 < len) {
+      const tagStart = i;
+      let j = i + 1;
+      // 读取 tag 名（可以为空 → $$...$$）
+      while (j < len && sql[j] !== '$' && /[a-zA-Z0-9_]/.test(sql[j])) j++;
+      if (j < len && sql[j] === '$') {
+        const tag = sql.slice(tagStart, j + 1); // 例如 $$ 或 $tag$
+        const endPos = sql.indexOf(tag, j + 1);
+        if (endPos !== -1) {
+          result += sql.slice(tagStart, endPos + tag.length);
+          i = endPos + tag.length;
+          continue;
+        }
+      }
+      result += char;
+      i++;
+      continue;
+    }
+
+    // 处理单引号字符串（含 E'' 转义字符串和 '' 双写转义）
+    if (char === "'" || (char === 'E' && i + 1 < len && sql[i + 1] === "'")) {
+      const isEscape = char === 'E';
+      if (isEscape) { result += 'E'; i++; }
+      result += "'";
+      i++;
+      while (i < len) {
+        if (sql[i] === "'" && i + 1 < len && sql[i + 1] === "'") {
+          result += "''"; i += 2; // 双写引号转义
+        } else if (sql[i] === '\\' && isEscape && i + 1 < len) {
+          result += sql[i] + sql[i + 1]; i += 2; // 反斜杠转义
+        } else if (sql[i] === "'") {
+          result += "'"; i++;
+          break;
+        } else {
+          result += sql[i]; i++;
+        }
+      }
+      continue;
+    }
+
+    // 处理双引号标识符
+    if (char === '"') {
+      result += '"';
+      i++;
+      while (i < len && sql[i] !== '"') { result += sql[i]; i++; }
+      if (i < len) { result += '"'; i++; }
+      continue;
+    }
+
+    // 核心：替换 ? 占位符
+    if (char === '?') {
+      result += `$${++idx}`;
+      i++;
+      continue;
+    }
+
+    result += char;
+    i++;
+  }
+  return result;
 }
 
 // ==================== dbHelper（PostgreSQL 异步版） ====================
@@ -119,6 +188,7 @@ app.use(cors({
   },
   credentials: true
 }));
+app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 
 // 安全响应头
@@ -171,11 +241,11 @@ const { JWT_SECRET } = require('./config/jwt');
 if (!process.env.JWT_SECRET) {
   console.warn('⚠️  [安全警告] JWT_SECRET 使用默认值，生产环境请设置环境变量 JWT_SECRET');
 }
-const whiteList = ['/api/users/login', '/api/users/refresh'];
+const whiteList = ['/api/users/login', '/api/users/refresh', '/api/users/logout'];
 const screenWhitePrefix = '/api/workstation/screen/';
 const botWhitePrefix = '/api/bot/';  // 机器人回调免鉴权
 
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   if (!req.path.startsWith('/api') || whiteList.includes(req.path)) {
     return next();
   }
@@ -186,13 +256,31 @@ app.use((req, res, next) => {
   if (req.path.startsWith(botWhitePrefix)) {
     return next();
   }
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = req.cookies?.token || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : null);
+  
+  if (!token) {
     return res.status(401).json({ success: false, message: '未授权访问，请重新登录' });
   }
-  const token = authHeader.split(' ')[1];
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+
+    // 令牌版本号校验：如果用户被禁用/角色变更/强制注销，token_version 会递增，旧令牌立即失效
+    if (decoded.token_version != null && decoded.id) {
+      try {
+        const dbUser = await req.db.get('SELECT token_version, status FROM users WHERE id = ?', [decoded.id]);
+        if (!dbUser || dbUser.status === 0) {
+          return res.status(401).json({ success: false, message: '账号已被禁用，请联系管理员' });
+        }
+        if (dbUser.token_version != null && dbUser.token_version !== decoded.token_version) {
+          return res.status(401).json({ success: false, message: '登录凭证已失效，请重新登录' });
+        }
+      } catch (dbErr) {
+        // 数据库异常时降级为仅 JWT 签名校验，不阻断业务请求
+        console.error('[auth] token_version 校验失败，降级放行:', dbErr.message);
+      }
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: '登录已过期，请重新登录' });
@@ -272,6 +360,14 @@ async function startServer() {
   } catch (err) {
     console.error('PostgreSQL 连接失败:', err.message);
     process.exit(1);
+  }
+
+  // ==== 启动企微长连接智能狗狗 ====
+  try {
+    const { initWechatBot } = require('./services/wechatBot');
+    await initWechatBot(dbHelper);
+  } catch(e) {
+    console.warn('[WecomBot] 加载失败，智能对接退化:', e.message);
   }
 
   // 启动自动备份（PostgreSQL 模式下使用 pg_dump）

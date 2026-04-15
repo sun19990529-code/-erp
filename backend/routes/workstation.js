@@ -5,6 +5,7 @@ const { validateId } = require('../middleware/validate');
 const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
 const { sendNotification } = require('./notifications');
+const { BusinessError } = require('../utils/BusinessError');
 
 // ==================== 工位 CRUD ====================
 
@@ -175,6 +176,21 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
     if (['completed', 'cancelled'].includes(production.status)) return res.status(400).json({ success: false, message: `该工单状态为「${production.status}」，无法报工` });
 
     await req.db.transaction(async () => {
+      // 【先领后报】校验：如果当前工位绑定的是首道工序，则必须已完成领料
+      const productProcesses = await req.db.all(
+        'SELECT pp.process_id FROM product_processes pp WHERE pp.product_id = ? ORDER BY pp.sequence', [production.product_id]
+      );
+      const isFirstProcess = productProcesses.length > 0 && productProcesses[0].process_id === station.pid;
+      if (isFirstProcess && !req.body.force) {
+        const completedPick = await req.db.get(
+          "SELECT id FROM pick_orders WHERE production_order_id = ? AND type = 'pick' AND status = 'completed' LIMIT 1",
+          [poId]
+        );
+        if (!completedPick) {
+          throw new BusinessError('请先为该工单创建并完成领料单，再进行首道工序报工');
+        }
+      }
+
       // 更新工序记录
       const record = await req.db.get('SELECT * FROM production_process_records WHERE production_order_id = ? AND process_id = ?', [poId, station.pid]);
       if (record) {
@@ -189,6 +205,9 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
     writeLog(req.db, null, '工位报工', 'workstation', poId, `工位 ${req.params.code} 操作人 ${operator} 报工 ${output_quantity}`);
     res.json({ success: true, message: '报工成功' });
   } catch (error) {
+    if (error instanceof BusinessError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('[workstation/report]', error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
   }

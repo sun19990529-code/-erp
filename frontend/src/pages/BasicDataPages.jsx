@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Decimal from 'decimal.js';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
@@ -92,6 +93,7 @@ const DepartmentManager = () => (
 const ProductManager = ({ category }) => {
   const [data, setData] = useState([]);
   const [confirm, ConfirmDialog] = useConfirm();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [processes, setProcesses] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]); // 原材料列表（用于工序材料配置）
@@ -117,21 +119,21 @@ const ProductManager = ({ category }) => {
   // 判断是否为成品
   const isFinishedProduct = category === '成品';
 
-  // 计算壁厚：(外径 - 内径) / 2
+  // 计算壁厚：(外径 - 内径) / 2（高精度）
   const calculateWallThickness = (outer, inner) => {
     if (outer && inner && !isNaN(outer) && !isNaN(inner)) {
-      return ((parseFloat(outer) - parseFloat(inner)) / 2).toFixed(2);
+      return new Decimal(outer).minus(inner).div(2).toFixed(2);
     }
     return '';
   };
 
-  // 计算每支公斤数：((外径-壁厚)*壁厚)*0.02491*长度
+  // 计算每支公斤数：((外径-壁厚)*壁厚)*0.02491*长度（高精度）
   const calculateKgPerPiece = (outerDiameter, wallThickness, length) => {
     if (outerDiameter && wallThickness && length) {
-      const outer = parseFloat(outerDiameter) || 0;
-      const wall = parseFloat(wallThickness) || 0;
-      const len = parseFloat(length) || 0;
-      return ((outer - wall) * wall * 0.02491 * len).toFixed(4);
+      const outer = new Decimal(outerDiameter);
+      const wall = new Decimal(wallThickness);
+      const len = new Decimal(length);
+      return outer.minus(wall).times(wall).times('0.02491').times(len).toFixed(4);
     }
     return null;
   };
@@ -250,7 +252,14 @@ const ProductManager = ({ category }) => {
 
   const openProcessConfig = async (item) => {
     const res = await api.get(`/products/${item.id}/processes`);
-    setModal({ open: true, item, mode: 'process', productProcesses: res.data || [] });
+    // 同时加载工序材料配置（与 ProcessConfigManager 保持一致）
+    const matRes = await api.get(`/products/${item.id}/process-materials`);
+    const allMaterials = matRes.data || [];
+    const enriched = (res.data || []).map(p => {
+      const mats = allMaterials.filter(m => m.product_process_id === p.id);
+      return { ...p, materials: mats.map(m => ({ material_id: m.material_id, quantity: m.quantity, unit: m.unit || '公斤', remark: m.remark || '' })) };
+    });
+    setModal({ open: true, item, mode: 'process', productProcesses: enriched });
   };
 
   const closeModal = () => {
@@ -268,63 +277,67 @@ const ProductManager = ({ category }) => {
 
   const save = async (e) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    const obj = {
-      code: fd.get('code'),
-      name: fd.get('name'),
-      specification: fd.get('specification'),
-      unit: fd.get('unit'),
-      category: fd.get('category'),
-      min_stock: parseInt(fd.get('min_stock')) || 0,
-      max_stock: parseInt(fd.get('max_stock')) || 0,
-      outer_diameter: dimensions.outer_diameter ? parseFloat(dimensions.outer_diameter) : null,
-      inner_diameter: dimensions.inner_diameter ? parseFloat(dimensions.inner_diameter) : null,
-      wall_thickness: dimensions.wall_thickness ? parseFloat(dimensions.wall_thickness) : null,
-      length: dimensions.length ? parseFloat(dimensions.length) : null,
-      material_category_id: selectedMaterialCategoryId ? parseInt(selectedMaterialCategoryId) : null,
-      tolerance_od: tolerances.tolerance_od !== '' ? parseFloat(tolerances.tolerance_od) : null,
-      tolerance_id: tolerances.tolerance_id !== '' ? parseFloat(tolerances.tolerance_id) : null,
-      tolerance_wt: tolerances.tolerance_wt !== '' ? parseFloat(tolerances.tolerance_wt) : null,
-      tolerance_len: tolerances.tolerance_len !== '' ? parseFloat(tolerances.tolerance_len) : null,
-      tolerance_od_lower: tolerances.tolerance_od_lower !== '' ? parseFloat(tolerances.tolerance_od_lower) : null,
-      tolerance_id_lower: tolerances.tolerance_id_lower !== '' ? parseFloat(tolerances.tolerance_id_lower) : null,
-      tolerance_wt_lower: tolerances.tolerance_wt_lower !== '' ? parseFloat(tolerances.tolerance_wt_lower) : null,
-      tolerance_len_lower: tolerances.tolerance_len_lower !== '' ? parseFloat(tolerances.tolerance_len_lower) : null
-    };
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const fd = new FormData(e.target);
+      const obj = {
+        code: fd.get('code'),
+        name: fd.get('name'),
+        specification: fd.get('specification'),
+        unit: fd.get('unit'),
+        category: fd.get('category'),
+        min_stock: parseInt(fd.get('min_stock')) || 0,
+        max_stock: parseInt(fd.get('max_stock')) || 0,
+        outer_diameter: dimensions.outer_diameter ? parseFloat(dimensions.outer_diameter) : null,
+        inner_diameter: dimensions.inner_diameter ? parseFloat(dimensions.inner_diameter) : null,
+        wall_thickness: dimensions.wall_thickness ? parseFloat(dimensions.wall_thickness) : null,
+        length: dimensions.length ? parseFloat(dimensions.length) : null,
+        material_category_id: selectedMaterialCategoryId ? parseInt(selectedMaterialCategoryId) : null,
+        tolerance_od: tolerances.tolerance_od !== '' ? parseFloat(tolerances.tolerance_od) : null,
+        tolerance_id: tolerances.tolerance_id !== '' ? parseFloat(tolerances.tolerance_id) : null,
+        tolerance_wt: tolerances.tolerance_wt !== '' ? parseFloat(tolerances.tolerance_wt) : null,
+        tolerance_len: tolerances.tolerance_len !== '' ? parseFloat(tolerances.tolerance_len) : null,
+        tolerance_od_lower: tolerances.tolerance_od_lower !== '' ? parseFloat(tolerances.tolerance_od_lower) : null,
+        tolerance_id_lower: tolerances.tolerance_id_lower !== '' ? parseFloat(tolerances.tolerance_id_lower) : null,
+        tolerance_wt_lower: tolerances.tolerance_wt_lower !== '' ? parseFloat(tolerances.tolerance_wt_lower) : null,
+        tolerance_len_lower: tolerances.tolerance_len_lower !== '' ? parseFloat(tolerances.tolerance_len_lower) : null
+      };
 
-    // 保存产品
-    let productId = modal.item?.id;
-    let res;
-    if (modal.item) {
-      res = await api.put(`/products/${modal.item.id}`, obj);
-    } else {
-      res = await api.post('/products', obj);
-      if (res.success && res.data?.id) {
-        productId = res.data.id;
+      // 保存产品
+      let productId = modal.item?.id;
+      let res;
+      if (modal.item) {
+        res = await api.put(`/products/${modal.item.id}`, obj);
+      } else {
+        res = await api.post('/products', obj);
+        if (res.success && res.data?.id) {
+          productId = res.data.id;
+        }
       }
-    }
 
-    // 成品保存工序配置
-    if (res.success && isFinishedProduct && productId) {
-      const processesToSave = modal.productProcesses.filter(p => p.process_id);
-      if (processesToSave.length > 0) {
+      // 成品保存工序配置
+      if (res.success && isFinishedProduct && productId) {
+        const processesToSave = modal.productProcesses.filter(p => p.process_id);
         await api.post(`/products/${productId}/processes`, { processes: processesToSave });
       }
-    }
 
-    // 保存供应商/客户绑定
-    if (res.success && productId) {
-      if (category === '原材料' || category === '半成品') {
-        await api.put(`/products/${productId}/suppliers`, { supplier_ids: selectedSupplierIds });
+      // 保存供应商/客户绑定
+      if (res.success && productId) {
+        if (category === '原材料' || category === '半成品') {
+          await api.put(`/products/${productId}/suppliers`, { supplier_ids: selectedSupplierIds });
+        }
+        if (category === '成品') {
+          await api.put(`/products/${productId}/customers`, { customer_ids: selectedCustomerIds });
+          await api.put(`/products/${productId}/bound-materials`, { material_ids: selectedBoundMaterialIds });
+        }
       }
-      if (category === '成品') {
-        await api.put(`/products/${productId}/customers`, { customer_ids: selectedCustomerIds });
-        await api.put(`/products/${productId}/bound-materials`, { material_ids: selectedBoundMaterialIds });
-      }
-    }
 
-    if (res.success) { closeModal(); load(); }
-    else window.__toast?.error(res.message);
+      if (res.success) { closeModal(); load(); }
+      else window.__toast?.error(res.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const del = async (item) => {
@@ -371,7 +384,7 @@ const ProductManager = ({ category }) => {
           {
             key: 'kg_per_piece', title: '每支公斤', render: (v, row) => {
               if (row.outer_diameter && row.wall_thickness && row.length) {
-                const kgPerPiece = ((parseFloat(row.outer_diameter) - parseFloat(row.wall_thickness)) * parseFloat(row.wall_thickness) * 0.02491 * parseFloat(row.length)).toFixed(4);
+                const kgPerPiece = new Decimal(row.outer_diameter).minus(row.wall_thickness).times(row.wall_thickness).times('0.02491').times(row.length).toFixed(4);
                 return <span className="text-teal-600 font-medium">{kgPerPiece}</span>;
               }
               return '-';
@@ -432,7 +445,7 @@ const ProductManager = ({ category }) => {
             <ProcessConfigPanel
               processes={processes}
               productProcesses={modal.productProcesses}
-              rawMaterials={rawMaterials}
+              rawMaterials={[...rawMaterials, ...semiProducts]}
               materialCategoryId={selectedMaterialCategoryId || modal.item?.material_category_id}
               materialCategories={materialCategories}
               onChange={handleProcessChange}
@@ -767,7 +780,7 @@ const ProductManager = ({ category }) => {
 
             <div className="flex justify-end gap-2 pt-4">
               <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
-              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">保存</button>
+              <button type="submit" disabled={isSubmitting} className={`px-4 py-2 text-white rounded-lg ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700'}`}>{isSubmitting ? '保存中...' : '保存'}</button>
             </div>
           </form>
         )}

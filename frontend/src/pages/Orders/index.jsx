@@ -143,7 +143,13 @@ const OrderManager = () => {
     const statusLabels = { confirmed: '确认订单', processing: '开始生产', cancelled: '取消订单' };
     if (!await confirm(`确定${statusLabels[newStatus] || newStatus}？`)) return;
     const res = await api.put(`/orders/${orderId}/status`, { status: newStatus }, { invalidate: ['orders'] });
-    if (res.success) { closeModal(); load(1, isMountedRef); }
+    if (res.success) {
+      window.__toast?.success(`${statusLabels[newStatus]}成功`);
+      // 刷新弹窗数据（不关闭弹窗）+ 刷新列表
+      const detailRes = await api.get(`/orders/${orderId}`);
+      if (detailRes.success) setModal(prev => ({ ...prev, item: detailRes.data }));
+      load(1, isMountedRef);
+    }
     else window.__toast?.error(res.message);
   };
   

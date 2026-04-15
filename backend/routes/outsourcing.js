@@ -7,6 +7,7 @@ const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
 const { createPayable } = require('./finance');
 const { safeInClause } = require('../utils/sql');
+const ProductionService = require('../services/ProductionService');
 
 // 待处理委外任务（优化：批量查询代替嵌套循环）
 router.get('/pending', requirePermission('outsourcing_view'), async (req, res) => {
@@ -164,6 +165,7 @@ async function handleOutsourcingInbound(db, outsourcing, items) {
 
 /**
  * 委外完成 → 自动推进生产工序 / 触发完工入库
+ * 复用 ProductionService 中的成品入库和订单进度更新逻辑（消除 DRY 违反）
  */
 async function advanceProductionProcess(db, outsourcing) {
   if (!outsourcing.production_order_id || !outsourcing.process_id) return;
@@ -189,139 +191,25 @@ async function advanceProductionProcess(db, outsourcing) {
     const nextProcess = productProcesses[currentIndex + 1];
     await db.run('UPDATE production_orders SET current_process = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [nextProcess.process_code, production.id]);
+    // 下一道也是委外工序则自动创建委外单（复用 Service）
     if (nextProcess.is_outsourced === 1) {
-      const existingNext = await db.get('SELECT * FROM outsourcing_orders WHERE production_order_id = ? AND process_id = ?',
-        [production.id, nextProcess.process_id]);
-      if (!existingNext) {
-        const defaultSupplier = await db.get('SELECT id FROM suppliers LIMIT 1');
-        if (defaultSupplier) {
-          const wwNo = generateOrderNo('WW');
-          const wwResult = await db.run(
-            `INSERT INTO outsourcing_orders (order_no, supplier_id, production_order_id, process_id, total_amount, operator, remark, status) VALUES (?, ?, ?, ?, 0, '系统自动', ?, 'pending')`,
-            [wwNo, defaultSupplier.id, production.id, nextProcess.process_id, `自动创建 - 工序: ${nextProcess.process_name}`]
-          );
-          await db.run('INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, 0)',
-            [wwResult.lastInsertRowid, production.product_id, production.quantity]);
-        }
-      }
+      await ProductionService.createOutsourcingOrderForProcess(db, production, nextProcess, production.quantity);
     }
   } else {
-    await handleProductionComplete(db, production, outsourcing.process_id);
+    // 末道工序完成 → 标记完工 + 成品入库（复用 Service）
+    const currentProcessInfo = await db.get('SELECT * FROM processes WHERE id = ?', [outsourcing.process_id]);
+    await db.run('UPDATE production_orders SET current_process = ?, status = ?, end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [currentProcessInfo?.code || '', 'completed', production.id]);
+
+    const existingInbound = await db.get(`SELECT * FROM inbound_orders WHERE production_order_id = ? AND type = 'finished'`, [production.id]);
+    if (!existingInbound) {
+      await ProductionService.createFinishedProductInbound(db, production, production.quantity);
+    }
   }
 
+  // 订单进度更新（复用 Service，内含成品出库逻辑）
   if (production.order_id) {
-    await updateOrderProgress(db, production.order_id, production.id);
-  }
-}
-
-/**
- * 生产工单完成 → 成品自动入库
- */
-async function handleProductionComplete(db, production, processId) {
-  const currentProcessInfo = await db.get('SELECT * FROM processes WHERE id = ?', [processId]);
-  await db.run('UPDATE production_orders SET current_process = ?, status = ?, end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [currentProcessInfo?.code || '', 'completed', production.id]);
-
-  const existingInbound = await db.get(`SELECT * FROM inbound_orders WHERE production_order_id = ? AND type = 'finished'`, [production.id]);
-  if (existingInbound) return;
-
-  const finishedWarehouse = await db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
-  if (!finishedWarehouse) return;
-
-  const inNo = generateOrderNo('IN');
-  const inResult = await db.run(
-    `INSERT INTO inbound_orders (order_no, type, warehouse_id, production_order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
-    [inNo, finishedWarehouse.id, production.id, `生产完成自动入库 - 生产工单: ${production.order_no}`]
-  );
-  await db.run(`INSERT INTO inbound_items (inbound_id, product_id, quantity, unit_price) VALUES (?, ?, ?, 0)`,
-    [inResult.lastInsertRowid, production.product_id, production.quantity]);
-
-  const inv = await db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ?',
-    [finishedWarehouse.id, production.product_id]);
-  if (inv) {
-    await db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [production.quantity, inv.id]);
-  } else {
-    await db.run('INSERT INTO inventory (warehouse_id, product_id, quantity) VALUES (?, ?, ?)',
-      [finishedWarehouse.id, production.product_id, production.quantity]);
-  }
-}
-
-/**
- * 更新订单整体进度
- */
-async function updateOrderProgress(db, orderId, completedProductionId) {
-  const productionOrders = await db.all('SELECT * FROM production_orders WHERE order_id = ?', [orderId]);
-  if (productionOrders.length === 0) return;
-
-  // 批量查询所有工单的工序总数和已完成工序数（消除 N+1）
-  const poIds = productionOrders.map(po => po.id);
-  const prodIds = [...new Set(productionOrders.map(po => po.product_id))];
-
-  const inProd = safeInClause('pp.product_id', prodIds);
-  const allProcessCounts = await db.all(
-    `SELECT pp.product_id, COUNT(*) as total FROM product_processes pp WHERE ${inProd.clause} GROUP BY pp.product_id`,
-    inProd.params
-  );
-  const processCountMap = Object.fromEntries(allProcessCounts.map(r => [r.product_id, r.total]));
-
-  const inPo = safeInClause('ppr.production_order_id', poIds);
-  const allCompletedCounts = await db.all(
-    `SELECT ppr.production_order_id, COUNT(DISTINCT ppr.process_id) as done FROM production_process_records ppr WHERE ${inPo.clause} AND ppr.status = 'completed' GROUP BY ppr.production_order_id`,
-    inPo.params
-  );
-  const completedCountMap = Object.fromEntries(allCompletedCounts.map(r => [r.production_order_id, r.done]));
-
-  let totalProgress = 0;
-  for (const po of productionOrders) {
-    if (po.id === completedProductionId || po.status === 'completed') {
-      totalProgress += 100;
-    } else {
-      const totalProc = processCountMap[po.product_id] || 0;
-      const doneProc = completedCountMap[po.id] || 0;
-      if (totalProc > 0) totalProgress += Math.round((doneProc / totalProc) * 100);
-    }
-  }
-  const avgProgress = Math.round(totalProgress / productionOrders.length);
-  const newStatus = avgProgress >= 100 ? 'completed' : avgProgress > 0 ? 'processing' : 'pending';
-  await db.run('UPDATE orders SET progress = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [avgProgress, newStatus, orderId]);
-
-  // 【修复】订单完成时自动创建成品出库单（与 production.js 逻辑一致）
-  if (newStatus === 'completed') {
-    const existingOutbound = await db.get(`SELECT * FROM outbound_orders WHERE order_id = ? AND type = 'finished'`, [orderId]);
-    if (!existingOutbound) {
-      const order = await db.get('SELECT * FROM orders WHERE id = ?', [orderId]);
-      const warehouse = await db.get("SELECT id FROM warehouses WHERE type = 'finished' LIMIT 1");
-      if (order && warehouse) {
-        const orderItems = await db.all('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
-        if (orderItems.length > 0) {
-          // 检查库存是否充足
-          let stockOk = true;
-          for (const item of orderItems) {
-            const inv = await db.get('SELECT SUM(quantity) as total FROM inventory WHERE warehouse_id = ? AND product_id = ?', [warehouse.id, item.product_id]);
-            if (!inv || inv.total < item.quantity) { stockOk = false; break; }
-          }
-          if (stockOk) {
-            const outNo = generateOrderNo('OUT');
-            const outResult = await db.run(`INSERT INTO outbound_orders (order_no, type, warehouse_id, order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
-              [outNo, warehouse.id, orderId, `订单完成自动出库 - 销售订单: ${order.order_no}`]);
-            const outboundId = outResult.lastInsertRowid;
-            for (const item of orderItems) {
-              let remaining = item.quantity;
-              const batches = await db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC', [warehouse.id, item.product_id]);
-              for (const batch of batches) {
-                if (remaining <= 0) break;
-                const deduct = Math.min(remaining, batch.quantity);
-                await db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
-                await db.run(`INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, ?)`, [outboundId, item.product_id, batch.batch_no, deduct, item.unit_price || 0]);
-                remaining -= deduct;
-              }
-            }
-          }
-        }
-      }
-    }
+    await ProductionService.updateOrderProgress(db, production.order_id);
   }
 }
 
@@ -371,9 +259,11 @@ router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), asy
 router.put('/:id', validateId, requirePermission('outsourcing_edit'), async (req, res) => {
   try {
     const { supplier_id, production_order_id, process_id, expected_date, operator, remark, items } = req.body;
+    let totalAmount = 0;
+    (items || []).forEach(item => { totalAmount += (item.quantity || 0) * (item.unit_price || 0); });
     await req.db.transaction(async () => {
-      await req.db.run('UPDATE outsourcing_orders SET supplier_id = ?, production_order_id = ?, process_id = ?, expected_date = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [supplier_id, production_order_id || null, process_id || null, expected_date, operator, remark, req.params.id]);
+      await req.db.run('UPDATE outsourcing_orders SET supplier_id = ?, production_order_id = ?, process_id = ?, expected_date = ?, operator = ?, remark = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [supplier_id, production_order_id || null, process_id || null, expected_date, operator, remark, totalAmount, req.params.id]);
       await req.db.run('DELETE FROM outsourcing_items WHERE outsourcing_order_id = ?', [req.params.id]);
       for (const item of items) {
         await req.db.run('INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price, remark) VALUES (?, ?, ?, ?, ?)',

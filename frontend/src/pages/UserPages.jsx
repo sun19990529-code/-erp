@@ -20,9 +20,13 @@ const RoleManager = () => {
   const [modal, setModal] = useState({ open: false, item: null, permissionIds: [] });
   const [searchText, setSearchText] = useState('');
   
-  const load = () => {
-    api.get('/roles').then(res => res.success && setData(res.data));
-    api.get('/permissions').then(res => res.success && setPermissions(res.data));
+  const load = async () => {
+    const [roleRes, permRes] = await Promise.all([
+      api.get('/roles'),
+      api.get('/permissions')
+    ]);
+    if (roleRes.success) setData(roleRes.data);
+    if (permRes.success) setPermissions(permRes.data);
   };
   useEffect(() => { load(); }, []);
   
@@ -213,12 +217,19 @@ const UserManager = ({ userType }) => {
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [extUserType, setExtUserType] = useState('supplier');
   
-  const load = () => {
-    api.get(`/users?user_type=${userType}`).then(res => res.success && setData(res.data));
-    api.get('/departments').then(res => res.success && setDepartments(res.data));
-    api.get('/roles').then(res => res.success && setRoles(res.data));
-    api.get('/suppliers').then(res => res.success && setSuppliers(res.data));
-    api.get('/customers').then(res => res.success && setCustomers(res.data));
+  const load = async () => {
+    const [uRes, dRes, rRes, sRes, cRes] = await Promise.all([
+      api.get(`/users?user_type=${userType}`),
+      api.get('/departments'),
+      api.get('/roles'),
+      api.get('/suppliers'),
+      api.get('/customers')
+    ]);
+    if (uRes.success) setData(uRes.data);
+    if (dRes.success) setDepartments(dRes.data);
+    if (rRes.success) setRoles(rRes.data);
+    if (sRes.success) setSuppliers(sRes.data);
+    if (cRes.success) setCustomers(cRes.data);
   };
   useEffect(() => { load(); }, [userType]);
   

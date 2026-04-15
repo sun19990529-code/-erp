@@ -63,7 +63,7 @@ async function writeLog(db, userId, action, module, targetId, detail) {
   try {
     await db.run(
       `INSERT INTO operation_logs (user_id, action, module, target_id, detail, created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
       [userId || null, action, module, targetId || null, detail || null]
     );
   } catch (e) {

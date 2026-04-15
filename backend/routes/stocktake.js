@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const Decimal = require('decimal.js');
 const { requirePermission } = require('../middleware/permission');
 const { validateId } = require('../middleware/validate');
 const { generateOrderNo } = require('../utils/order-number');
@@ -69,9 +70,9 @@ router.put('/:id/items', validateId, requirePermission('warehouse_edit'), async 
     await req.db.transaction(async () => {
       for (const item of (items || [])) {
         if (item.actual_quantity != null) {
-          const actual = parseFloat(item.actual_quantity);
-          const systemQty = parseFloat(item.system_quantity) || 0;
-          const diff = actual - systemQty;
+          const actual = new Decimal(item.actual_quantity).toNumber();
+          const systemQty = new Decimal(item.system_quantity || 0).toNumber();
+          const diff = new Decimal(actual).minus(systemQty).toNumber();
           
           if (item.is_new || !item.id) {
             await req.db.run('INSERT INTO stocktake_items (stocktake_id, product_id, batch_no, system_quantity, actual_quantity, difference, remark) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -105,7 +106,7 @@ router.put('/:id/confirm', validateId, requirePermission('warehouse_edit'), asyn
     await req.db.transaction(async () => {
       for (const item of items) {
         if (item.difference !== 0) {
-          const inv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+          const inv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ? FOR UPDATE',
             [order.warehouse_id, item.product_id, item.batch_no]);
           if (inv) {
             // 直接设置为实际数量

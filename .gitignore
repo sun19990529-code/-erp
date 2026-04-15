@@ -30,7 +30,12 @@ Thumbs.db
 npm-debug.log*
 
 # Backup files
+backups/
 backend/backups/
+backend/backup-config.json
+
+# WeCom bot runtime data
+backend/config/wechat_targets.json
 
 # Test coverage
 coverage/

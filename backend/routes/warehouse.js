@@ -7,6 +7,7 @@ const { writeLog } = require('./logs');
 const { generateOrderNo } = require('../utils/order-number');
 const { convertToKg } = require('../utils/unit-convert');
 const { createReceivable } = require('./finance');
+const { BusinessError } = require('../utils/BusinessError');
 
 
 // ==================== 仓库 ====================
@@ -174,19 +175,31 @@ router.put('/inbound/:id/status', validateId, requirePermission('warehouse_edit'
     }
     
     await req.db.transaction(async () => {
-      const order = await req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
+      const order = await req.db.get('SELECT * FROM inbound_orders WHERE id = ? FOR UPDATE', [req.params.id]);
       // 【修复#1】查询入库明细（原代码遗漏此行导致运行时崩溃）
       const items = await req.db.all('SELECT * FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
       // 【联动#2防重】只有从非完成状态变为 completed/approved 时才增加库存
       const alreadyStocked = order && (order.status === 'completed' || order.status === 'approved');
-      if ((status === 'completed' || status === 'approved') && !alreadyStocked) {
+      if ((status === 'completed' || status === 'approved') && !alreadyStocked && items.length > 0) {
+        // N+1优化：批量预加载库存
+        const productIds = [...new Set(items.map(i => i.product_id))];
+        const ph = productIds.map(() => '?').join(',');
+        const existingInvRows = await req.db.all(`SELECT * FROM inventory WHERE warehouse_id = ? AND product_id IN (${ph})`, [order.warehouse_id, ...productIds]);
+        const invMap = {};
+        for(let row of existingInvRows) {
+          invMap[`${row.product_id}_${row.batch_no}`] = row;
+        }
+
         for (const item of items) {
           const batch = item.batch_no || 'DEFAULT_BATCH';
-          const existing = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
-          if (existing) {
-            await req.db.run('UPDATE inventory SET quantity = quantity + ?, supplier_batch_no = COALESCE(?, supplier_batch_no), heat_no = COALESCE(?, heat_no), updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, item.supplier_batch_no || null, item.heat_no || null, existing.id]);
+          const key = `${item.product_id}_${batch}`;
+          if (invMap[key]) {
+            await req.db.run('UPDATE inventory SET quantity = quantity + ?, supplier_batch_no = COALESCE(?, supplier_batch_no), heat_no = COALESCE(?, heat_no), updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, item.supplier_batch_no || null, item.heat_no || null, invMap[key].id]);
+            // 更新内存态防止同一批次重复叠加判断
+            invMap[key].quantity += item.quantity;
           } else {
-            await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity, item.supplier_batch_no || null, item.heat_no || null]);
+            const result = await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity, item.supplier_batch_no || null, item.heat_no || null]);
+            invMap[key] = { id: result.lastInsertRowid, quantity: item.quantity };
           }
         }
       }
@@ -377,19 +390,40 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
       return res.status(400).json({ success: false, message: `非法状态值: ${status}` });
     }
     await req.db.transaction(async () => {
-      const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
+      const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ? FOR UPDATE', [req.params.id]);
       // 【防重复】只有从非完成状态变为 completed/approved 时才扣减库存
       const alreadyDeducted = order && (order.status === 'completed' || order.status === 'approved');
       if ((status === 'completed' || status === 'approved') && !alreadyDeducted) {
         const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
-        for (const item of items) {
-          const batch = item.batch_no || 'DEFAULT_BATCH';
-          const inv = await req.db.get('SELECT quantity FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
-          if (!inv || inv.quantity < item.quantity) {
-            throw new Error(`批次条码 [${batch}] 对应的库存不足，无法出库`);
+        if (items.length > 0) {
+          // N+1优化：批量预加载库存与产品信息
+          const productIds = [...new Set(items.map(i => i.product_id))];
+          const ph = productIds.map(() => '?').join(',');
+          const invRows = await req.db.all(`SELECT * FROM inventory WHERE warehouse_id = ? AND product_id IN (${ph})`, [order.warehouse_id, ...productIds]);
+          const pRows = await req.db.all(`SELECT id, name FROM products WHERE id IN (${ph})`, productIds);
+          
+          const invMap = {};
+          for(let row of invRows) invMap[`${row.product_id}_${row.batch_no}`] = row;
+          const pMap = {};
+          for(let row of pRows) pMap[row.id] = row;
+
+          // 第一遍循环纯校验（不写库）
+          for (const item of items) {
+            const batch = item.batch_no || 'DEFAULT_BATCH';
+            const key = `${item.product_id}_${batch}`;
+            const inv = invMap[key];
+            if (!inv || inv.quantity < item.quantity) {
+              const pName = pMap[item.product_id]?.name || '产品';
+              throw new BusinessError(`${pName} (批次: ${batch}) 对应的库存不足，无法出库`);
+            }
+            inv.quantity -= item.quantity; // 内存扣减，防止同一单内同产品重复相加透支
           }
-          await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
-            [item.quantity, order.warehouse_id, item.product_id, batch]);
+
+          // 第二遍循环执行写入
+          for (const item of items) {
+            const batch = item.batch_no || 'DEFAULT_BATCH';
+            await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, order.warehouse_id, item.product_id, batch]);
+          }
         }
         
         // 【改进#6】成品出库完成后更新关联订单为已发货 + 生成应收账款
@@ -416,8 +450,8 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
     res.json({ success: true });
   } catch (error) {
     console.error(`[warehouse.js]`, error.message);
-    if (error.message && error.message.includes('库存不足')) {
-      return res.status(400).json({ success: false, message: error.message });
+    if (error instanceof BusinessError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: '服务器错误' });
   }
@@ -578,33 +612,52 @@ router.post('/transfer', requirePermission('warehouse_create'), validate(transfe
 router.put('/transfer/:id/confirm', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     await req.db.transaction(async () => {
-      const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ?', [req.params.id, 'transfer']);
-      if (!order) throw new Error('调拨单不存在');
-      if (order.status === 'completed') throw new Error('该调拨单已完成');
+      const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ? AND type = ? FOR UPDATE', [req.params.id, 'transfer']);
+      if (!order) throw new BusinessError('调拨单不存在');
+      if (order.status === 'completed') throw new BusinessError('该调拨单已完成');
 
       const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
 
-      for (const item of items) {
-        const batch = item.batch_no || 'DEFAULT_BATCH';
-        // 扣减源仓库
-        const inv = await req.db.get('SELECT quantity FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
-          [order.warehouse_id, item.product_id, batch]);
-        if (!inv || inv.quantity < item.quantity) {
-          const p = await req.db.get('SELECT name FROM products WHERE id = ?', [item.product_id]);
-          throw new Error(`${p?.name || '产品'} (批次: ${batch}) 源仓库库存不足`);
-        }
-        await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
-          [item.quantity, order.warehouse_id, item.product_id, batch]);
+      if (items.length > 0) {
+        // N+1优化：批量预加载源与目标的库存
+        const productIds = [...new Set(items.map(i => i.product_id))];
+        const ph = productIds.map(() => '?').join(',');
+        const sourceInvRows = await req.db.all(`SELECT * FROM inventory WHERE warehouse_id = ? AND product_id IN (${ph})`, [order.warehouse_id, ...productIds]);
+        const targetInvRows = await req.db.all(`SELECT * FROM inventory WHERE warehouse_id = ? AND product_id IN (${ph})`, [order.target_warehouse_id, ...productIds]);
+        const pRows = await req.db.all(`SELECT id, name FROM products WHERE id IN (${ph})`, productIds);
+        
+        const sourceInvMap = {};
+        const targetInvMap = {};
+        for(let r of sourceInvRows) sourceInvMap[`${r.product_id}_${r.batch_no}`] = r;
+        for(let r of targetInvRows) targetInvMap[`${r.product_id}_${r.batch_no}`] = r;
+        const pMap = {};
+        for(let p of pRows) pMap[p.id] = p;
 
-        // 增加目标仓库
-        const targetInv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
-          [order.target_warehouse_id, item.product_id, batch]);
-        if (targetInv) {
-          await req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            [item.quantity, targetInv.id]);
-        } else {
-          await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
-            [order.target_warehouse_id, item.product_id, batch, item.quantity]);
+        // 内存校验扣减源仓
+        for (const item of items) {
+          const batch = item.batch_no || 'DEFAULT_BATCH';
+          const key = `${item.product_id}_${batch}`;
+          const inv = sourceInvMap[key];
+          if (!inv || inv.quantity < item.quantity) {
+            throw new BusinessError(`${pMap[item.product_id]?.name || '产品'} (批次: ${batch}) 源仓库库存不足`);
+          }
+          inv.quantity -= item.quantity;
+        }
+
+        // 修改库表（源和目标）
+        for (const item of items) {
+          const batch = item.batch_no || 'DEFAULT_BATCH';
+          const key = `${item.product_id}_${batch}`;
+          // 减源仓
+          await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, order.warehouse_id, item.product_id, batch]);
+          // 加目标仓
+          if (targetInvMap[key]) {
+            await req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, targetInvMap[key].id]);
+            targetInvMap[key].quantity += item.quantity; // 同步更新避免同一批次冲突
+          } else {
+            const result = await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [order.target_warehouse_id, item.product_id, batch, item.quantity]);
+            targetInvMap[key] = { id: result.lastInsertRowid, quantity: item.quantity };
+          }
         }
       }
 
@@ -615,8 +668,8 @@ router.put('/transfer/:id/confirm', validateId, requirePermission('warehouse_edi
     res.json({ success: true });
   } catch (error) {
     console.error(`[warehouse.js transfer]`, error.message);
-    if (error.message.includes('库存不足') || error.message.includes('不存在') || error.message.includes('已完成')) {
-      return res.status(400).json({ success: false, message: error.message });
+    if (error instanceof BusinessError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: '服务器错误' });
   }

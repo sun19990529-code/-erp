@@ -1,5 +1,6 @@
 // API 请求缓存层 - 对 GET 请求进行 TTL 缓存，减少重复请求
 import { createCache } from '../utils/cache.js';
+import { useAuthStore } from '../store/useAuthStore';
 
 const API_BASE = window.location.origin + '/api';
 
@@ -12,14 +13,6 @@ let _refreshSubscribers = [];
 const onTokenRefreshed = (token) => { _refreshSubscribers.forEach(fn => fn(token)); _refreshSubscribers = []; };
 
 const apiRequest = async (url, options = {}) => {
-  const getToken = () => {
-    try {
-      const saved = localStorage.getItem('erp_user_auth');
-      if (saved) { const { user } = JSON.parse(saved); return user?.token || null; }
-    } catch { /* ignore */ }
-    return null;
-  };
-
   const isGetRequest = !options.method || options.method === 'GET';
   const cacheKey = getCacheKey(url);
 
@@ -30,14 +23,15 @@ const apiRequest = async (url, options = {}) => {
   }
 
   try {
-    const token = getToken();
-    if (token) options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+    // 强制携带跨域 Cookie 凭据 (HttpOnly Cookie 被存放在这里)
+    options.credentials = 'include';
+    
+    // JWT 从前端抽离，不再拼接 Header: options.headers = { ...options.headers, 'Authorization': ... }
 
     const res = await fetch(API_BASE + url, options);
 
     // Token 失效：尝试静默刷新（登录请求本身不走 refresh 流程）
     if (res.status === 401) {
-      // 登录/注册等认证请求：直接返回错误信息，不走 refresh
       if (NO_CACHE_PATHS.some(p => url.includes(p))) {
         const text = await res.text();
         try { return JSON.parse(text); } catch { return { success: false, message: '账号或密码错误' }; }
@@ -45,37 +39,40 @@ const apiRequest = async (url, options = {}) => {
 
       if (_isRefreshing) {
         return new Promise(resolve => {
-          _refreshSubscribers.push(newToken => {
-            options.headers = { ...options.headers, 'Authorization': `Bearer ${newToken}` };
+          _refreshSubscribers.push(() => {
             resolve(fetch(API_BASE + url, options).then(r => r.json()));
           });
         });
       }
       _isRefreshing = true;
       try {
-        const refreshSaved = localStorage.getItem('erp_user_auth');
-        const refreshToken = refreshSaved ? JSON.parse(refreshSaved)?.user?.refreshToken : null;
-        if (!refreshToken) throw new Error('no refresh token');
         const refreshRes = await fetch(API_BASE + '/users/refresh', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken })
+          credentials: 'include' // 重要！静默刷新也必须携带含有 old refreshToken的 Cookie
         });
+        
         if (refreshRes.ok) {
           const { data } = await refreshRes.json();
-          const saved = JSON.parse(localStorage.getItem('erp_user_auth') || '{}');
-          saved.user = { ...saved.user, token: data.token };
-          saved.expireAt = Date.now() + 24 * 60 * 60 * 1000;
-          localStorage.setItem('erp_user_auth', JSON.stringify(saved));
-          onTokenRefreshed(data.token);
-          options.headers = { ...options.headers, 'Authorization': `Bearer ${data.token}` };
+          // Cookie 更新由服务器 Set-Cookie 头自动完成，前端不仅不保存，甚至连响应里都看不见
+          onTokenRefreshed('refreshed');
           return fetch(API_BASE + url, options).then(r => r.json());
         }
+        
+        // refresh 被拒绝（账号禁用/版本注销）：读取后端的具体原因
+        try {
+          const errBody = await refreshRes.json();
+          if (errBody?.message) sessionStorage.setItem('logout_reason', errBody.message);
+        } catch { /* ignore */ }
       } catch { /* 刷新失败 → 强制登出 */ } finally {
         _isRefreshing = false;
       }
-      localStorage.removeItem('erp_user_auth');
-      window.location.reload();
+      const logoutReason = sessionStorage.getItem('logout_reason');
+      useAuthStore.getState().logout();
+      if (logoutReason) {
+        sessionStorage.removeItem('logout_reason');
+        alert(logoutReason);
+      }
       return { success: false, message: '登录已过期，请重新登录' };
     }
 

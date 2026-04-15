@@ -1,7 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const Decimal = require('decimal.js');
 const { requirePermission } = require('../middleware/permission');
 const { sendNotification, pushWebhookBatch } = require('./notifications');
+
+const D = (v) => new Decimal(v || 0);
+const toNum = (d, dp = 2) => parseFloat(d.toFixed(dp));
 
 /**
  * 生产日报 — 按日期区间汇总产量、不良率、物料消耗
@@ -29,7 +33,7 @@ router.get('/daily', requirePermission('production_view'), async (req, res) => {
     // 各日加上不良率
     const enriched = dailyData.map(d => ({
       ...d,
-      defect_rate: d.total_output > 0 ? parseFloat(((d.total_defect / d.total_output) * 100).toFixed(2)) : 0,
+      defect_rate: d.total_output > 0 ? toNum(D(d.total_defect).div(d.total_output).times(100)) : 0,
       good_output: d.total_output - d.total_defect
     }));
 
@@ -45,8 +49,8 @@ router.get('/daily', requirePermission('production_view'), async (req, res) => {
         total_output: totalOutput,
         total_defect: totalDefect,
         total_good: totalOutput - totalDefect,
-        avg_defect_rate: totalOutput > 0 ? parseFloat(((totalDefect / totalOutput) * 100).toFixed(2)) : 0,
-        avg_daily_output: enriched.length > 0 ? parseFloat((totalOutput / enriched.length).toFixed(1)) : 0
+        avg_defect_rate: totalOutput > 0 ? toNum(D(totalDefect).div(totalOutput).times(100)) : 0,
+        avg_daily_output: enriched.length > 0 ? toNum(D(totalOutput).div(enriched.length), 1) : 0
       }
     });
   } catch (error) {
@@ -88,8 +92,8 @@ router.get('/by-product', requirePermission('production_view'), async (req, res)
 
     const enriched = data.map(d => ({
       ...d,
-      completion_rate: d.planned_qty > 0 ? parseFloat(((d.completed_qty / d.planned_qty) * 100).toFixed(1)) : 0,
-      defect_rate: d.total_output > 0 ? parseFloat(((d.total_defect / d.total_output) * 100).toFixed(2)) : 0
+      completion_rate: d.planned_qty > 0 ? toNum(D(d.completed_qty).div(d.planned_qty).times(100), 1) : 0,
+      defect_rate: d.total_output > 0 ? toNum(D(d.total_defect).div(d.total_output).times(100)) : 0
     }));
 
     res.json({ success: true, data: enriched });
@@ -123,7 +127,7 @@ router.get('/material-consumption', requirePermission('production_view'), async 
 
     const enriched = data.map(d => ({
       ...d,
-      waste_rate: d.total_planned > 0 ? parseFloat((((d.total_actual - d.total_planned) / d.total_planned) * 100).toFixed(2)) : 0
+      waste_rate: d.total_planned > 0 ? toNum(D(d.total_actual).minus(d.total_planned).div(d.total_planned).times(100)) : 0
     }));
 
     res.json({ success: true, data: enriched });

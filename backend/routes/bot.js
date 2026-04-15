@@ -374,5 +374,5 @@ router.get('/query', async (req, res) => {
   }
 });
 
-// 导出查询函数供定时任务使用
-module.exports = { router, queryProductionSummary };
+// 导出查询函数供定时任务和长连接机器人使用
+module.exports = { router, queryProductionSummary, handleCommand };

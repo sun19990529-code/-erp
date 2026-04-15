@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
@@ -34,9 +35,29 @@ const CostCardPage = () => {
     setDetailLoading(true);
     setDetail(null);
     setActiveTab('summary');
+    setScrapInput('');
     const res = await api.get(`/tracking/production/${id}/cost`);
     if (res.success) setDetail(res.data);
     setDetailLoading(false);
+  };
+
+  const [scrapInput, setScrapInput] = useState('');
+  const [savingScrap, setSavingScrap] = useState(false);
+
+  const saveScrapValue = async () => {
+    if (!detail) return;
+    setSavingScrap(true);
+    const res = await api.put(`/tracking/production/${detail.production.id}/scrap-value`, {
+      scrap_value: parseFloat(scrapInput) || 0
+    });
+    if (res.success) {
+      window.__toast?.success('残值保存成功！');
+      openDetail(detail.production.id);
+      load();
+    } else {
+      window.__toast?.error(res.message);
+    }
+    setSavingScrap(false);
   };
 
   const formatMoney = (v) => `¥${(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -251,7 +272,7 @@ const CostCardPage = () => {
             </div>
 
             {/* 成本汇总 */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
                 <div className="text-xs text-amber-600 mb-1">物料成本</div>
                 <div className="text-xl font-bold text-amber-700">{formatMoney(detail.cost.material_cost)}</div>
@@ -260,8 +281,14 @@ const CostCardPage = () => {
                 <div className="text-xs text-purple-600 mb-1">委外成本</div>
                 <div className="text-xl font-bold text-purple-700">{formatMoney(detail.cost.outsourcing_cost)}</div>
               </div>
+              <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200 cursor-pointer hover:bg-emerald-100 transition-colors" onClick={() => { setActiveTab('scrap'); setScrapInput(detail.cost.scrap_value || ''); }}>
+                <div className="text-xs text-emerald-600 mb-1 flex justify-between items-center">
+                  废料冲抵 <i className="fas fa-edit text-emerald-400"></i>
+                </div>
+                <div className="text-xl font-bold text-emerald-700">-{formatMoney(detail.cost.scrap_value)}</div>
+              </div>
               <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-                <div className="text-xs text-red-600 mb-1">总成本 / 单位成本</div>
+                <div className="text-xs text-red-600 mb-1">净总成本 / 单位成本</div>
                 <div className="text-xl font-bold text-red-700">{formatMoney(detail.cost.total_cost)}</div>
                 <div className="text-xs text-red-500">{formatMoney(detail.cost.unit_cost)}/{detail.production.unit}</div>
               </div>
@@ -273,11 +300,13 @@ const CostCardPage = () => {
             </div>
 
             {/* Tab */}
-            <div className="flex border-b">
+            <div className="flex border-b overflow-x-auto no-scrollbar">
               {[
-                { key: 'summary', label: '物料汇总', count: detail.material.summary.length },
+                { key: 'summary', label: '用料对比', count: detail.material.summary.length },
                 { key: 'material', label: '领料明细', count: detail.material.items.length },
                 { key: 'outsourcing', label: '委外明细', count: detail.outsourcing.items.length },
+                { key: 'funnel', label: '工序漏斗', count: detail.funnel?.length || 0 },
+                { key: 'scrap', label: '回收录入', count: detail.cost.scrap_value > 0 ? 1 : 0 },
               ].map(tab => (
                 <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                   className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -297,27 +326,43 @@ const CostCardPage = () => {
                       <tr>
                         <th className="px-3 py-2 text-left text-xs text-gray-500">物料编码</th>
                         <th className="px-3 py-2 text-left text-xs text-gray-500">物料名称</th>
-                        <th className="px-3 py-2 text-right text-xs text-gray-500">总用量</th>
+                        <th className="px-3 py-2 text-right text-xs text-gray-500">理论耗量</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-500">实际下发</th>
                         <th className="px-3 py-2 text-right text-xs text-gray-500">单价</th>
                         <th className="px-3 py-2 text-right text-xs text-gray-500">金额</th>
                         <th className="px-3 py-2 text-right text-xs text-gray-500">占比</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {detail.material.summary.map((m, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 font-mono text-xs">{m.code}</td>
-                          <td className="px-3 py-2">{m.name}</td>
-                          <td className="px-3 py-2 text-right">{m.total_qty} {m.unit}</td>
-                          <td className="px-3 py-2 text-right">{formatMoney(m.unit_price)}</td>
-                          <td className="px-3 py-2 text-right font-medium text-amber-600">{formatMoney(m.total_amount)}</td>
-                          <td className="px-3 py-2 text-right text-gray-400">
-                            {detail.cost.total_cost > 0 ? (m.total_amount / detail.cost.total_cost * 100).toFixed(1) : 0}%
-                          </td>
-                        </tr>
-                      ))}
+                      {detail.material.summary.map((m, i) => {
+                        const required = m.required_qty || 0;
+                        const actual = m.total_qty || 0;
+                        const safeRatio = required === 0 ? 0 : (actual / required);
+                        const progressColor = safeRatio > 1.2 ? 'bg-red-500' : safeRatio > 1.02 ? 'bg-amber-500' : 'bg-green-500';
+                        return (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 font-mono text-xs">{m.code}</td>
+                            <td className="px-3 py-2">{m.name}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{required} {m.unit}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex justify-between items-center text-xs w-28">
+                                <span className={safeRatio > 1.2 ? 'text-red-600 font-bold' : ''}>{actual} {m.unit}</span>
+                                {safeRatio > 0 && <span className="text-gray-400 ml-2">{(safeRatio*100).toFixed(0)}%</span>}
+                              </div>
+                              <div className="w-28 bg-gray-200 rounded-full h-1 mt-1">
+                                <div className={`h-1 rounded-full ${progressColor}`} style={{width: `${Math.min(100, safeRatio * 100)}%`}}></div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right">{formatMoney(m.unit_price)}</td>
+                            <td className="px-3 py-2 text-right font-medium text-amber-600">{formatMoney(m.total_amount)}</td>
+                            <td className="px-3 py-2 text-right text-gray-400">
+                              {detail.cost.total_cost > 0 ? (m.total_amount / detail.cost.total_cost * 100).toFixed(1) : 0}%
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {detail.material.summary.length === 0 && (
-                        <tr><td colSpan="6" className="px-3 py-6 text-center text-gray-400">暂无物料消耗记录</td></tr>
+                        <tr><td colSpan="7" className="px-3 py-6 text-center text-gray-400">暂无物料消耗记录</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -454,6 +499,74 @@ const CostCardPage = () => {
                 </div>
               </div>
             )}
+
+            {/* 工序漏斗 */}
+            {activeTab === 'funnel' && (
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="text-sm font-medium text-gray-700 mb-4 flex items-center">
+                  <i className="fas fa-filter text-indigo-500 mr-2"></i> 物流损耗漏斗 (数量逐级降落)
+                </div>
+                {detail.funnel && detail.funnel.length > 0 ? (
+                  <div className="bg-white p-4 rounded border border-gray-100 shadow-sm">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={detail.funnel} layout="vertical" margin={{ top: 10, right: 30, left: 20, bottom: 5 }} barSize={24}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                        <XAxis type="number" />
+                        <YAxis dataKey="process_name" type="category" width={80} tick={{fontSize: 12}} />
+                        <Tooltip cursor={{fill: '#f3f4f6'}} contentStyle={{borderRadius: '8px'}} />
+                        <Legend wrapperStyle={{fontSize: '12px'}} />
+                        <Bar dataKey="output_qty" stackId="a" name="良品落入下道" fill="#10b981" animationDuration={1000} />
+                        <Bar dataKey="defect_qty" stackId="a" name="可拾取废料/不良" fill="#f59e0b" animationDuration={1000} />
+                        <Bar dataKey="invisible_loss" stackId="a" name="隐性蒸发/彻底损毁" fill="#ef4444" animationDuration={1000} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-gray-400">尚无完成的报工记录以聚合漏斗</div>
+                )}
+              </div>
+            )}
+
+            {/* 残值回收录入 */}
+            {activeTab === 'scrap' && (
+              <div className="p-6 bg-emerald-50/50 rounded-lg border border-emerald-100">
+                <div className="max-w-md mx-auto">
+                  <div className="text-center mb-6">
+                    <div className="inline-flex w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full items-center justify-center text-xl mb-3">
+                      <i className="fas fa-recycle"></i>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-800">工单边角料 / 废品残值变卖回收</h3>
+                    <p className="text-sm text-gray-500 mt-1">录入变卖废料获得的回款，将直接冲减该生产批次的总成本</p>
+                  </div>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">回收变现金额 (¥)</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <span className="text-gray-500 sm:text-sm">¥</span>
+                      </div>
+                      <input 
+                        type="number" 
+                        value={scrapInput} 
+                        onChange={e => setScrapInput(e.target.value)}
+                        placeholder="0.00"
+                        className="pl-7 block w-full border border-gray-300 rounded-lg shadow-sm py-3 focus:ring-emerald-500 focus:border-emerald-500" 
+                      />
+                    </div>
+                  </div>
+                  
+                  <button 
+                    onClick={saveScrapValue} 
+                    disabled={savingScrap}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-lg font-medium shadow-sm active:bg-emerald-800 transition-colors disabled:opacity-50 flex items-center justify-center"
+                  >
+                    {savingScrap ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-check mr-2"></i>}
+                    确认登记冲抵
+                  </button>
+                </div>
+              </div>
+            )}
+            
           </div>
         )}
       </Modal>

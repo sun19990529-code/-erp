@@ -23,6 +23,7 @@ const departmentRouter = createCRUDRouter({
   fields: ['name', 'description'],
   orderBy: 'id',
   permissionPrefix: 'basic_data',
+  softDelete: true,
   checkRelations: [
     { table: 'users', foreignKey: 'department_id', message: '该部门下有关联用户，无法删除' }
   ]
@@ -35,6 +36,7 @@ const customerRouter = createCRUDRouter({
   fields: ['name', 'code', 'contact_person', 'phone', 'email', 'address', 'credit_level', 'status'],
   orderBy: 'id DESC',
   permissionPrefix: 'basic_data',
+  softDelete: true,
   checkRelations: [
     { table: 'orders', foreignKey: 'customer_id', message: '该客户有关联订单，无法删除' }
   ]
@@ -47,6 +49,7 @@ const supplierRouter = createCRUDRouter({
   fields: ['name', 'code', 'contact_person', 'phone', 'email', 'address', 'status'],
   orderBy: 'id DESC',
   permissionPrefix: 'basic_data',
+  softDelete: true,
   checkRelations: [
     { table: 'purchase_orders', foreignKey: 'supplier_id', message: '该供应商有关联采购单，无法删除' },
     { table: 'outsourcing_orders', foreignKey: 'supplier_id', message: '该供应商有关联委外单，无法删除' }
@@ -152,7 +155,7 @@ router.post('/permissions', adminOnly, async (req, res) => {
     res.json({ success: true, data: { id: result.lastInsertRowid } });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    if (error.message && error.message.includes('UNIQUE')) {
+    if (error.code === '23505') {
       return res.status(400).json({ success: false, message: '权限编码已存在' });
     }
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -172,7 +175,7 @@ router.put('/permissions/:id', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    if (error.message && error.message.includes('UNIQUE')) {
+    if (error.code === '23505') {
       return res.status(400).json({ success: false, message: '权限编码已存在' });
     }
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -278,9 +281,11 @@ router.post('/users/login', validate(userLogin), async (req, res) => {
       // bcrypt 哈希密码
       passwordValid = await bcrypt.compare(password, user.password);
     } else {
-      // 明文密码（兼容旧数据），验证后自动升级为哈希
+      // ⚠️ 明文密码兼容分支（过渡期代码，所有用户登录一次后密码将自动升级为 bcrypt 哈希）
+      // 确认所有用户已升级后可移除：SELECT COUNT(*) FROM users WHERE password NOT LIKE '$2%';
       passwordValid = (user.password === password);
       if (passwordValid) {
+        console.warn(`[security] 用户 ${user.username}(id=${user.id}) 仍在使用明文密码，正在自动升级为 bcrypt`);
         const hashed = await bcrypt.hash(password, BCRYPT_ROUNDS);
         await req.db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, user.id]);
       }
@@ -303,11 +308,28 @@ router.post('/users/login', validate(userLogin), async (req, res) => {
       permissions = permRows.map(p => p.code);
     }
     
-    const tokenPayload = { id: user.id, username: user.username, role_id: user.role_id, role_code: user.role_code, user_type: user.user_type };
+    const tokenPayload = { id: user.id, username: user.username, role_id: user.role_id, role_code: user.role_code, user_type: user.user_type, token_version: user.token_version || 1 };
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
     const refreshToken = jwt.sign(tokenPayload, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES_IN });
     
-    res.json({ success: true, data: { ...user, permissions, token, refreshToken } });
+    const isProd = process.env.NODE_ENV === 'production';
+    
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      maxAge: 12 * 60 * 60 * 1000 // 12h
+    });
+    
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/api/users/refresh',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7d
+    });
+    
+    res.json({ success: true, data: { ...user, permissions } });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -339,6 +361,11 @@ router.put('/users/:id', adminOnly, async (req, res) => {
       const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
       sql += ', password = ?';
       params.push(hashedPassword);
+    }
+    // 角色/密码/状态变动时递增 token_version，使该用户的所有旧令牌立即失效
+    const oldUser = await req.db.get('SELECT role_id, status FROM users WHERE id = ?', [req.params.id]);
+    if (oldUser && (oldUser.role_id !== role_id || oldUser.status !== status || password)) {
+      sql += ', token_version = COALESCE(token_version, 1) + 1';
     }
     sql += ', updated_at = CURRENT_TIMESTAMP WHERE id = ?';
     params.push(req.params.id);
@@ -374,18 +401,72 @@ router.delete('/users/:id', adminOnly, async (req, res) => {
 
 // JWT 令牌静默刷新端点（无需鉴权中间件，由 server.js 白名单控制）
 router.post('/users/refresh', async (req, res) => {
-  const { refreshToken } = req.body;
+  const refreshToken = req.cookies?.refreshToken;
   if (!refreshToken) return res.status(400).json({ success: false, message: '缺少 refreshToken' });
   try {
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+    // 校验 token_version：如果用户已被注销/禁用，拒绝刷新
+    if (decoded.id) {
+      const dbUser = await req.db.get('SELECT token_version, status FROM users WHERE id = ?', [decoded.id]);
+      if (!dbUser || dbUser.status === 0) {
+        return res.status(401).json({ success: false, message: '账号已被禁用，请联系管理员' });
+      }
+      if (decoded.token_version != null && dbUser.token_version != null && dbUser.token_version !== decoded.token_version) {
+        return res.status(401).json({ success: false, message: '登录凭证已失效，请重新登录' });
+      }
+    }
     const newToken = jwt.sign(
-      { id: decoded.id, username: decoded.username, role_id: decoded.role_id, role_code: decoded.role_code, user_type: decoded.user_type },
+      { id: decoded.id, username: decoded.username, role_id: decoded.role_id, role_code: decoded.role_code, user_type: decoded.user_type, token_version: decoded.token_version },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
-    res.json({ success: true, data: { token: newToken } });
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 12 * 60 * 60 * 1000
+    });
+    res.json({ success: true, data: { token_refreshed: true } });
   } catch (e) {
     res.status(401).json({ success: false, message: '刷新令牌无效或已过期，请重新登录' });
+  }
+});
+
+// 退出登录，清空 Cookie
+router.post('/users/logout', (req, res) => {
+  res.clearCookie('token');
+  res.clearCookie('refreshToken', { path: '/api/users/refresh' });
+  res.json({ success: true });
+});
+
+// 获取本人权限等运行时必需品
+router.get('/users/me/permissions', async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) return res.status(401).json({ success: false, message: '无权操作' });
+    let permissions = [];
+    if (req.user.role_id) {
+      const permRows = await req.db.all(`
+        SELECT p.code FROM permissions p
+        JOIN role_permissions rp ON p.id = rp.permission_id
+        WHERE rp.role_id = ?
+      `, [req.user.role_id]);
+      permissions = permRows.map(p => p.code);
+    }
+    const dbUser = await req.db.get(`
+      SELECT u.*, d.name as department_name, r.name as role_name, r.code as role_code
+      FROM users u
+      LEFT JOIN departments d ON u.department_id = d.id
+      LEFT JOIN roles r ON u.role_id = r.id
+      WHERE u.id = ? AND u.status = 1
+    `, [req.user.id]);
+    
+    if (!dbUser) return res.status(401).json({ success: false, message: '用户已失效' });
+    delete dbUser.password;
+    
+    res.json({ success: true, data: { ...dbUser, permissions } });
+  } catch (error) {
+    console.error(`[basic.js] get me error:`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
 

@@ -1,12 +1,39 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Modal from '../../components/Modal';
 import StatusBadge from '../../components/StatusBadge';
+import NextStepActions from '../../components/NextStepActions';
 
 const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProduction }) => {
+  const navigate = useNavigate();
 
   const updateOrderStatus = (id, status) => {
     if (onUpdateStatus) onUpdateStatus(id, status);
   };
+
+  // 智能下一步跳转 actions
+  const nextActions = useMemo(() => {
+    const acts = [];
+    const hasProduction = item?.productionOrders?.length > 0;
+    const allProductionDone = hasProduction && item.productionOrders.every(p => p.status === 'completed');
+    
+    if (item?.status === 'confirmed' || item?.status === 'pending') {
+      if (!hasProduction) acts.push({ icon: '🏭', label: '创建生产工单', _action: 'createProduction' });
+      if (hasProduction) acts.push({ icon: '📦', label: '去领料', path: '/production/pick', _action: 'close' });
+    }
+    if (item?.status === 'processing') {
+      acts.push({ icon: '📦', label: '去领料', path: '/production/pick', _action: 'close' });
+      acts.push({ icon: '🔧', label: '去车间报工', path: '/process/hub', _action: 'close' });
+      if (allProductionDone) acts.push({ icon: '🔍', label: '查看检验', path: '/inspection', _action: 'close' });
+    }
+    // 将标记转为实际回调（避免闭包捕获过期引用）
+    return acts.map(a => ({
+      ...a,
+      onClick: a._action === 'createProduction' 
+        ? () => { if(onCreateProduction) onCreateProduction(item); }
+        : a._action === 'close' ? onClose : undefined
+    }));
+  }, [item?.status, item?.productionOrders, onClose, onCreateProduction, item]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="订单详情" size="max-w-3xl">
@@ -83,7 +110,7 @@ const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProdu
                 </thead>
                 <tbody>
                   {item.productionOrders.map((po, i) => (
-                    <tr key={i} className="border-t hover:bg-blue-50 cursor-pointer" onClick={() => { onClose(); window.location.hash = 'production-orders'; }}>
+                    <tr key={i} className="border-t hover:bg-blue-50 cursor-pointer" onClick={() => { onClose(); navigate('/production/orders'); }}>
                       <td className="px-3 py-2 text-sm font-medium text-blue-600">{po.order_no} <i className="fas fa-external-link-alt text-xs ml-1"></i></td>
                       <td className="px-3 py-2 text-sm">{po.product_name || '-'}</td>
                       <td className="px-3 py-2 text-sm">{po.quantity} {po.unit || '件'}</td>
@@ -129,7 +156,7 @@ const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProdu
                 </thead>
                 <tbody>
                   {item.outboundOrders.map((oo, i) => (
-                    <tr key={i} className="border-t hover:bg-purple-50 cursor-pointer" onClick={() => { onClose(); window.location.hash = 'outbound-finished'; }}>
+                    <tr key={i} className="border-t hover:bg-purple-50 cursor-pointer" onClick={() => { onClose(); navigate('/warehouse/outbound'); }}>
                       <td className="px-3 py-2 text-sm font-medium text-purple-600">{oo.order_no} <i className="fas fa-external-link-alt text-xs ml-1"></i></td>
                       <td className="px-3 py-2 text-sm">{oo.warehouse_name || '-'}</td>
                       <td className="px-3 py-2 text-sm">
@@ -149,6 +176,9 @@ const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProdu
             </div>
           </div>
         )}
+        
+        {/* 智能下一步跳转 */}
+        <NextStepActions actions={nextActions} />
       </div>
     </Modal>
   );

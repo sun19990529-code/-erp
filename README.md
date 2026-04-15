@@ -1,6 +1,6 @@
 # 铭晟 ERP-MES 管理系统
 
-> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.9.0**
+> 面向中小型制造企业的一体化 ERP + MES 管理平台 · **v1.9.1**
 
 ## 技术栈
 
@@ -10,9 +10,9 @@
 | 后端 | Node.js + Express + Helmet |
 | 数据库 | PostgreSQL (pg) |
 | 图表 | Recharts |
-| 认证 | JWT 双 Token（access + refresh） |
+| 认证 | JWT 双 Token（HttpOnly Cookie） |
 | 校验 | Zod Schema |
-| 测试 | Vitest（48 用例） |
+| 测试 | Vitest（131 用例） |
 | CI/CD | GitHub Actions |
 | 文档 | Swagger UI（/api-docs） |
 
@@ -77,15 +77,16 @@ erp-mes-system/
 │       ├── pages/          # 页面模块 (Dashboard, Sidebar, *Pages...)
 │       ├── context/        # React Context (Auth, Toast)
 │       ├── hooks/          # 自定义 Hook (useDraftForm)
-│       └── api/            # API 请求层（含缓存）
+│       ├── store/          # Zustand 状态管理 (useAuthStore)
+│       └── api/            # API 请求层（含缓存 + credentials）
 ├── backend/
 │   ├── server.js           # Express 入口
-│   ├── database.js         # SQLite 初始化 & DDL
+│   ├── database.js         # PostgreSQL 初始化 & DDL
 │   ├── config/             # jwt.js, security.js, swagger.js
 │   ├── middleware/         # permission.js, validate.js, pagination.js
 │   ├── validators/         # Zod Schema (schemas.js)
-│   ├── routes/             # 22 个业务路由模块
-│   ├── tests/              # Vitest 测试用例 (48 个)
+│   ├── routes/             # 23 个业务路由模块
+│   ├── tests/              # Vitest 测试用例 (131 个)
 │   └── utils/              # order-number, unit-convert
 ├── .github/workflows/      # GitHub Actions CI
 ├── .prettierrc             # 代码格式化配置
@@ -98,6 +99,37 @@ erp-mes-system/
 |---|---|---|
 | `admin` | `admin123` | 管理员 |
 | `user` | `123456` | 普通用户 |
+
+## v1.9.1 安全架构升级 & 性能优化 & 表单重构（2026-04-15）
+
+### 🔒 安全架构升级（HttpOnly Cookie 鉴权）
+- **彻底消除 XSS 令牌窃取风险** — JWT 从 LocalStorage 迁移至 HttpOnly Cookie，前端 JavaScript 完全无法读取
+- **后端 Cookie 签发** — 安装 `cookie-parser`，登录/刷新接口通过 `res.cookie()` 下发 `token`（12h）和 `refreshToken`（7d，路径限定 `/api/users/refresh`）
+- **前端鉴权净化** — `api/index.js` 移除手动 `Authorization` 头拼接，全局启用 `credentials: 'include'`
+- **AuthStore 重构** — `useAuthStore` 彻底清除敏感令牌持久化，仅保留基础用户展示信息
+- **安全同步机制** — 新增 `/api/users/me/permissions` 接口 + `fetchSelf()` 钩子，页面加载时实时拉取权限树
+- **Logout 白名单** — `/api/users/logout` 加入免鉴权白名单，确保过期会话也能通知后端清除 Cookie
+- **ImportPage 修复** — 消除唯一绕过 Cookie 直接使用旧 `Authorization` 头的漏洞页面
+
+### ⚡ 全站性能提速（Promise.all 并行化）
+- **WarehousePages** — 仓库管理初始化请求并行化
+- **PurchasePages** — 采购管理初始化请求并行化
+- **OutsourcingPages** — 委外管理初始化请求并行化
+- **UserPages** — 用户管理初始化请求并行化
+- **ProductionPages** — `allMaterials` 包裹 `useMemo` 修复缓存失效
+
+### 📝 表单组件重构（React Hook Form + Zod）
+- **PickFormModal** — 全新领料/退料表单组件，集成 `react-hook-form` + `zod` 校验 + PDA 扫码枪 `appendRow` 接口
+- **ProductionPages 瘦身** — 复杂领料逻辑从 `PickMaterialManager` 剥离到独立组件
+- **PurchaseFormModal 文案修正** — "预估合资" → "预估合计"
+
+### 🛡️ 代码审查（第 36-37 轮，共 8 项修复）
+- **致命修复** — `PrintableQRCode` 组件声明被截断导致构建失败
+- **致命修复** — `useScanner` 默认导入不存在，改为命名导入
+- **高危修复** — `ImportPage` 完全绕过 HttpOnly Cookie 鉴权
+- **高危修复** — `App.jsx` 残留废弃 `AUTH_KEY` 常量
+- **中危修复** — `PickFormModal` 未使用的 `watch` 变量引发多余重渲染
+- **中危修复** — `allMaterials` 未被 `useMemo` 包裹导致 Map 缓存永久失效
 
 ## v1.9.0 订单全链路自动化 & 深度代码审查（2026-04-02）
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { BusinessError } = require('../utils/BusinessError');
 
 // ============================================================
 // 打印模板管理 API
@@ -114,12 +115,12 @@ router.put('/:id', requireAdmin, async (req, res) => {
         }
       }
       const r = await req.db.run('UPDATE print_templates SET name = ?, content = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [name, content, is_default ? 1 : 0, req.params.id]);
-      if (r.changes === 0) throw new Error('TEMPLATE_NOT_FOUND');
+      if (r.changes === 0) throw new BusinessError('模板不存在', 404);
     });
     res.json({ success: true, message: '模板更新成功' });
   } catch (error) {
-    if (error.message === 'TEMPLATE_NOT_FOUND') {
-      return res.status(404).json({ success: false, message: '模板不存在' });
+    if (error instanceof BusinessError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: '更新模板失败', error: error.message });
   }

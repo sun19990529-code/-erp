@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const Decimal = require('decimal.js');
 const { requirePermission } = require('../middleware/permission');
 const { validateId } = require('../middleware/validate');
 const { generateOrderNo } = require('../utils/order-number');
@@ -56,13 +57,13 @@ router.post('/payables/:id/pay', validateId, requirePermission('finance_edit'), 
     if (!amount || amount <= 0) return res.status(400).json({ success: false, message: '付款金额必须大于0' });
     const payable = await req.db.get('SELECT * FROM payables WHERE id = ?', [req.params.id]);
     if (!payable) return res.status(404).json({ success: false, message: '应付单不存在' });
-    const remaining = Math.round((payable.amount - payable.paid_amount) * 100) / 100;
-    if (Math.round(amount * 100) > Math.round(remaining * 100)) return res.status(400).json({ success: false, message: `付款金额不能超过未付余额 ¥${remaining.toFixed(2)}` });
+    const remaining = new Decimal(payable.amount).minus(payable.paid_amount).toNumber();
+    if (new Decimal(amount).gt(remaining)) return res.status(400).json({ success: false, message: `付款金额不能超过未付余额 ¥${remaining.toFixed(2)}` });
     
     await req.db.transaction(async () => {
       await req.db.run('INSERT INTO payment_records (payable_id, amount, payment_method, operator, remark) VALUES (?, ?, ?, ?, ?)',
         [req.params.id, amount, payment_method || 'bank', operator, remark]);
-      const newPaid = Math.round((payable.paid_amount + amount) * 100) / 100;
+      const newPaid = new Decimal(payable.paid_amount).plus(amount).toNumber();
       const newStatus = newPaid >= payable.amount ? 'paid' : 'partial';
       await req.db.run('UPDATE payables SET paid_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [newPaid, newStatus, req.params.id]);
@@ -81,13 +82,13 @@ router.post('/receivables/:id/receive', validateId, requirePermission('finance_e
     if (!amount || amount <= 0) return res.status(400).json({ success: false, message: '收款金额必须大于0' });
     const receivable = await req.db.get('SELECT * FROM receivables WHERE id = ?', [req.params.id]);
     if (!receivable) return res.status(404).json({ success: false, message: '应收单不存在' });
-    const remaining = Math.round((receivable.amount - receivable.received_amount) * 100) / 100;
-    if (Math.round(amount * 100) > Math.round(remaining * 100)) return res.status(400).json({ success: false, message: `收款金额不能超过未收余额 ¥${remaining.toFixed(2)}` });
+    const remaining = new Decimal(receivable.amount).minus(receivable.received_amount).toNumber();
+    if (new Decimal(amount).gt(remaining)) return res.status(400).json({ success: false, message: `收款金额不能超过未收余额 ¥${remaining.toFixed(2)}` });
     
     await req.db.transaction(async () => {
       await req.db.run('INSERT INTO payment_records (receivable_id, amount, payment_method, operator, remark) VALUES (?, ?, ?, ?, ?)',
         [req.params.id, amount, payment_method || 'bank', operator, remark]);
-      const newReceived = Math.round((receivable.received_amount + amount) * 100) / 100;
+      const newReceived = new Decimal(receivable.received_amount).plus(amount).toNumber();
       const newStatus = newReceived >= receivable.amount ? 'paid' : 'partial';
       await req.db.run('UPDATE receivables SET received_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [newReceived, newStatus, req.params.id]);

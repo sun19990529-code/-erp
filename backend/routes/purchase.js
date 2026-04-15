@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const Decimal = require('decimal.js');
 const { requirePermission } = require('../middleware/permission');
 const { validate, validateId } = require('../middleware/validate');
 const { purchaseCreate } = require('../validators/schemas');
@@ -105,7 +106,7 @@ router.put('/:id/status', validateId, requirePermission('purchase_edit'), async 
   }
 });
 
-router.put('/:id', validateId, requirePermission('purchase_edit'), async (req, res) => {
+router.put('/:id', validateId, requirePermission('purchase_edit'), validate(purchaseCreate), async (req, res) => {
   try {
     const { supplier_id, expected_date, operator, remark, items } = req.body;
     await req.db.transaction(async () => {
@@ -127,12 +128,63 @@ router.put('/:id', validateId, requirePermission('purchase_edit'), async (req, r
 router.delete('/:id', validateId, requirePermission('purchase_delete'), async (req, res) => {
   try {
     const order = await req.db.get('SELECT * FROM purchase_orders WHERE id = ?', [req.params.id]);
-    if (order && order.status !== 'pending') return res.status(400).json({ success: false, message: '只能删除待处理状态的采购单' });
+    if (!order) return res.status(404).json({ success: false, message: '采购单不存在' });
+    
+    const isCompleted = order.status === 'completed' || order.status === 'received';
+    const forceDelete = req.query.force === 'true';
+    const isAdmin = req.user?.role_code === 'admin';
+    
+    // 强制删除仅限管理员
+    if (forceDelete && !isAdmin) {
+      return res.status(403).json({ success: false, message: '仅管理员可执行强制删除操作' });
+    }
+    
+    // 非 pending 状态必须通过强制删除
+    if (isCompleted && !forceDelete) {
+      return res.status(400).json({ success: false, message: '已完成的采购单不能直接删除，管理员可强制删除（将回滚入库和应付）' });
+    }
+    if (!isCompleted && order.status !== 'pending' && !forceDelete) {
+      return res.status(400).json({ success: false, message: '只能删除待处理状态的采购单，管理员可强制删除' });
+    }
+
     await req.db.transaction(async () => {
+      // === 回滚关联数据 ===
+      if (isCompleted || forceDelete) {
+        // 1. 回滚关联入库单（含库存回退）
+        const inboundOrders = await req.db.all('SELECT * FROM inbound_orders WHERE purchase_order_id = ?', [req.params.id]);
+        for (const inbound of inboundOrders) {
+          // 如果入库单已完成，回滚库存
+          if (inbound.status === 'completed' || inbound.status === 'approved') {
+            const inboundItems = await req.db.all('SELECT * FROM inbound_items WHERE inbound_id = ?', [inbound.id]);
+            for (const item of inboundItems) {
+              const batch = item.batch_no || 'DEFAULT_BATCH';
+              await req.db.run(
+                'UPDATE inventory SET quantity = GREATEST(quantity - ?, 0), updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+                [item.quantity, inbound.warehouse_id, item.product_id, batch]
+              );
+            }
+          }
+          // 删除入库明细和入库单
+          await req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [inbound.id]);
+          await req.db.run('DELETE FROM inbound_orders WHERE id = ?', [inbound.id]);
+        }
+        
+        // 2. 删除关联应付账款及其付款记录
+        const payables = await req.db.all("SELECT id FROM payables WHERE source_type = 'purchase' AND source_id = ?", [req.params.id]);
+        for (const p of payables) {
+          await req.db.run('DELETE FROM payment_records WHERE payable_id = ?', [p.id]);
+        }
+        await req.db.run("DELETE FROM payables WHERE source_type = 'purchase' AND source_id = ?", [req.params.id]);
+      }
+      
+      // 3. 删除采购明细和采购单
       await req.db.run('DELETE FROM purchase_items WHERE purchase_order_id = ?', [req.params.id]);
       await req.db.run('DELETE FROM purchase_orders WHERE id = ?', [req.params.id]);
     });
-    res.json({ success: true });
+    
+    writeLog(req.db, req.user?.id, '删除采购单', 'purchase', req.params.id, 
+      `采购单号: ${order.order_no}${isCompleted ? '（强制删除，已回滚入库和应付）' : ''}`);
+    res.json({ success: true, message: isCompleted ? '已强制删除并回滚关联入库单和应付账款' : '删除成功' });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -152,7 +204,7 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
     // 1. 获取所有原材料/半成品（采购对象），含安全库存设置
     let productSql = `SELECT p.id, p.code, p.name, p.specification, p.unit, p.category,
       p.min_stock, p.max_stock, p.unit_price as reference_price
-      FROM products p WHERE p.status = 1`;
+      FROM products p WHERE p.status = 1 AND (p.is_deleted IS NULL OR p.is_deleted = 0)`;
     const productParams = [];
     if (category) {
       productSql += ' AND p.category = ?';
@@ -216,11 +268,11 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
     // 6. 历史采购均价（最近 3 个月）
     const avgPriceRows = await req.db.all(`
       SELECT pi.product_id,
-        ROUND(AVG(pi.unit_price), 2) as avg_price,
+        ROUND(AVG(pi.unit_price)::numeric, 2) as avg_price,
         COUNT(*) as purchase_count
       FROM purchase_items pi
       JOIN purchase_orders po ON pi.purchase_order_id = po.id
-      WHERE po.created_at >= NOW() - INTERVAL '3 months'
+      WHERE po.created_at >= CURRENT_TIMESTAMP - INTERVAL '3 months'
         AND pi.product_id IN (${placeholders})
         AND pi.unit_price > 0
       GROUP BY pi.product_id
@@ -282,7 +334,7 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
         order_gap: netOrderGap,
         suggested_quantity: suggestedQty,
         unit_price: unitPrice,
-        estimated_amount: parseFloat((suggestedQty * unitPrice).toFixed(2)),
+        estimated_amount: parseFloat(new Decimal(suggestedQty).times(unitPrice).toFixed(2)),
         urgency,
         suppliers: suppliers.map(s => ({
           id: s.supplier_id,
@@ -305,7 +357,7 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
         total_items: suggestions.length,
         critical_count: suggestions.filter(s => s.urgency === 'critical').length,
         high_count: suggestions.filter(s => s.urgency === 'high').length,
-        total_estimated_amount: parseFloat(suggestions.reduce((s, r) => s + r.estimated_amount, 0).toFixed(2))
+        total_estimated_amount: parseFloat(suggestions.reduce((s, r) => new Decimal(s).plus(r.estimated_amount), new Decimal(0)).toFixed(2))
       }
     });
   } catch (error) {
