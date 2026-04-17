@@ -161,8 +161,8 @@ const PurchaseManager = () => {
           editPermission="purchase_edit" 
           deletePermission="purchase_delete" />
       </div>
-      <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? '采购详情' : modal.mode === 'edit' ? '编辑采购单' : '新增采购'} size="max-w-3xl">
-        {modal.mode === 'view' ? (
+      {modal.mode === 'view' && (
+        <Modal isOpen={modal.open} onClose={closeModal} title="采购详情" size="max-w-3xl">
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div><strong>采购单号：</strong>{modal.item?.order_no}</div>
@@ -216,18 +216,21 @@ const PurchaseManager = () => {
               <button onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">关闭</button>
             </div>
           </div>
-        ) : (
-          <PurchaseFormModal 
-            isOpen={true}
-            onClose={closeModal}
-            mode={modal.mode}
-            initialData={modal.item}
-            onSubmitSuccess={save}
-            suppliers={suppliers}
-            allProducts={products}
-          />
-        )}
-      </Modal>
+        </Modal>
+      )}
+
+      {/* 新增/编辑弹窗（自带外壳，须在独立层渲染） */}
+      {(modal.mode === 'create' || modal.mode === 'edit') && (
+        <PurchaseFormModal 
+          isOpen={modal.open}
+          onClose={closeModal}
+          mode={modal.mode}
+          initialData={modal.item}
+          onSubmitSuccess={save}
+          suppliers={suppliers}
+          allProducts={products}
+        />
+      )}
       <ConfirmDialog />
     </div>
   );
