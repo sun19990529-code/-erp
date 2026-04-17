@@ -85,3 +85,5 @@ Write-Host "   查看日志: pm2 logs erp" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Read-Host "按回车关闭"
 
+
+# fixed encoding

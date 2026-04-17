@@ -60,3 +60,4 @@ if ($pm2) {
 }
 
 Read-Host "按回车关闭"
+# fixed encoding
