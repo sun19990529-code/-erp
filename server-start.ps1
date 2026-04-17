@@ -1,4 +1,4 @@
-# server-start.ps1 - 铭晟ERP服务器启动（管理员）
+﻿# server-start.ps1 - 铭晟ERP服务器启动（管理员）
 
 # 自动提权为管理员
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
