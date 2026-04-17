@@ -191,6 +191,31 @@ const PickMaterialManager = () => {
   const closeModal = () => {
     setModal({ open: false, item: null, items: [], mode: 'list' });
   };
+
+  const openEdit = async (item) => {
+    const res = await api.get(`/pick/${item.id}`);
+    if (res.success) {
+      setModal({ open: true, item: res.data, items: res.data.items || [], mode: 'edit', type: res.data.type || 'pick' });
+    }
+  };
+
+  const del = async (item) => {
+    if (item.status === 'completed') {
+      if (!isAdmin) {
+        window.__toast?.warning('已完成的领料单不能删除，如需删除请联系管理员');
+        return;
+      }
+      if (!await confirm('⚠️ 警告：此领料单已完成！\n\n删除将自动回滚库存。\n\n确定要强制删除吗？')) return;
+      const res = await api.del(`/pick/${item.id}?force=true`);
+      if (res.success) load();
+      else window.__toast?.error(res.message);
+      return;
+    }
+    if (!await confirm('确定删除该领料单？')) return;
+    const res = await api.del(`/pick/${item.id}`);
+    if (res.success) load();
+    else window.__toast?.error(res.message);
+  };
     // 这些已被 RHF 移交组件内部管理，只保留外部框架的开关状态。
   // updateItem, addRow, convertToKg 等已抽离至 PickFormModal
   

@@ -70,7 +70,7 @@ const PurchaseSuggestionPage = () => {
 
     const groupList = Object.values(groups);
     const msg = groupList.map(g =>
-      `${g.supplier.name}：${g.items.length} 项物料，约 ¥${g.items.reduce((s, i) => s + i.estimated_amount, 0).toFixed(2)}`
+      `${g.supplier.name}：${g.items.length} 项物料，约 ¥${g.items.reduce((s, i) => s + Number(i.estimated_amount || 0), 0).toFixed(2)}`
     ).join('\n');
 
     if (!await confirm(`将生成 ${groupList.length} 张采购单：\n\n${msg}\n\n确认生成？`)) return;
@@ -177,7 +177,7 @@ const PurchaseSuggestionPage = () => {
           <div className="px-4 py-3 bg-teal-50 border-b border-teal-100 flex items-center justify-between">
             <span className="text-sm text-teal-700">
               <i className="fas fa-check-circle mr-1"></i>
-              已选 <strong>{selected.size}</strong> 项，预计金额 <strong>¥{selectedAmount.toFixed(2)}</strong>
+              已选 <strong>{selected.size}</strong> 项，预计金额 <strong>¥{Number(selectedAmount || 0).toFixed(2)}</strong>
             </span>
             <button
               onClick={createOrders}
@@ -264,8 +264,8 @@ const PurchaseSuggestionPage = () => {
                           <span className="font-bold text-teal-700 text-base">{item.suggested_quantity}</span>
                           <span className="text-gray-400 text-xs ml-0.5">{item.unit}</span>
                         </td>
-                        <td className="px-3 py-3 text-right text-gray-600">¥{(item.unit_price || 0).toFixed(2)}</td>
-                        <td className="px-3 py-3 text-right font-medium">¥{item.estimated_amount.toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right text-gray-600">¥{Number(item.unit_price || 0).toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right font-medium">¥{Number(item.estimated_amount || 0).toFixed(2)}</td>
                         <td className="px-3 py-3">
                           {item.default_supplier ? (
                             <span className="text-sm">{item.default_supplier.name}</span>
@@ -334,8 +334,8 @@ const PurchaseSuggestionPage = () => {
                            <span className="text-teal-700 font-black text-2xl tracking-tight">{item.suggested_quantity} <span className="text-sm font-medium tracking-normal text-teal-600">{item.unit}</span></span>
                          </div>
                          <div className="text-right flex flex-col justify-end">
-                           <span className="text-xs text-gray-400 mb-1">参考: ¥{item.unit_price || 0} / {item.unit}</span>
-                           <span className="font-bold text-teal-800 text-sm">预估 <span className="text-base text-gray-900">¥{item.estimated_amount.toFixed(2)}</span></span>
+                           <span className="text-xs text-gray-400 mb-1">参考: ¥{Number(item.unit_price || 0).toFixed(2)} / {item.unit}</span>
+                           <span className="font-bold text-teal-800 text-sm">预估 <span className="text-base text-gray-900">¥{Number(item.estimated_amount || 0).toFixed(2)}</span></span>
                          </div>
                        </div>
                     </div>

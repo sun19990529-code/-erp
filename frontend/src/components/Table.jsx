@@ -1,5 +1,5 @@
-import React, { useContext, useRef, useMemo } from 'react';
-import { AuthContext } from '../context/AuthContext';
+import React, { useRef, useMemo } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { TableSkeleton } from './Skeleton';
 
 // 虚拟滚动配置
@@ -8,7 +8,7 @@ const ROW_HEIGHT = 48; // 每行高度（px）
 const OVERSCAN = 5; // 预渲染行数
 
 const Table = ({ columns, data, onEdit, onDelete, onView, editPermission, deletePermission, customAction, loading = false }) => {
-  const { permissions = [], isAdmin = false } = useContext(AuthContext) || {};
+  const { permissions = [], isAdmin = false } = useAuth();
   const scrollRef = useRef(null);
   const [scrollTop, setScrollTop] = React.useState(0);
 

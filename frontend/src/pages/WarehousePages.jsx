@@ -120,6 +120,11 @@ const WarehouseOrderManager = ({ orderType }) => {
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [warehouseFilter, setWarehouseFilter] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [modal, setModal] = useState({ open: false, item: null, items: [], mode: 'list' });
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [confirm, ConfirmDialog] = useConfirm();
   
   const formRef = useRef(null);
   
@@ -341,6 +346,7 @@ const WarehouseOrderManager = ({ orderType }) => {
 
   return (
     <div className="fade-in">
+      <ConfirmDialog />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-bold">{title}</h2>
@@ -381,8 +387,8 @@ const WarehouseOrderManager = ({ orderType }) => {
           { key: 'created_at', title: '创建时间', render: v => v?.slice(0, 10) }
         ]} data={filteredData} onView={openView} onEdit={openEdit} onDelete={del} editPermission="warehouse_edit" deletePermission="warehouse_delete" />
       </div>
-      <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? '详情' : modal.mode === 'edit' ? `编辑${title}` : `新增${title}`} size="max-w-3xl">
-        {modal.mode === 'view' ? (
+      {/* 查看详情 Modal */}
+      <Modal isOpen={modal.open && modal.mode === 'view'} onClose={closeModal} title="详情" size="max-w-3xl">
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div><strong>单号：</strong>{modal.item?.order_no}</div>
@@ -451,90 +457,22 @@ const WarehouseOrderManager = ({ orderType }) => {
               </div>
             )}
           </div>
-        ) : (
-          <form onSubmit={save} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium mb-1">仓库 *</label>
-                <SearchSelect name="warehouse_id" options={warehouses} placeholder="请选择仓库" required />
-              </div>
-              {orderType === 'inbound' && <div><label className="block text-sm font-medium mb-1">供应商</label>
-                <SearchSelect name="supplier_id" options={suppliers} placeholder="无" onChange={val => setSelectedSupplierId(val || '')} />
-              </div>}
-              <div><label className="block text-sm font-medium mb-1">操作员</label><OperatorSelect /></div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">明细</label>
-              <div className="border rounded-lg p-3 space-y-2">
-                {(modal.items || []).map((it, i) => {
-                  const product = products.find(p => String(p.id) === String(it.product_id));
-                  const unit = product?.unit || '公斤';
-                  const kgQuantity = convertToKg(it.input_quantity || it.quantity || 0, unit, it.product_id);
-                  // 计算每支公斤数（用于显示）
-                  let kgPerPiece = null;
-                  if (product?.outer_diameter && product?.wall_thickness && product?.length) {
-                    kgPerPiece = ((parseFloat(product.outer_diameter) - parseFloat(product.wall_thickness)) * parseFloat(product.wall_thickness) * 0.02491 * parseFloat(product.length)).toFixed(4);
-                  }
-                  
-                      const filteredProducts = ((activeType === 'raw' || activeType === 'semi') && selectedSupplierId)
-                        ? products.filter(p => (p.suppliers || []).some(s => String(s.supplier_id) === String(selectedSupplierId)))
-                        : products;
-                      return (
-                    <div key={i} className="flex flex-wrap lg:flex-nowrap gap-3 items-center bg-gray-50 p-2.5 rounded-lg border border-gray-100 mb-2 relative group hover:border-teal-200 transition-colors">
-                      <div className="w-full lg:flex-1 min-w-[200px]">
-                        <SearchSelect options={filteredProducts} value={it.product_id} onChange={val => updateItem(i, 'product_id', val)} placeholder="搜索选择产品" />
-                      </div>
-                      <div className="w-[30%] lg:w-28">
-                        <input type="text" value={it.supplier_batch_no || ''} onChange={e => updateItem(i, 'supplier_batch_no', e.target.value)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="供应商批号(选填)" />
-                      </div>
-                      <div className="w-[20%] lg:w-24">
-                        <input type="text" value={it.heat_no || ''} onChange={e => updateItem(i, 'heat_no', e.target.value)} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="炉号(选填)" />
-                      </div>
-                      <div className="w-[20%] lg:w-24">
-                        <input type="number" value={it.input_quantity ?? it.quantity ?? ''} onChange={e => updateItem(i, 'input_quantity', e.target.value === '' ? '' : parseFloat(e.target.value))} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="输入数量" />
-                      </div>
-                      {orderType === 'inbound' && (
-                        <div className="w-[20%] lg:w-24">
-                          <input type="number" step="0.01" value={it.total_amount ?? ''} onChange={e => updateItem(i, 'total_amount', e.target.value === '' ? '' : parseFloat(e.target.value))} className="border border-gray-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 rounded-md px-2.5 py-1.5 w-full text-sm transition-all shadow-sm outline-none" placeholder="入库总额(¥)" />
-                        </div>
-                      )}
-                      <div className="w-[30%] lg:w-auto flex flex-col lg:flex-row items-start lg:items-center gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="px-2 py-1 bg-white border border-gray-200 text-gray-700 rounded-md text-xs font-medium shadow-sm">{unit}</span>
-                          {unit === '支' && kgPerPiece && (
-                            <span className="text-[11px] text-teal-600 font-medium bg-teal-50 px-1.5 py-0.5 rounded">({kgPerPiece}kg/支)</span>
-                          )}
-                        </div>
-                        {unit !== '公斤' && (
-                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0">= {formatQuantity(kgQuantity)} kg</span>
-                        )}
-                        {unit === '公斤' && (
-                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap mt-1 lg:mt-0 lg:hidden">= {formatQuantity(kgQuantity)} kg</span>
-                        )}
-                      </div>
-                      
-                      {/* 规格及删除按钮区域 */}
-                      <div className="w-full lg:w-48 flex items-center justify-between border-t lg:border-t-0 lg:border-l border-gray-200 pt-2 lg:pt-0 lg:pl-3 mt-1 lg:mt-0">
-                        <span className="text-xs text-gray-500 truncate flex-1" title={product?.specification || '无规格参数'}>
-                          <i className="fas fa-tag mr-1.5 opacity-40"></i>{product?.specification || '未配置规格'}
-                        </span>
-                        <button type="button" onClick={() => removeRow(i)} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors ml-2" title="移除该行">
-                          <i className="fas fa-trash-alt"></i>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                <button type="button" onClick={addRow} className="w-full py-2.5 border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2"><i className="fas fa-plus-circle"></i> 继续添加明细</button>
-              </div>
-            </div>
-            <div><label className="block text-sm font-medium mb-1">备注</label><textarea name="remark" className="w-full border rounded-lg px-3 py-2" rows="2"></textarea></div>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
-              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">提交</button>
-            </div>
-          </form>
-        )}
       </Modal>
+
+      {/* 新增/编辑 表单 Modal */}
+      <WarehouseFormModal
+        ref={formRef}
+        isOpen={modal.open && (modal.mode === 'create' || modal.mode === 'edit')}
+        onClose={closeModal}
+        mode={modal.mode}
+        initialData={modal.mode === 'edit' ? modal.item : null}
+        orderType={orderType}
+        activeProductType={activeType}
+        warehouses={warehouses}
+        suppliers={suppliers}
+        allProducts={products}
+        onSubmitSuccess={save}
+      />
 
       {/* 大数字键盘 */}
       <NumberKeypad 

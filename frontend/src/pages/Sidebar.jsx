@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // 侧边栏菜单树（原定义在 App.jsx 中 Sidebar 之前）
 const menuConfig = [
@@ -134,6 +134,21 @@ const menuPermissions = {
 const Sidebar = ({ activeMenu, setActiveMenu, user, permissions, onLogout, sidebarOpen, onCloseSidebar }) => {
   const [expanded, setExpanded] = useState({});
   
+  // 当 activeMenu 从外部改变时，自动展开对应的父菜单
+  useEffect(() => {
+    if (activeMenu) {
+      const parent = menuConfig.find(item => item.children?.some(child => child.key === activeMenu));
+      if (parent) {
+        setExpanded(prev => {
+          if (!prev[parent.key]) {
+            return { ...prev, [parent.key]: true };
+          }
+          return prev;
+        });
+      }
+    }
+  }, [activeMenu]);
+
   const toggleExpand = (key) => {
     if (expanded[key]) {
       setExpanded({ ...expanded, [key]: false });
