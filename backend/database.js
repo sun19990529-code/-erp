@@ -1,3 +1,15 @@
+/**
+ * =========================================================================
+ * 🚨🚨🚨 [AI & DEVLOPER WARNING] 🚨🚨🚨
+ * THIS FILE IS LEGACY CODE (For SQLite)!
+ * 
+ * THIS PROJECT HAS MIGRATED TO **POSTGRESQL**. 
+ * DO NOT use, modify, or assume the database is SQLite based on this file.
+ * The current database connection is managed directly via 'pg' Pool in `backend/server.js`.
+ * The custom `dbHelper` in `server.js` mimics SQLite API (`req.db.all`, `req.db.run`)
+ * but automatically transforms `?` placeholders to `$1, $2` for PostgreSQL.
+ * =========================================================================
+ */
 const fs = require('fs');
 const path = require('path');
 
@@ -157,6 +169,11 @@ function createTablesIfNotExist(db) {
     checkAndAddCol('production_material_consumption', 'supplier_batch_no', "ALTER TABLE production_material_consumption ADD COLUMN supplier_batch_no TEXT;");
     checkAndAddCol('production_material_consumption', 'heat_no', "ALTER TABLE production_material_consumption ADD COLUMN heat_no TEXT;");
     checkAndAddCol('production_material_consumption', 'batch_no', "ALTER TABLE production_material_consumption ADD COLUMN batch_no TEXT;");
+
+    // v2.2：委外合批 - outsourcing_items 增加每行明细级工单/工序关联
+    checkAndAddCol('outsourcing_items', 'production_order_id', "ALTER TABLE outsourcing_items ADD COLUMN production_order_id INTEGER REFERENCES production_orders(id);");
+    checkAndAddCol('outsourcing_items', 'process_id', "ALTER TABLE outsourcing_items ADD COLUMN process_id INTEGER REFERENCES processes(id);");
+    checkAndAddCol('outsourcing_items', 'received_quantity', "ALTER TABLE outsourcing_items ADD COLUMN received_quantity INTEGER DEFAULT 0;");
     
   } catch (e) {
     console.log('字段添加跳过（可能已存在）:', e.message);

@@ -1,0 +1,25 @@
+# 🤖 AI Coding Assistant Directions (项目开发核心准则)
+
+> **Any AI or LLM parsing this project MUST adhere strictly to the following architectural guidelines.**
+
+## 1. 核心架构说明 (Crucial Architecture)
+- **数据库 (Database)**: 本项目已经从 SQLite **完整迁移至 PostgreSQL**。
+- **千万不要被迷惑 (Do NOT be tricked)**: 
+  - 项目历史遗留的 `backend/database.js` 文件是 **已废弃** 的 SQLite 配置代码，**请完全忽略它**。
+  - 项目在 `backend/server.js` 中使用了精妙的适配器 `dbHelper`。它将所有类似 `req.db.all()`, `req.db.run(sql, [params])` 的 SQLite 风格调用，底层使用正则表达式将 `?` 转换并重写为 PostgreSQL 兼容的 `$1, $2`，然后通过 `pg` 的 Pool 提交给 PostgreSQL。
+- **编写 SQL (Writing SQL)**: 
+  - 当你在后端编写或修改 SQL 查询时，请务必使用 **PostgreSQL 标准** (例如支持 CTE, RETURNING, Postgres Array 聚合等)。
+  - 参数占位依然可以用 `?` （`dbHelper` 会自动转译），但不要再提供 SQLite 特有的 PRAGMA 甚至语句。
+
+## 2. 后端开发规范
+- **框架与响应结构**: 采用 `Express.js`。所有的 API 接口必须返回统一的 JSON 结构：`{ success: boolean, data?: any, message?: string }`。
+- **参数占位符的使用**: 使用 `dbHelper` 查询时，**请务必继续使用 `?`** 作为参数占位符，不管有多少个参数。`dbHelper` 底层通过遍历处理会精准替换，直接写 `$1` 可能会导致传参解析行为错位。
+- **性能红线 (SQL 优先)**: 严禁在 Node.js 内存中使用 `.filter()`, `.map()`, `Set()` 对从数据库里捞出的大几千条（N+1查询）全量数据做聚合统计与过滤！一律使用原生 PostgreSQL 强大的 `LEFT JOIN`，`GROUP BY`，`jsonb_agg`，`CTE 子查询` 引擎来完成计算。
+- **权限与越权防御**: 虽然前端组件通过 `useAuth().isAdmin` 控制了按钮隐藏，但当编写如"强制删除"这类高级 API 时，**后端路由层绝对不能省略权限验证**（例: 后端仍需判定 `!req.user.role_code || req.user.role_code !== 'admin'`）。
+- **迁移规范**: 新增字段或表时，不能去修改旧的 `database.js`。你必须编写类似 `migrate-xxxx.js` 的脚本，使用 PostgreSQL `ALTER TABLE` 或 `CREATE TABLE` 原生执行。
+
+## 3. 前端开发规范
+- **核心栈**: `React`, `React Router v6`, `Zustand` (状态管理), `Tailwind CSS`, `React Hook Form` + `Zod` (严格表单验证)。
+- **上下文管理**: 已废弃旧的 `AuthContext.Provider`（仅作路由透传），状态直接通过 `import { useAuth } from '../context/AuthContext'` 桥接读取 Zustand 里的 `user`, `permissions`, `isAdmin`。
+- **数据类型的致命陷阱**: 后端返回或 RHF (React Hook Form) 管理的数字字段（如 `unit_price`, `quantity`）很可能实质是 String。如果在前端对它们调用 `.toFixed()` 之前，**必须套上一层安全强转**，例如: `Number(item.unit_price || 0).toFixed(2)`，否则会引起页面崩溃！
+- **长列表渲染**: 如果是动辄上千行数据的表格，请使用项目中自带了虚拟滚动机制的 `Table.jsx` 渲染组件。
