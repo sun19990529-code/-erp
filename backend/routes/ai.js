@@ -2,6 +2,8 @@ const expressRouter = require('express');
 const router = expressRouter.Router();
 const axios = require('axios');
 const { requirePermission } = require('../middleware/permission');
+let broadcastWechatMsg = null;
+try { broadcastWechatMsg = require('../services/wechatBot').broadcastWechatMsg; } catch { }
 
 // 辅助函数：获取设置
 const getAISettings = async (db) => {
@@ -227,7 +229,8 @@ ${dbSchema}
 
     // 定义 Function Calling 工具
     const tools = [];
-    if (settings.wechatWebhook) {
+    const hasWechatPush = settings.wechatWebhook || (broadcastWechatMsg != null);
+    if (hasWechatPush) {
       tools.push({
         type: 'function',
         function: {
@@ -303,16 +306,25 @@ ${dbSchema}
             let sendMsg = '';
             
             try {
-               const wxRes = await axios.post(settings.wechatWebhook, {
-                 msgtype: 'markdown',
-                 markdown: {
-                   content: `**<font color="warning">【AI 助手代发】</font>**\n**反馈人**：${user?.real_name} (${user?.role_code})\n\n**详情**：\n${args.content}`
+               const msgContent = `**<font color="warning">【AI 助手代发】</font>**\n**反馈人**：${user?.real_name} (${user?.role_code})\n\n**详情**：\n${args.content}`;
+               
+               if (settings.wechatWebhook) {
+                 // 优先走 Webhook
+                 const wxRes = await axios.post(settings.wechatWebhook, {
+                   msgtype: 'markdown',
+                   markdown: { content: msgContent }
+                 });
+                 if (wxRes.data && wxRes.data.errcode === 0) {
+                   sendMsg = '已成功将信息推送到企业微信群。';
+                 } else {
+                   sendMsg = `推送企业微信失败：${wxRes.data.errmsg}`;
                  }
-               });
-               if (wxRes.data && wxRes.data.errcode === 0) {
-                 sendMsg = '已成功将信息推送到企业微信群。';
+               } else if (broadcastWechatMsg) {
+                 // 兜底走长连接机器人
+                 const ok = await broadcastWechatMsg(msgContent);
+                 sendMsg = ok ? '已通过企微机器人推送成功。' : '企微机器人未连接或无活跃群，推送失败。';
                } else {
-                 sendMsg = `推送企业微信失败：${wxRes.data.errmsg}`;
+                 sendMsg = '未配置推送通道。';
                }
             } catch (e) {
                console.error('[WeChat Webhook Error]', e.message);
