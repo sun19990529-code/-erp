@@ -79,11 +79,11 @@ async function handleCommand(text, db) {
   // 未匹配固定指令 → 转发给 AI 大模型
   try {
     const aiConfig = await db.get('SELECT * FROM ai_models WHERE is_active = 1 LIMIT 1');
-    if (aiConfig && aiConfig.api_key && aiConfig.api_url) {
+    if (aiConfig && aiConfig.api_key && aiConfig.base_url) {
       const response = await axios.post(
-        `${aiConfig.api_url}/chat/completions`,
+        `${aiConfig.base_url}/chat/completions`,
         {
-          model: aiConfig.model_name,
+          model: aiConfig.model,
           messages: [
             { role: 'system', content: '你是铭晟ERP系统的企微群助手。请用简洁友好的中文回答问题。如果用户的问题涉及ERP系统操作，可以引导他们使用固定指令（生产状态、日报、工单 PO-xxx、订单 SO-xxx、库存 产品名、超期检查、帮助）。' },
             { role: 'user', content: msg }
