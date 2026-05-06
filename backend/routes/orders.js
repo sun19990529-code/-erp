@@ -6,6 +6,8 @@ const { validate, validateId } = require('../middleware/validate');
 const { orderCreate } = require('../validators/schemas');
 const { writeLog } = require('./logs');
 const { BusinessError } = require('../utils/BusinessError');
+const { createReceivable } = require('./finance');
+const ProductionService = require('../services/ProductionService');
 
 // ==================== 订单管理 ====================
 router.get('/', requirePermission('order_view'), async (req, res) => {
@@ -33,6 +35,26 @@ router.get('/', requirePermission('order_view'), async (req, res) => {
     if (keyword) { sql += ' AND (o.order_no LIKE ? OR o.customer_name LIKE ?)'; params.push(`%${keyword}%`, `%${keyword}%`); }
     sql += ' ORDER BY o.created_at DESC';
     const result = await req.db.paginate(sql, params, safePage, safePageSize);
+    
+    if (result.data && result.data.length > 0) {
+      const orderIds = result.data.map(o => o.id);
+      const ph = orderIds.map(() => '?').join(',');
+      const allItems = await req.db.all(`
+        SELECT oi.*, p.code, p.name, p.specification, p.unit 
+        FROM order_items oi 
+        JOIN products p ON oi.product_id = p.id 
+        WHERE oi.order_id IN (${ph})
+      `, orderIds);
+      const itemMap = new Map();
+      allItems.forEach(it => {
+        if (!itemMap.has(it.order_id)) itemMap.set(it.order_id, []);
+        itemMap.get(it.order_id).push(it);
+      });
+      result.data.forEach(o => {
+        o.items = itemMap.get(o.id) || [];
+      });
+    }
+
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
@@ -53,6 +75,19 @@ router.get('/:id', validateId, requirePermission('order_view'), async (req, res)
       req.db.all(`SELECT po.*, p.name as product_name FROM production_orders po LEFT JOIN products p ON po.product_id = p.id WHERE po.order_id = ? ORDER BY po.created_at DESC`, [req.params.id]),
       req.db.all(`SELECT oo.*, w.name as warehouse_name FROM outbound_orders oo LEFT JOIN warehouses w ON oo.warehouse_id = w.id WHERE oo.order_id = ? ORDER BY oo.created_at DESC`, [req.params.id])
     ]);
+
+    // 附带查询每个明细产品的当前库存总数
+    if (items.length > 0) {
+      const pIds = [...new Set(items.map(i => i.product_id))];
+      const ph = pIds.map(() => '?').join(',');
+      const inventory = await req.db.all(`SELECT product_id, SUM(quantity) as available_stock FROM inventory WHERE product_id IN (${ph}) GROUP BY product_id`, pIds);
+      const stockMap = {};
+      inventory.forEach(inv => stockMap[inv.product_id] = inv.available_stock);
+      items.forEach(item => {
+        item.available_stock = stockMap[item.product_id] || 0;
+      });
+    }
+
     res.json({ success: true, data: { ...order, items, productionOrders, outboundOrders } });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
@@ -103,11 +138,15 @@ router.put('/:id/status', validateId, requirePermission('order_edit'), async (re
         if (order && (order.status === 'pending' || order.status === 'confirmed')) {
           const items = await req.db.all('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
           for (const item of items) {
+            const remainingQty = item.quantity - (item.shipped_quantity || 0);
+            if (remainingQty <= 0) continue;
+            
             const existing = await req.db.get('SELECT id FROM production_orders WHERE order_id = ? AND product_id = ?', [orderId, item.product_id]);
             if (existing) continue;
+            
             const poNo = generateOrderNo('PO');
             const result = await req.db.run(`INSERT INTO production_orders (order_no, order_id, product_id, quantity, remark, status) VALUES (?, ?, ?, ?, ?, 'pending')`,
-              [poNo, orderId, item.product_id, item.quantity, '订单自动生成']);
+              [poNo, orderId, item.product_id, remainingQty, '订单自动生成']);
             const productionId = result.lastInsertRowid;
             const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [item.product_id]);
             if (productProcesses.length > 0) {
@@ -116,6 +155,7 @@ router.put('/:id/status', validateId, requirePermission('order_edit'), async (re
               }
               await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, productionId]);
             }
+            await ProductionService.generatePlannedConsumption(req.db, productionId, item.product_id, remainingQty);
           }
         }
       }
@@ -124,6 +164,90 @@ router.put('/:id/status', validateId, requirePermission('order_edit'), async (re
     res.json({ success: true });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/:id/direct-ship', validateId, requirePermission('order_edit'), async (req, res) => {
+  try {
+    const { items, warehouse_id, operator, logistics_company, logistics_no } = req.body;
+    const orderId = req.params.id;
+    
+    if (!items || items.length === 0) return res.status(400).json({ success: false, message: '请选择发货明细' });
+    if (!warehouse_id) return res.status(400).json({ success: false, message: '请选择出库仓库' });
+
+    await req.db.transaction(async () => {
+      const order = await req.db.get('SELECT * FROM orders WHERE id = ?', [orderId]);
+      if (!order) throw new BusinessError('订单不存在');
+
+      const outboundNo = generateOrderNo('OUT');
+      let totalAmount = 0;
+      
+      const obResult = await req.db.run(`
+        INSERT INTO outbound_orders (order_no, type, warehouse_id, order_id, operator, status, remark)
+        VALUES (?, 'sales_outbound', ?, ?, ?, 'completed', ?)
+      `, [outboundNo, warehouse_id, orderId, operator, `直发物流：${logistics_company || '暂无'} ${logistics_no || ''}`]);
+      const outboundId = obResult.lastInsertRowid;
+
+      for (const item of items) {
+        if (!item.ship_quantity || item.ship_quantity <= 0) continue;
+        
+        const oi = await req.db.get('SELECT * FROM order_items WHERE id = ?', [item.order_item_id]);
+        if (!oi) throw new BusinessError('订单明细异常');
+
+        const batchNo = item.batch_no || 'DEFAULT_BATCH';
+        const inv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse_id, item.product_id, batchNo]);
+        // 需要减去别的订单锁定的库存
+        const availableQty = inv ? (inv.quantity - (inv.locked_quantity || 0)) : 0;
+        if (!inv || availableQty < item.ship_quantity) {
+          throw new BusinessError(`批次 ${batchNo} 可用库存不足 (可用: ${availableQty})`);
+        }
+        await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.ship_quantity, inv.id]);
+
+        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [outboundId, item.product_id, batchNo, item.ship_quantity, item.ship_quantity, '公斤', oi.unit_price || 0]);
+        
+        totalAmount += item.ship_quantity * (oi.unit_price || 0);
+
+        await req.db.run('UPDATE order_items SET shipped_quantity = COALESCE(shipped_quantity, 0) + ? WHERE id = ?', [item.ship_quantity, oi.id]);
+      }
+      
+      await req.db.run('UPDATE outbound_orders SET total_amount = ? WHERE id = ?', [totalAmount, outboundId]);
+
+      const allItems = await req.db.all('SELECT quantity, COALESCE(shipped_quantity, 0) as shipped_quantity FROM order_items WHERE order_id = ?', [orderId]);
+      let allShipped = true;
+      let hasShipped = false;
+      for (const oi of allItems) {
+        if (oi.shipped_quantity > 0) hasShipped = true;
+        if (oi.shipped_quantity < oi.quantity) allShipped = false;
+      }
+      
+      let newStatus = order.status;
+      if (allShipped) newStatus = 'shipped';
+      else if (hasShipped) newStatus = 'partial_shipped';
+
+      await req.db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newStatus, orderId]);
+      writeLog(req.db, req.user?.id, '现货直发', 'orders', orderId, `出库单号: ${outboundNo}, 状态更新为: ${newStatus}`);
+
+      // 自动生成应收账款
+      if (totalAmount > 0) {
+        await createReceivable(req.db, {
+          type: '销售应收',
+          sourceType: 'order',
+          sourceId: orderId,
+          customerId: order.customer_id,
+          amount: totalAmount,
+          remark: `订单 ${order.order_no} 现货直发自动生成应收账款`
+        });
+      }
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[orders.js direct-ship]`, error.message);
+    if (error instanceof BusinessError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: '服务器错误' });
   }
 });

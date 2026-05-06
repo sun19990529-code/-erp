@@ -1,11 +1,14 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Modal from '../../components/Modal';
 import StatusBadge from '../../components/StatusBadge';
 import NextStepActions from '../../components/NextStepActions';
+import DirectShipModal from './DirectShipModal';
+import { api } from '../../api';
 
-const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProduction }) => {
+const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProduction, onRefresh }) => {
   const navigate = useNavigate();
+  const [directShipItem, setDirectShipItem] = useState(null);
 
   const updateOrderStatus = (id, status) => {
     if (onUpdateStatus) onUpdateStatus(id, status);
@@ -46,20 +49,45 @@ const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProdu
           <div><strong>优先级：</strong>{item?.priority === 1 ? '普通' : item?.priority === 2 ? '加急' : '特急'}</div>
           <div><strong>进度：</strong>{item?.progress || 0}%</div>
         </div>
-        <table className="w-full border">
-          <thead className="bg-gray-50"><tr>
-            <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
-            <th className="px-3 py-2 text-left text-xs">数量</th><th className="px-3 py-2 text-left text-xs">单位</th>
-          </tr></thead>
-          <tbody>
-            {(item?.items || []).map((it, i) => (
-              <tr key={i} className="border-t"><td className="px-3 py-2 text-sm">{it.code}</td><td className="px-3 py-2 text-sm">{it.name}</td>
-                <td className="px-3 py-2 text-sm font-medium">{it.quantity}</td>
-                <td className="px-3 py-2 text-sm">{it.unit || '支'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div>
+          <h4 className="font-medium mb-2"><i className="fas fa-clipboard-list mr-2 text-teal-500"></i>履约看板</h4>
+          <table className="w-full border">
+            <thead className="bg-teal-50"><tr>
+              <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
+              <th className="px-3 py-2 text-center text-xs">需求数</th>
+              <th className="px-3 py-2 text-center text-xs text-green-700">已发数</th>
+              <th className="px-3 py-2 text-center text-xs text-blue-700">当前可用库存</th>
+              <th className="px-3 py-2 text-center text-xs">操作</th>
+            </tr></thead>
+            <tbody>
+              {(item?.items || []).map((it, i) => {
+                const pendingQty = it.quantity - (it.shipped_quantity || 0);
+                const canShip = pendingQty > 0 && it.available_stock > 0;
+                
+                return (
+                  <tr key={i} className="border-t">
+                    <td className="px-3 py-2 text-sm">{it.code}</td>
+                    <td className="px-3 py-2 text-sm">{it.name}</td>
+                    <td className="px-3 py-2 text-sm text-center font-medium">{it.quantity} {it.unit}</td>
+                    <td className="px-3 py-2 text-sm text-center text-green-600 font-medium">{it.shipped_quantity || 0} {it.unit}</td>
+                    <td className="px-3 py-2 text-sm text-center text-blue-600 font-medium">{it.available_stock || 0} {it.unit}</td>
+                    <td className="px-3 py-2 text-sm text-center">
+                      {item?.status !== 'cancelled' && item?.status !== 'completed' && (
+                        <button 
+                          onClick={() => setDirectShipItem(it)}
+                          disabled={!canShip}
+                          className={`px-2 py-1 rounded text-xs transition-colors ${canShip ? 'bg-teal-100 text-teal-700 hover:bg-teal-200' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                        >
+                          <i className="fas fa-truck-fast mr-1"></i>直发现货
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         
         {/* 订单状态操作按钮 - 仅订单状态模块显示 */}
         {item?.status !== 'completed' && item?.status !== 'cancelled' && (
@@ -92,8 +120,8 @@ const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProdu
           <div className="flex justify-between items-center mb-2">
             <h4 className="font-medium"><i className="fas fa-industry mr-2 text-blue-500"></i>关联生产工单</h4>
             {item?.status !== 'completed' && item?.status !== 'cancelled' && (
-              <button onClick={() => { if(onCreateProduction) onCreateProduction(item); }} className="text-blue-600 text-sm hover:text-blue-800">
-                <i className="fas fa-plus mr-1"></i>生成生产工单
+              <button onClick={() => { if(onCreateProduction) onCreateProduction(item); }} className="text-blue-600 text-sm hover:text-blue-800 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                <i className="fas fa-hammer mr-1"></i>缺口一键排产
               </button>
             )}
           </div>
@@ -180,6 +208,25 @@ const OrderDetailModal = ({ isOpen, onClose, item, onUpdateStatus, onCreateProdu
         {/* 智能下一步跳转 */}
         <NextStepActions actions={nextActions} />
       </div>
+
+      {directShipItem && (
+        <DirectShipModal 
+          isOpen={!!directShipItem}
+          onClose={() => setDirectShipItem(null)}
+          orderItem={directShipItem}
+          orderId={item?.id}
+          onSubmit={async (data) => {
+            const res = await api.post(`/orders/${item.id}/direct-ship`, data);
+            if (res.success) {
+              window.__toast?.success('现货直发成功');
+              setDirectShipItem(null);
+              if (onRefresh) onRefresh();
+            } else {
+              window.__toast?.error(res.message || '直发失败');
+            }
+          }}
+        />
+      )}
     </Modal>
   );
 };

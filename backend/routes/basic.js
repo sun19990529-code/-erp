@@ -1,7 +1,16 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
+
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '请求过于频繁，请稍后再试' }
+});
 const { createCRUDRouter } = require('./crud-factory');
 const { JWT_SECRET, JWT_REFRESH_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN, JWT_REFRESH_MAX_AGE } = require('../config/jwt');
 const { BCRYPT_ROUNDS } = require('../config/security');
@@ -261,7 +270,7 @@ router.get('/users', adminOnly, async (req, res) => {
   }
 });
 
-router.post('/users/login', validate(userLogin), async (req, res) => {
+router.post('/users/login', authLimiter, validate(userLogin), async (req, res) => {
   try {
     const { username, password } = req.body;
     const user = await req.db.get(`
@@ -275,21 +284,8 @@ router.post('/users/login', validate(userLogin), async (req, res) => {
       return res.status(401).json({ success: false, message: '用户名或密码错误' });
     }
     
-    // 密码验证：支持 bcrypt 哈希和明文密码（兼容旧数据）
-    let passwordValid = false;
-    if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
-      // bcrypt 哈希密码
-      passwordValid = await bcrypt.compare(password, user.password);
-    } else {
-      // ⚠️ 明文密码兼容分支（过渡期代码，所有用户登录一次后密码将自动升级为 bcrypt 哈希）
-      // 确认所有用户已升级后可移除：SELECT COUNT(*) FROM users WHERE password NOT LIKE '$2%';
-      passwordValid = (user.password === password);
-      if (passwordValid) {
-        console.warn(`[security] 用户 ${user.username}(id=${user.id}) 仍在使用明文密码，正在自动升级为 bcrypt`);
-        const hashed = await bcrypt.hash(password, BCRYPT_ROUNDS);
-        await req.db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, user.id]);
-      }
-    }
+    // 密码验证：严格验证 Bcrypt 哈希
+    const passwordValid = await bcrypt.compare(password, user.password);
     
     if (!passwordValid) {
       return res.status(401).json({ success: false, message: '用户名或密码错误' });
@@ -400,7 +396,7 @@ router.delete('/users/:id', adminOnly, async (req, res) => {
 });
 
 // JWT 令牌静默刷新端点（无需鉴权中间件，由 server.js 白名单控制）
-router.post('/users/refresh', async (req, res) => {
+router.post('/users/refresh', authLimiter, async (req, res) => {
   const refreshToken = req.cookies?.refreshToken;
   if (!refreshToken) return res.status(400).json({ success: false, message: '缺少 refreshToken' });
   try {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useScanner } from '../hooks/useScanner';
 import NumberKeypad from './NumberKeypad';
 import { parseBarcode } from '../utils/barcodeParser';
+import CameraScanner from './CameraScanner';
 
 const ScanStation = ({ onActiveMenuChange }) => {
   const [scanLog, setScanLog] = useState([]);
@@ -10,6 +11,9 @@ const ScanStation = ({ onActiveMenuChange }) => {
   const [isKeypadOpen, setIsKeypadOpen] = useState(false);
   const [keypadTitle, setKeypadTitle] = useState('');
   const [pendingItemCode, setPendingItemCode] = useState('');
+  
+  // 手机摄像头模式控制
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   const handleScan = (code) => {
     if (!code) return;
@@ -98,6 +102,15 @@ const ScanStation = ({ onActiveMenuChange }) => {
             <i className="fas fa-barcode absolute left-4 md:left-6 text-teal-400 text-xl md:text-2xl animate-pulse"></i>
             <span className="font-bold text-lg md:text-xl tracking-wider select-none">等待硬件扫码...</span>
           </div>
+          
+          {/* 新增的手机扫码入口按钮 */}
+          <button 
+            onClick={() => setIsCameraOpen(true)}
+            className="w-full mt-4 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-bold shadow-md transition-colors"
+          >
+            <i className="fas fa-camera text-xl text-teal-400"></i>
+            唤起手机摄像头扫码
+          </button>
         </div>
         
         <div className="bg-gray-50 rounded-xl p-4 text-left h-64 overflow-y-auto">
@@ -122,6 +135,17 @@ const ScanStation = ({ onActiveMenuChange }) => {
         onClose={() => setIsKeypadOpen(false)}
         onConfirm={handleKeypadConfirm}
       />
+
+      {/* 挂载手机摄像头组件 */}
+      {isCameraOpen && (
+        <CameraScanner 
+          onClose={() => setIsCameraOpen(false)} 
+          onScan={(code) => {
+            setIsCameraOpen(false);
+            handleScan(code);
+          }} 
+        />
+      )}
     </div>
   );
 };

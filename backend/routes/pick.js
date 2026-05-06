@@ -104,6 +104,25 @@ router.post('/', requirePermission('warehouse_create'), async (req, res) => {
           const inputQuantity = item.input_quantity || item.quantity;
           const inputUnit = item.input_unit || '公斤';
           const quantityKg = convertToKg(inputQuantity, inputUnit, product);
+          
+          if (pickType !== 'return') {
+            // FIFO 锁定库存
+            let remaining = quantityKg;
+            const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? ORDER BY updated_at ASC', [warehouse_id, item.material_id]);
+            for (const batch of batches) {
+              if (remaining <= 0) break;
+              const available = batch.quantity - (batch.locked_quantity || 0);
+              if (available > 0) {
+                const lockAmt = Math.min(remaining, available);
+                await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [lockAmt, batch.id]);
+                remaining -= lockAmt;
+              }
+            }
+            if (remaining > 0) {
+              throw new BusinessError(`物料「${product?.name || item.material_id}」可用库存不足`);
+            }
+          }
+
           await req.db.run(`INSERT INTO pick_items (pick_order_id, material_id, quantity, input_quantity, input_unit, remark) VALUES (?, ?, ?, ?, ?, ?)`,
             [pickId, item.material_id, quantityKg, inputQuantity, inputUnit, item.remark || null]);
         }
@@ -127,7 +146,12 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
     
     await req.db.transaction(async () => {
       if (status === 'completed') {
-        const order = await req.db.get('SELECT * FROM pick_orders WHERE id = ? FOR UPDATE', [req.params.id]);
+        const updateResult = await req.db.run("UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'", [status, req.params.id]);
+        if (updateResult.changes === 0) {
+           throw new BusinessError('领料单状态已变更，请刷新后重试');
+        }
+
+        const order = await req.db.get('SELECT * FROM pick_orders WHERE id = ?', [req.params.id]);
         const isReturn = order.type === 'return';
         const items = await req.db.all('SELECT pi.*, p.name as material_name FROM pick_items pi JOIN products p ON pi.material_id = p.id WHERE pi.pick_order_id = ?', [req.params.id]);
         
@@ -205,7 +229,8 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
                   if (remaining <= 0) break;
                   if (batch.quantity <= 0) continue; // 已经被前面耗尽（同种物品分配多行时）
                   const deduct = Math.min(remaining, batch.quantity);
-                  await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
+                  // 核销真实的物理库存，同时释放之前锁定的库存
+                  await req.db.run('UPDATE inventory SET quantity = quantity - ?, locked_quantity = COALESCE(locked_quantity, 0) - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, deduct, batch.id]);
                   if (!traceSupplierBatch) traceSupplierBatch = batch.supplier_batch_no;
                   if (!traceHeatNo) traceHeatNo = batch.heat_no;
                   batch.quantity -= deduct; // 内存扣减供后续同行使用
@@ -220,6 +245,14 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
             if (order.order_id && !isReturn) {
               await req.db.run('UPDATE order_materials SET picked_quantity = picked_quantity + ? WHERE order_id = ? AND material_id = ?',
                 [item.quantity, order.order_id, item.material_id]);
+            }
+            
+            if (order.production_order_id) {
+              if (isReturn) {
+                await req.db.run('UPDATE production_material_consumption SET actual_quantity = MAX(0, actual_quantity - ?) WHERE production_order_id = ? AND material_id = ?', [item.quantity, order.production_order_id, item.material_id]);
+              } else {
+                await req.db.run('UPDATE production_material_consumption SET actual_quantity = COALESCE(actual_quantity, 0) + ? WHERE production_order_id = ? AND material_id = ?', [item.quantity, order.production_order_id, item.material_id]);
+              }
             }
           } // end for items
         } // end if items.length > 0
@@ -249,8 +282,9 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
             }
           }
         }
+      } else {
+        await req.db.run('UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
       }
-      await req.db.run('UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
     });
     res.json({ success: true });
   } catch (error) {
@@ -276,14 +310,53 @@ router.put('/:id', validateId, requirePermission('warehouse_edit'), async (req, 
     }
 
     await req.db.transaction(async () => {
+      const order = await req.db.get('SELECT * FROM pick_orders WHERE id = ? FOR UPDATE', [req.params.id]);
+      if (order.status === 'completed') throw new BusinessError('已完成的单据不能修改');
+      
+      const oldItems = await req.db.all('SELECT * FROM pick_items WHERE pick_order_id = ?', [req.params.id]);
+      if (order.type !== 'return') {
+        // 释放旧明细的锁定库存
+        for (const old of oldItems) {
+          let remaining = old.quantity;
+          const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND locked_quantity > 0 ORDER BY updated_at DESC', [order.warehouse_id, old.material_id]);
+          for (const batch of batches) {
+            if (remaining <= 0) break;
+            const locked = batch.locked_quantity || 0;
+            const unlockAmt = Math.min(remaining, locked);
+            await req.db.run('UPDATE inventory SET locked_quantity = locked_quantity - ? WHERE id = ?', [unlockAmt, batch.id]);
+            remaining -= unlockAmt;
+          }
+        }
+      }
+
       await req.db.run('UPDATE pick_orders SET order_id = ?, production_order_id = ?, warehouse_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [order_id || null, production_order_id || null, warehouse_id, operator, remark, req.params.id]);
       await req.db.run('DELETE FROM pick_items WHERE pick_order_id = ?', [req.params.id]);
+      
       for (const item of items) {
         const product = productMap.get(item.material_id);
         const inputQuantity = item.input_quantity || item.quantity;
         const inputUnit = item.input_unit || '公斤';
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
+
+        if (order.type !== 'return') {
+          // 重新锁定新明细
+          let remaining = quantityKg;
+          const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? ORDER BY updated_at ASC', [warehouse_id, item.material_id]);
+          for (const batch of batches) {
+            if (remaining <= 0) break;
+            const available = batch.quantity - (batch.locked_quantity || 0);
+            if (available > 0) {
+              const lockAmt = Math.min(remaining, available);
+              await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [lockAmt, batch.id]);
+              remaining -= lockAmt;
+            }
+          }
+          if (remaining > 0) {
+            throw new BusinessError(`物料「${product?.name || item.material_id}」可用库存不足`);
+          }
+        }
+
         await req.db.run('INSERT INTO pick_items (pick_order_id, material_id, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?)',
           [req.params.id, item.material_id, quantityKg, inputQuantity, inputUnit]);
       }
@@ -300,14 +373,17 @@ router.delete('/:id', validateId, requirePermission('warehouse_delete'), async (
     const { force } = req.query;
     const order = await req.db.get('SELECT * FROM pick_orders WHERE id = ?', [req.params.id]);
     const isAdmin = req.user?.role_code === 'admin';
-    if (order && order.status === 'completed' && force !== 'true' && !isAdmin) {
-      return res.status(400).json({ success: false, message: '已完成的领料单不能删除，如需删除请联系管理员' });
+    const isForce = req.query.force === 'true';
+    if (order && order.status === 'completed') {
+      if (!(isAdmin && isForce)) {
+        return res.status(400).json({ success: false, message: '已完成的领料单不能删除，如需硬删除请使用管理员账号并添加 force=true' });
+      }
     }
     
     await req.db.transaction(async () => {
-      // 仅对已完成领料的单据回滚库存（领料=加回库存）
+      const items = await req.db.all('SELECT * FROM pick_items WHERE pick_order_id = ?', [req.params.id]);
+      // 仅对已完成领料的单据回滚物理库存（领料=加回库存）
       if (order && order.status === 'completed') {
-        const items = await req.db.all('SELECT * FROM pick_items WHERE pick_order_id = ?', [req.params.id]);
         for (const item of items) {
           // 回退库存：优先回退到最近的同物料批次，若无则新建
           const latestBatch = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? ORDER BY updated_at DESC LIMIT 1 FOR UPDATE', [order.warehouse_id, item.material_id]);
@@ -317,6 +393,19 @@ router.delete('/:id', validateId, requirePermission('warehouse_delete'), async (
           } else {
             await req.db.run('INSERT INTO inventory (warehouse_id, product_id, quantity) VALUES (?, ?, ?)',
               [order.warehouse_id, item.material_id, item.quantity]);
+          }
+        }
+      } else if (order && order.status === 'pending' && order.type !== 'return') {
+        // 对于未完成（pending）的领料单，释放 locked_quantity
+        for (const item of items) {
+          let remaining = item.quantity;
+          const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND locked_quantity > 0 ORDER BY updated_at DESC', [order.warehouse_id, item.material_id]);
+          for (const batch of batches) {
+            if (remaining <= 0) break;
+            const locked = batch.locked_quantity || 0;
+            const unlockAmt = Math.min(remaining, locked);
+            await req.db.run('UPDATE inventory SET locked_quantity = locked_quantity - ? WHERE id = ?', [unlockAmt, batch.id]);
+            remaining -= unlockAmt;
           }
         }
       }

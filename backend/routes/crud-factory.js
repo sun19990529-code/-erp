@@ -113,7 +113,10 @@ function createCRUDRouter(config) {
           return res.status(400).json({ success: false, message: rel.message || `该记录已被其他数据引用，无法删除` });
         }
       }
-      if (softDelete) {
+      // Admin 专属硬删除特权：即使开启了 softDelete，也可通过 ?force=true 强制物理删除
+      const isForceDelete = req.query.force === 'true' && req.user && req.user.role_code === 'admin';
+      
+      if (softDelete && !isForceDelete) {
         // 软删除：仅标记，保留记录以供历史单据关联查询
         await req.db.run(`UPDATE ${table} SET is_deleted = 1${hasTimestamps ? ', updated_at = CURRENT_TIMESTAMP' : ''} WHERE id = ?`, [req.params.id]);
       } else {

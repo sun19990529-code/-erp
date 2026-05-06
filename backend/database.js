@@ -103,7 +103,9 @@ function createTablesIfNotExist(db) {
     // v2.0 工位管理
     { name: 'workstations', sql: `CREATE TABLE IF NOT EXISTS workstations (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, process_id INTEGER, status INTEGER DEFAULT 1, remark TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (process_id) REFERENCES processes(id))` },
     // v2.1 打印模板管理引擎
-    { name: 'print_templates', sql: `CREATE TABLE IF NOT EXISTS print_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)` }
+    { name: 'print_templates', sql: `CREATE TABLE IF NOT EXISTS print_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)` },
+    // v2.2 系统设置 (用于持久化AI配置等)
+    { name: 'system_settings', sql: `CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)` }
   ];
   
   tables.forEach(t => {
@@ -158,6 +160,9 @@ function createTablesIfNotExist(db) {
 
     // v1.7.1：入库明细增加供应商批号和炉号（可选追溯字段）
     checkAndAddCol('inbound_items', 'supplier_batch_no', "ALTER TABLE inbound_items ADD COLUMN supplier_batch_no TEXT;");
+
+    // v1.9.2: 销售订单直发与拆单，增加已发货数量
+    checkAndAddCol('order_items', 'shipped_quantity', "ALTER TABLE order_items ADD COLUMN shipped_quantity INTEGER DEFAULT 0;");
     checkAndAddCol('inbound_items', 'heat_no', "ALTER TABLE inbound_items ADD COLUMN heat_no TEXT;");
     // 库存表也记录供应商批号和炉号，便于全链路追踪
     checkAndAddCol('inventory', 'supplier_batch_no', "ALTER TABLE inventory ADD COLUMN supplier_batch_no TEXT;");

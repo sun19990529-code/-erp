@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requirePermission } = require('../middleware/permission');
 const { writeLog } = require('./logs');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const multer = require('multer');
 
 // 内存存储，限制 5MB
@@ -11,11 +11,34 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 /**
  * 通用导入：解析 Excel Buffer → [{...}, ...]
  */
-function parseExcel(buffer) {
-  const wb = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = wb.SheetNames[0];
-  if (!sheetName) return [];
-  return XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+async function parseExcel(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) return [];
+
+  const results = [];
+  const headers = [];
+
+  worksheet.eachRow({ includeEmpty: false }, function(row, rowNumber) {
+    if (rowNumber === 1) {
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        headers[colNumber] = cell.text;
+      });
+    } else {
+      const rowData = {};
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header) {
+          rowData[header] = cell.text ?? '';
+        }
+      });
+      if (Object.values(rowData).some(v => v !== '')) {
+        results.push(rowData);
+      }
+    }
+  });
+  return results;
 }
 
 /**
@@ -45,15 +68,21 @@ router.get('/template', requirePermission('basic_data_view'), async (req, res) =
     const tpl = templates[type];
     if (!tpl) return res.status(400).json({ success: false, message: '无效的模板类型，可选: products/suppliers/customers' });
 
-    const ws = XLSX.utils.aoa_to_sheet([tpl.headers, tpl.example]);
-    ws['!cols'] = tpl.headers.map(() => ({ wch: 18 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, tpl.sheetName);
-    const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(tpl.sheetName);
+    
+    worksheet.addRow(tpl.headers);
+    worksheet.addRow(tpl.example);
+    
+    worksheet.columns.forEach(column => {
+      column.width = 18;
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=${encodeURIComponent(tpl.sheetName)}.xlsx`);
-    res.send(buffer);
+    res.send(Buffer.from(buffer));
   } catch (error) {
     console.error('[import/template]', error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -67,7 +96,7 @@ router.get('/template', requirePermission('basic_data_view'), async (req, res) =
 router.post('/products', requirePermission('basic_data_create'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传文件' });
-    const rows = parseExcel(req.file.buffer);
+    const rows = await parseExcel(req.file.buffer);
     if (rows.length === 0) return res.status(400).json({ success: false, message: '文件为空或格式不正确' });
 
     let imported = 0, skipped = 0, errors = [];
@@ -152,7 +181,7 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
 router.post('/suppliers', requirePermission('basic_data_create'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传文件' });
-    const rows = parseExcel(req.file.buffer);
+    const rows = await parseExcel(req.file.buffer);
     if (rows.length === 0) return res.status(400).json({ success: false, message: '文件为空或格式不正确' });
 
     let imported = 0, skipped = 0, errors = [];
@@ -195,7 +224,7 @@ router.post('/suppliers', requirePermission('basic_data_create'), upload.single(
 router.post('/customers', requirePermission('basic_data_create'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传文件' });
-    const rows = parseExcel(req.file.buffer);
+    const rows = await parseExcel(req.file.buffer);
     if (rows.length === 0) return res.status(400).json({ success: false, message: '文件为空或格式不正确' });
 
     let imported = 0, skipped = 0, errors = [];

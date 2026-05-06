@@ -18,7 +18,19 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
       LEFT JOIN processes p ON w.process_id = p.id
       ORDER BY p.sequence, w.code
     `);
-    res.json({ success: true, data: stations });
+    const data = stations.map(s => {
+      let parsedSchema;
+      try {
+        parsedSchema = typeof s.schema_config === 'string' ? JSON.parse(s.schema_config) : (s.schema_config || {});
+      } catch (e) {
+        parsedSchema = {};
+      }
+      return {
+        ...s,
+        schema_config: parsedSchema
+      };
+    });
+    res.json({ success: true, data });
   } catch (error) {
     console.error('[workstation.js]', error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
@@ -28,13 +40,13 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
 // 创建工位
 router.post('/', requirePermission('production_create'), async (req, res) => {
   try {
-    const { code, name, process_id, remark } = req.body;
+    const { code, name, process_id, remark, type, lines_count, schema_config } = req.body;
     if (!code || !name) return res.status(400).json({ success: false, message: '工位编码和名称不能为空' });
     const existing = await req.db.get('SELECT id FROM workstations WHERE code = ?', [code]);
     if (existing) return res.status(400).json({ success: false, message: `工位编码 ${code} 已存在` });
     const result = await req.db.run(
-      'INSERT INTO workstations (code, name, process_id, remark) VALUES (?, ?, ?, ?)',
-      [code.trim(), name.trim(), process_id || null, remark || null]
+      'INSERT INTO workstations (code, name, process_id, remark, type, lines_count, schema_config) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [code.trim(), name.trim(), process_id || null, remark || null, type || null, lines_count || 1, schema_config ? JSON.stringify(schema_config) : '{}']
     );
     writeLog(req.db, req.user?.id, '创建工位', 'workstation', result.lastInsertRowid, `${code} - ${name}`);
     res.json({ success: true, data: { id: result.lastInsertRowid } });
@@ -47,10 +59,10 @@ router.post('/', requirePermission('production_create'), async (req, res) => {
 // 修改工位
 router.put('/:id', validateId, requirePermission('production_edit'), async (req, res) => {
   try {
-    const { code, name, process_id, status, remark } = req.body;
+    const { code, name, process_id, status, remark, type, lines_count, schema_config } = req.body;
     await req.db.run(
-      'UPDATE workstations SET code = ?, name = ?, process_id = ?, status = ?, remark = ? WHERE id = ?',
-      [code, name, process_id || null, status ?? 1, remark || null, req.params.id]
+      'UPDATE workstations SET code = ?, name = ?, process_id = ?, status = ?, remark = ?, type = ?, lines_count = ?, schema_config = ? WHERE id = ?',
+      [code, name, process_id || null, status ?? 1, remark || null, type || null, lines_count || 1, schema_config ? JSON.stringify(schema_config) : '{}', req.params.id]
     );
     res.json({ success: true });
   } catch (error) {
@@ -65,8 +77,11 @@ router.delete('/:id', validateId, requirePermission('production_delete'), async 
     await req.db.run('DELETE FROM workstations WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
-    console.error('[workstation.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    console.error('[workstation.js] DELETE', error.message);
+    if ((error.message || '').toLowerCase().includes('foreign key') || (error.message || '').includes('violates foreign key')) {
+      return res.status(400).json({ success: false, message: '该机台已被应用到相关的生产记录或流转单中，为了保障追溯数据的完整性，系统已锁定无法强制删除！请考虑将其备注为“已停用”。' });
+    }
+    res.status(500).json({ success: false, message: '服务器错误: ' + error.message });
   }
 });
 
@@ -159,26 +174,53 @@ router.get('/screen/:code/:poId', async (req, res) => {
   }
 });
 
-// 工位屏幕 — 快捷报工（免鉴权，需填操作人）
+// 工位屏幕 — 快捷报工（免鉴权，需填操作人）附带物理极限界限核算引擎
 router.post('/screen/:code/:poId/report', async (req, res) => {
   try {
-    const { operator, output_quantity, defect_quantity, remark } = req.body;
+    const { operator, input_quantity, output_quantity, defect_quantity, split_type, target_process_code, split_reason, remark, parameter_data, line_no } = req.body;
     if (!operator) return res.status(400).json({ success: false, message: '请填写操作人' });
-    if (!output_quantity || output_quantity <= 0) return res.status(400).json({ success: false, message: '产出数量必须大于0' });
+    if (output_quantity === undefined || output_quantity < 0) return res.status(400).json({ success: false, message: '产出数量不能为负数' });
 
     const station = await req.db.get(`SELECT w.*, p.id as pid FROM workstations w LEFT JOIN processes p ON w.process_id = p.id WHERE w.code = ?`, [req.params.code]);
     if (!station?.pid) return res.status(400).json({ success: false, message: '工位未绑定工序' });
 
     const poId = parseInt(req.params.poId);
-    const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [poId]);
+    const production = await req.db.get(`
+      SELECT po.*, p.outer_diameter as out_od, p.wall_thickness as out_wt, p.density 
+      FROM production_orders po 
+      JOIN products p ON po.product_id = p.id 
+      WHERE po.id = ?
+    `, [poId]);
     if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
     if (production.status === 'quality_hold') return res.status(400).json({ success: false, message: '该工单已被质检暂停，请处理质量问题后再报工' });
     if (['completed', 'cancelled'].includes(production.status)) return res.status(400).json({ success: false, message: `该工单状态为「${production.status}」，无法报工` });
 
+    // 【硬核物理防呆】：针对管材金属压延拉伸体积守恒引擎核算
+    // 当该机器的类型为轧制类，或者是前端表单明确指定需要 Rolling 防呆的
+    const schemaParams = parameter_data || {};
+    if (station.type === 'TWO_ROLL' || station.type === 'FOUR_ROLL' || station.process_code === 'ROLLING') {
+      const inputWeight = parseFloat(schemaParams.input_weight);
+      if (inputWeight > 0 && production.out_od && production.out_wt) {
+        const out_od = parseFloat(production.out_od);
+        const out_wt = parseFloat(production.out_wt);
+        const density = parseFloat(production.density) || 0.02491;
+        
+        if (out_od > out_wt && out_wt > 0) {
+          // 核心体积守恒算式：产出米数 = 材料总重量(kg) / [ (外径-壁厚) * 壁厚 * 密度常数 ]
+          const theoretical_max_length = inputWeight / ((out_od - out_wt) * out_wt * density);
+          const toleranceLength = theoretical_max_length * 1.05; // 允许 +5% 的理论公差
+
+          if (parseFloat(output_quantity) > toleranceLength) {
+            throw new BusinessError(`报工总米数(${output_quantity}米)违背客观材质体积换算定律超发！理论产出顶天也只能长达 ${theoretical_max_length.toFixed(2)} 米。严禁过账！`);
+          }
+        }
+      }
+    }
+
     await req.db.transaction(async () => {
       // 【先领后报】校验：如果当前工位绑定的是首道工序，则必须已完成领料
       const productProcesses = await req.db.all(
-        'SELECT pp.process_id FROM product_processes pp WHERE pp.product_id = ? ORDER BY pp.sequence', [production.product_id]
+        'SELECT pp.process_id, pp.sequence FROM product_processes pp WHERE pp.product_id = ? ORDER BY pp.sequence', [production.product_id]
       );
       const isFirstProcess = productProcesses.length > 0 && productProcesses[0].process_id === station.pid;
       if (isFirstProcess && !req.body.force) {
@@ -191,15 +233,74 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
         }
       }
 
+      // 智能差值分流引擎
+      const diff = (parseFloat(input_quantity) || 0) - (parseFloat(output_quantity) || 0);
+      let reportedDefect = parseFloat(defect_quantity) || 0;
+
+      if (diff > 0 && split_type) {
+        const currentSeq = productProcesses.find(p => p.process_id === station.pid)?.sequence || 1;
+        const suffix = split_type === 'REWORK' ? `-R${currentSeq}` : `-S${currentSeq}`;
+        const newOrderNo = `${production.order_no}${suffix}`;
+        const newBatchNo = production.batch_no ? `${production.batch_no}${suffix}` : null;
+        
+        // 1. 扣减母单
+        await req.db.run('UPDATE production_orders SET quantity = quantity - ? WHERE id = ?', [diff, poId]);
+        // 2. 衍生子单
+        const splitStatus = split_type === 'SCRAP' ? 'scrapped' : 'pending';
+        const splitProcess = split_type === 'SCRAP' ? null : target_process_code;
+        const insertRes = await req.db.run(`
+          INSERT INTO production_orders 
+          (order_no, order_id, product_id, batch_no, quantity, current_process, status, remark, parent_id, split_reason, original_quantity)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [newOrderNo, production.order_id, production.product_id, newBatchNo, diff, splitProcess, splitStatus, 
+            `自动差值分流: ${split_reason || '无'}`, poId, split_reason, diff]);
+        
+        const newProductionId = insertRes.lastInsertRowid;
+
+        // 3. 报废自动入废品仓
+        if (split_type === 'SCRAP') {
+          const scrapWh = await req.db.get("SELECT id FROM warehouses WHERE code = 'WH-SCRAP'");
+          if (scrapWh) {
+            const inboundNo = 'IN' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 1000);
+            const ibRes = await req.db.run(`
+              INSERT INTO inbound_orders (order_no, type, warehouse_id, operator, status, remark, production_order_id)
+              VALUES (?, 'scrap', ?, ?, 'completed', '自动差值废品入库', ?)
+            `, [inboundNo, scrapWh.id, operator, newProductionId]);
+            await req.db.run(`
+              INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, remark)
+              VALUES (?, ?, ?, ?, ?)
+            `, [ibRes.lastInsertRowid, production.product_id, newBatchNo || 'DEFAULT', diff, '拆批报废']);
+          }
+        }
+
+        // 4. 返工重置路由记录
+        if (split_type === 'REWORK' && target_process_code) {
+           const allProcs = await req.db.all(`SELECT pp.*, p.code as pcode FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [production.product_id]);
+           const tIdx = allProcs.findIndex(p => p.pcode === target_process_code);
+           if (tIdx !== -1) {
+             for (let i = tIdx; i < allProcs.length; i++) {
+               await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status, remark) VALUES (?, ?, 'pending', ?)`,
+                [newProductionId, allProcs[i].process_id, i === tIdx ? `返工(${split_reason})` : '待加']);
+             }
+           }
+        }
+        // 差值被分流走了，本单不需要记不良数
+        reportedDefect = 0;
+      }
+
       // 更新工序记录
       const record = await req.db.get('SELECT * FROM production_process_records WHERE production_order_id = ? AND process_id = ?', [poId, station.pid]);
       if (record) {
         await req.db.run(`UPDATE production_process_records SET output_quantity = output_quantity + ?, defect_quantity = defect_quantity + ?, operator = ?, status = 'completed', end_time = CURRENT_TIMESTAMP WHERE id = ?`,
-          [output_quantity, defect_quantity || 0, operator, record.id]);
+          [output_quantity, reportedDefect, operator, record.id]);
       }
       // 更新工单完成数
       await req.db.run('UPDATE production_orders SET completed_quantity = completed_quantity + ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [output_quantity, 'processing', poId]);
+        
+      // 将所占用几号线和异构参数写入记录
+      await req.db.run(`UPDATE production_process_records SET workstation_id = ?, line_no = ?, parameter_data = ? WHERE id = ?`,
+        [station.id, line_no || 1, JSON.stringify(schemaParams), record.id]);
     });
 
     writeLog(req.db, null, '工位报工', 'workstation', poId, `工位 ${req.params.code} 操作人 ${operator} 报工 ${output_quantity}`);

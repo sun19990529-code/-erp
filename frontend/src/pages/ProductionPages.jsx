@@ -14,6 +14,7 @@ import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 
 import { ProductionTrackingPanel } from './ProductionTracking';
+import { BatchGenealogyPanel } from '../components/BatchGenealogyPanel';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { doPrint } from '../utils/printEngine';
 import { useConfirm } from '../components/ConfirmModal';
@@ -162,25 +163,25 @@ const PickMaterialManager = () => {
     });
   };
   
-  const openFromOrder = async (order) => {
-    // 获取订单的原材料需求
-    const matRes = await api.get(`/orders/${order.id}/materials`);
+  const openFromProduction = async (po) => {
+    // 获取生产工单的原材料需求 (按 BOM 展开)
+    const matRes = await api.get(`/production/${po.id}/materials`);
     const orderMaterials = matRes.data || [];
     
     const items = orderMaterials.map(m => ({
       material_id: m.material_id,
-      material_name: m.name,
+      material_name: m.material_name,
       required_quantity: m.required_quantity,
       picked_quantity: m.picked_quantity || 0,
       quantity: Math.max(0, m.required_quantity - (m.picked_quantity || 0))
     })).filter(i => i.quantity > 0);
     
-    // 获取该订单所有绑定的物料ID，用于下拉列表过滤
+    // 获取该工单所有绑定的物料ID，用于下拉列表过滤
     const boundIds = orderMaterials.map(m => m.material_id);
     
     setModal({ 
       open: true, 
-      item: { order_id: order.id, order_no: order.order_no }, 
+      item: { production_order_id: po.id, production_order_no: po.order_no }, 
       items: items.length ? items : [{ material_id: '', quantity: 1, input_quantity: 1, input_unit: '公斤' }], 
       mode: 'create',
       orderMaterials,
@@ -234,29 +235,29 @@ const PickMaterialManager = () => {
         </div>
       </div>
       
-      {/* 待领料订单提醒 */}
-      {orders.length > 0 && (
+      {/* 待领料工单提醒 */}
+      {productionOrders.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-          <h3 className="font-bold text-blue-800 mb-2"><i className="fas fa-info-circle mr-2"></i>待生产订单</h3>
+          <h3 className="font-bold text-blue-800 mb-2"><i className="fas fa-info-circle mr-2"></i>待领料生产工单</h3>
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead className="bg-blue-100"><tr>
-                <th className="px-3 py-2 text-left text-xs">订单号</th>
-                <th className="px-3 py-2 text-left text-xs">客户</th>
-                <th className="px-3 py-2 text-left text-xs">金额</th>
-                <th className="px-3 py-2 text-left text-xs">状态</th>
+                <th className="px-3 py-2 text-left text-xs">工单号</th>
+                <th className="px-3 py-2 text-left text-xs">生产产品</th>
+                <th className="px-3 py-2 text-left text-xs">生产数量</th>
+                <th className="px-3 py-2 text-left text-xs">进度</th>
                 <th className="px-3 py-2 text-left text-xs">操作</th>
               </tr></thead>
               <tbody>
-                {orders.slice(0, 5).map((o, i) => (
+                {productionOrders.slice(0, 5).map((o, i) => (
                   <tr key={i} className="border-t border-blue-200">
                     <td className="px-3 py-2 text-sm">{o.order_no}</td>
-                    <td className="px-3 py-2 text-sm">{o.customer_name}</td>
-                    <td className="px-3 py-2 text-sm">¥{o.total_amount || 0}</td>
-                    <td className="px-3 py-2 text-sm"><StatusBadge status={o.status} /></td>
+                    <td className="px-3 py-2 text-sm">{o.product_name}</td>
+                    <td className="px-3 py-2 text-sm">{o.quantity}</td>
+                    <td className="px-3 py-2 text-sm"><StatusBadge status={o.status} type="production" /></td>
                     <td className="px-3 py-2 text-sm">
-                      <button onClick={() => openFromOrder(o)} className="text-blue-600 hover:text-blue-800 font-medium">
-                        <i className="fas fa-boxes mr-1"></i>领料
+                      <button onClick={() => openFromProduction(o)} className="text-blue-600 hover:text-blue-800 font-medium">
+                        <i className="fas fa-boxes mr-1"></i>快捷领料
                       </button>
                     </td>
                   </tr>
@@ -265,14 +266,14 @@ const PickMaterialManager = () => {
             </table>
           </div>
           <div className="block md:hidden space-y-2 mt-2">
-            {orders.slice(0, 5).map((o, i) => (
+            {productionOrders.slice(0, 5).map((o, i) => (
               <div key={i} className="bg-white rounded-lg p-3 border border-blue-200/50">
                 <div className="flex justify-between items-start mb-1">
                   <div className="font-medium text-sm text-blue-900">{o.order_no}</div>
-                  <StatusBadge status={o.status} />
+                  <StatusBadge status={o.status} type="production" />
                 </div>
-                <div className="text-sm text-gray-600 mb-2">{o.customer_name} · ¥{o.total_amount || 0}</div>
-                <button onClick={() => openFromOrder(o)} className="w-full py-2 border border-blue-300 text-blue-600 rounded-lg text-sm font-medium active:bg-blue-50">
+                <div className="text-sm text-gray-600 mb-2">{o.product_name} · {o.quantity}件</div>
+                <button onClick={() => openFromProduction(o)} className="w-full py-2 border border-blue-300 text-blue-600 rounded-lg text-sm font-medium active:bg-blue-50">
                   <i className="fas fa-boxes mr-1"></i>快捷领料
                 </button>
               </div>
@@ -555,13 +556,15 @@ const ProductionOrderManager = () => {
       <Modal isOpen={modal.open} onClose={closeModal} title={modal.mode === 'view' ? '生产工单详情' : modal.mode === 'edit' ? '编辑生产工单' : '新增生产工单'} size="max-w-3xl">
         {modal.mode === 'view' ? (
           <div className="space-y-4">
-            {/* Tab 切换 */}
             <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
               <button onClick={() => setViewTab('detail')} className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewTab === 'detail' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><i className="fas fa-info-circle mr-1"></i>工单详情</button>
               <button onClick={() => setViewTab('tracking')} className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewTab === 'tracking' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><i className="fas fa-chart-line mr-1"></i>生产追踪</button>
+              <button onClick={() => setViewTab('genealogy')} className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewTab === 'genealogy' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><i className="fas fa-sitemap mr-1"></i>批次血缘</button>
             </div>
             {viewTab === 'tracking' ? (
               <ProductionTrackingPanel productionId={modal.item?.id} />
+            ) : viewTab === 'genealogy' ? (
+              <BatchGenealogyPanel productionId={modal.item?.id} />
             ) : (<>
             <div className="grid grid-cols-3 gap-4 text-sm bg-gray-50 p-3 rounded-lg">
               <div><strong>生产工单：</strong>{modal.item?.order_no}</div>

@@ -51,7 +51,7 @@ const WorkstationQRPage = () => {
 
   const remove = async (id) => {
     if (!await confirm('确认删除此工位？')) return;
-    const res = await api.delete(`/workstation/${id}`);
+    const res = await api.del(`/workstation/${id}`);
     if (res.success) { window.__toast?.success('删除成功'); load(); }
   };
 

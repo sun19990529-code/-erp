@@ -1,6 +1,6 @@
 {
   "name": "mingsheng-management-system",
-  "version": "1.9.1",
+  "version": "1.9.4",
   "description": "铭晟管理系统",
   "main": "server.js",
   "scripts": {
@@ -19,6 +19,7 @@
     "cors": "^2.8.5",
     "decimal.js": "^10.6.0",
     "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
     "express": "^4.18.2",
     "express-rate-limit": "^8.3.1",
     "helmet": "^8.1.0",
@@ -28,7 +29,6 @@
     "pg-parameterize": "^2.0.7",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -38,7 +38,10 @@
     "@vitest/ui": "^4.1.2",
     "eslint": "^10.1.0",
     "globals": "^17.4.0",
-    "nodemon": "^3.1.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.1",
+    "nodemon": "^3.1.0"
+  },
+  "overrides": {
+    "uuid": "^14.0.0"
   }
 }

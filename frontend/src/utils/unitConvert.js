@@ -14,7 +14,8 @@ export function calcKgPerPiece(outerDiameter, wallThickness, length) {
   const wt = parseFloat(wallThickness) || 0;
   const l = parseFloat(length) || 0;
   if (od <= 0 || wt <= 0 || l <= 0) return 0;
-  return ((od - wt) * wt) * STEEL_PIPE_FACTOR * l;
+  // 数据库和表单中输入的长度单位是毫米，但公式计算需要用米，所以将长度除以 1000
+  return ((od - wt) * wt) * STEEL_PIPE_FACTOR * (l / 1000);
 }
 
 /**

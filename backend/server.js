@@ -214,15 +214,7 @@ app.use(helmet({
 
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-// 请求限流
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: '请求过于频繁，请稍后再试' }
-});
-app.use('/api', limiter);
+// 全局请求限流已移除，转移至具体的登录接口以提高业务并发能力
 
 // PostgreSQL 无需手动存盘（保留接口兼容）
 function saveDatabase() { /* no-op for PostgreSQL */ }
@@ -299,6 +291,7 @@ const purchaseRoutes = require('./routes/purchase');
 const outsourcingRoutes = require('./routes/outsourcing');
 const pickRoutes = require('./routes/pick');
 const { router: backupRoutes, startAutoBackup } = require('./routes/backup');
+const { router: aiRoutes } = require('./routes/ai');
 
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api', basicRoutes);
@@ -311,6 +304,7 @@ app.use('/api/purchase', purchaseRoutes);
 app.use('/api/outsourcing', outsourcingRoutes);
 app.use('/api/pick', pickRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/ai', aiRoutes);
 
 const materialCategoryRoutes = require('./routes/material-categories');
 app.use('/api/material-categories', materialCategoryRoutes);
@@ -411,9 +405,25 @@ async function startServer() {
     res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
   });
 
-  app.listen(PORT, () => {
-    console.log(`服务器运行在 http://localhost:${PORT}`);
-  });
+  // HTTPS 自动加载逻辑
+  const certPath = path.join(__dirname, 'config', 'server.pem');
+  const keyPath = path.join(__dirname, 'config', 'server.key');
+
+  if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    const https = require('https');
+    const options = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath)
+    };
+    https.createServer(options, app).listen(PORT, () => {
+      console.log(`🔒 HTTPS 服务器已启动，请访问: https://你的域名:${PORT}`);
+    });
+  } else {
+    app.listen(PORT, () => {
+      console.log(`服务器运行在 http://localhost:${PORT}`);
+      console.log(`(若需开启 HTTPS，请将阿里云证书放置在 backend/config/ 下并命名为 server.pem 和 server.key)`);
+    });
+  }
 }
 
 // 进程级崩溃防护

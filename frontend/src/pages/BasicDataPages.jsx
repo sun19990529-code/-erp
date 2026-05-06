@@ -132,8 +132,8 @@ const ProductManager = ({ category }) => {
     if (outerDiameter && wallThickness && length) {
       const outer = new Decimal(outerDiameter);
       const wall = new Decimal(wallThickness);
-      const len = new Decimal(length);
-      return outer.minus(wall).times(wall).times('0.02491').times(len).toFixed(4);
+      const lenInMeters = new Decimal(length).div(1000);
+      return outer.minus(wall).times(wall).times('0.02491').times(lenInMeters).toFixed(4);
     }
     return null;
   };
@@ -384,7 +384,8 @@ const ProductManager = ({ category }) => {
           {
             key: 'kg_per_piece', title: '每支公斤', render: (v, row) => {
               if (row.outer_diameter && row.wall_thickness && row.length) {
-                const kgPerPiece = new Decimal(row.outer_diameter).minus(row.wall_thickness).times(row.wall_thickness).times('0.02491').times(row.length).toFixed(4);
+                const lenInMeters = new Decimal(row.length).div(1000);
+                const kgPerPiece = new Decimal(row.outer_diameter).minus(row.wall_thickness).times(row.wall_thickness).times('0.02491').times(lenInMeters).toFixed(4);
                 return <span className="text-teal-600 font-medium">{kgPerPiece}</span>;
               }
               return '-';

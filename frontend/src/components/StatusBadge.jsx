@@ -13,6 +13,7 @@ const StatusBadge = ({ status, type }) => {
     pending_inspection: 'bg-orange-100 text-orange-800',
     inspection_passed: 'bg-green-100 text-green-800',
     inspection_failed: 'bg-red-100 text-red-800',
+    partial_shipped: 'bg-orange-100 text-orange-800',
     shipped: 'bg-blue-100 text-blue-800'
   };
   const getLabel = () => {
@@ -34,6 +35,7 @@ const StatusBadge = ({ status, type }) => {
       pending_inspection: '待检验',
       inspection_passed: '检验通过',
       inspection_failed: '检验不合格',
+      partial_shipped: '部分发货',
       shipped: '已发货'
     };
     return labels[status] || status;

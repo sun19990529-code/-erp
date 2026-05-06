@@ -162,9 +162,14 @@ router.delete('/:id', validateId, requirePermission('purchase_delete'), async (r
                 'UPDATE inventory SET quantity = GREATEST(quantity - ?, 0), updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
                 [item.quantity, inbound.warehouse_id, item.product_id, batch]
               );
+              await req.db.run(
+                'DELETE FROM inventory WHERE quantity <= 0 AND warehouse_id = ? AND product_id = ? AND batch_no = ?',
+                [inbound.warehouse_id, item.product_id, batch]
+              );
             }
           }
-          // 删除入库明细和入库单
+          // 删除入库检验记录、入库明细和入库单
+          await req.db.run('DELETE FROM inbound_inspections WHERE inbound_id = ?', [inbound.id]);
           await req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [inbound.id]);
           await req.db.run('DELETE FROM inbound_orders WHERE id = ?', [inbound.id]);
         }
@@ -226,18 +231,25 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
     `, productIds);
     const stockMap = Object.fromEntries(stockRows.map(r => [r.product_id, r.total_stock]));
 
-    // 3. 订单需求缺口（未完成订单的未领料量）
+    // 3. 订单需求缺口（精准溯源寻根）
     const orderGapRows = await req.db.all(`
       SELECT om.material_id as product_id,
-        SUM(om.required_quantity - COALESCE(om.picked_quantity, 0)) as shortage
+        o.order_no, o.customer_name,
+        (om.required_quantity - COALESCE(om.picked_quantity, 0)) as shortage
       FROM order_materials om
       JOIN orders o ON om.order_id = o.id
       WHERE o.status IN ('pending', 'confirmed', 'processing')
         AND om.material_id IN (${placeholders})
-      GROUP BY om.material_id
-      HAVING SUM(om.required_quantity - COALESCE(om.picked_quantity, 0)) > 0
+        AND (om.required_quantity - COALESCE(om.picked_quantity, 0)) > 0
     `, productIds);
-    const orderGapMap = Object.fromEntries(orderGapRows.map(r => [r.product_id, r.shortage]));
+    
+    const orderGapMap = {};
+    const demandSourcesMap = {};
+    orderGapRows.forEach(r => {
+      if (!orderGapMap[r.product_id]) { orderGapMap[r.product_id] = 0; demandSourcesMap[r.product_id] = []; }
+      orderGapMap[r.product_id] += r.shortage;
+      demandSourcesMap[r.product_id].push({ order_no: r.order_no, customer_name: r.customer_name, shortage: r.shortage });
+    });
 
     // 4. 在途采购量（已下单未完成的采购单）
     const inTransitRows = await req.db.all(`
@@ -294,7 +306,7 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
       const netOrderGap = orderGap > 0 ? Math.max(0, orderGap - currentStock - inTransit) : 0;
 
       // 是否需要采购
-      let needPurchase = false;
+      let needPurchase;
       if (threshold === 'safety') needPurchase = safetyGap > 0;
       else if (threshold === 'order') needPurchase = netOrderGap > 0;
       else needPurchase = safetyGap > 0 || netOrderGap > 0;
@@ -336,6 +348,7 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
         unit_price: unitPrice,
         estimated_amount: parseFloat(new Decimal(suggestedQty).times(unitPrice).toFixed(2)),
         urgency,
+        demand_sources: demandSourcesMap[p.id] || [],
         suppliers: suppliers.map(s => ({
           id: s.supplier_id,
           name: s.supplier_name,

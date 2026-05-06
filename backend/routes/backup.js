@@ -104,7 +104,7 @@ async function performBackup(db, saveDatabase, customPath = null) {
     execFileSync(getPgDumpCmd(), ['-h', host, '-p', port, '-U', user, '-F', 'c', '-f', backupFilePath, dbName], { env, timeout: 60000 });
   } catch (e) {
     console.error('[backup] pg_dump 失败:', e.message);
-    throw new Error('数据库备份失败');
+    throw new Error('数据库备份失败', { cause: e });
   }
   
   config.lastBackup = now.toISOString();

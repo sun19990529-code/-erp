@@ -2,13 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import { useConfirm } from '../components/ConfirmModal';
 import { exportToExcel } from '../utils/export';
-
-const urgencyConfig = {
-  critical: { label: '紧急', color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-300', icon: 'fa-exclamation-circle' },
-  high:     { label: '较高', color: 'text-orange-700', bg: 'bg-orange-100', border: 'border-orange-300', icon: 'fa-exclamation-triangle' },
-  medium:   { label: '一般', color: 'text-yellow-700', bg: 'bg-yellow-100', border: 'border-yellow-300', icon: 'fa-info-circle' },
-  normal:   { label: '正常', color: 'text-green-700', bg: 'bg-green-100', border: 'border-green-300', icon: 'fa-check-circle' },
-};
+import ActionToolbar from '../components/PurchaseSuggestion/ActionToolbar';
+import StatCards from '../components/PurchaseSuggestion/StatCards';
+import SuggestionTable from '../components/PurchaseSuggestion/SuggestionTable';
 
 const PurchaseSuggestionPage = () => {
   const [data, setData] = useState([]);
@@ -32,18 +28,20 @@ const PurchaseSuggestionPage = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const toggleSelect = (id) => {
+  const toggleSelect = useCallback((id) => {
     setSelected(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const selectAll = () => {
-    if (selected.size === data.length) setSelected(new Set());
-    else setSelected(new Set(data.map(d => d.product_id)));
-  };
+  const selectAll = useCallback(() => {
+    setSelected(prev => {
+      if (prev.size === data.length && data.length > 0) return new Set();
+      return new Set(data.map(d => d.product_id));
+    });
+  }, [data]);
 
   // 按供应商分组生成采购单
   const createOrders = async () => {
@@ -85,7 +83,14 @@ const PurchaseSuggestionPage = () => {
           product_id: i.product_id,
           quantity: i.suggested_quantity,
           unit_price: i.unit_price,
-        }))
+        })),
+        remark: (() => {
+          const sources = group.items.map(i => {
+            if (!i.demand_sources || i.demand_sources.length === 0) return null;
+            return `[${i.product_name}] ${i.demand_sources.map(d => `${d.order_no}(${d.shortage}${i.unit})`).join(', ')}`;
+          }).filter(Boolean);
+          return sources.length > 0 ? `基于智能建议。\n🔗需求溯源：\n${sources.join('\n')}` : '由智能采购建议自动生成';
+        })()
       });
       if (res.success) {
         successCount++;
@@ -104,8 +109,8 @@ const PurchaseSuggestionPage = () => {
   const selectedAmount = selectedItems.reduce((s, i) => s + i.estimated_amount, 0);
 
   return (
-    <div className="fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+    <div className="fade-in max-w-7xl mx-auto pb-12">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 px-1">
         <div>
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             <i className="fas fa-lightbulb text-amber-500"></i>
@@ -117,7 +122,7 @@ const PurchaseSuggestionPage = () => {
           <select
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#007AFF]/20 focus:border-[#007AFF]"
           >
             <option value="both">全部缺口</option>
             <option value="safety">仅安全库存不足</option>
@@ -144,51 +149,23 @@ const PurchaseSuggestionPage = () => {
             ],
             data, sheetName: '采购建议'
           })} disabled={data.length === 0}
-            className="px-3 py-2 border rounded-lg hover:bg-gray-50 text-sm disabled:opacity-50 flex items-center gap-1">
+            className="apple-btn-secondary px-3 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center gap-1">
             <i className="fas fa-file-excel text-green-600"></i>导出Excel
           </button>
         </div>
       </div>
 
-      {/* 统计摘要 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: '建议采购项', value: summary.total_items || 0, icon: 'fa-clipboard-list', color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: '紧急项', value: summary.critical_count || 0, icon: 'fa-exclamation-circle', color: 'text-red-600', bg: 'bg-red-50' },
-          { label: '较高项', value: summary.high_count || 0, icon: 'fa-exclamation-triangle', color: 'text-orange-600', bg: 'bg-orange-50' },
-          { label: '预计总金额', value: `¥${(summary.total_estimated_amount || 0).toLocaleString()}`, icon: 'fa-yen-sign', color: 'text-teal-600', bg: 'bg-teal-50' },
-        ].map((card, i) => (
-          <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:-translate-y-1 hover:shadow-md transition-all duration-300">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400 uppercase tracking-wider">{card.label}</span>
-              <div className={`w-7 h-7 rounded-lg ${card.bg} flex items-center justify-center`}>
-                <i className={`fas ${card.icon} ${card.color} text-xs`}></i>
-              </div>
-            </div>
-            <div className={`text-xl font-bold ${card.color}`}>{card.value}</div>
-          </div>
-        ))}
-      </div>
+      <StatCards summary={summary} />
 
       {/* 建议列表 */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-gray-200/60 rounded-2xl overflow-hidden relative">
         {/* 操作栏 */}
-        {selected.size > 0 && (
-          <div className="px-4 py-3 bg-teal-50 border-b border-teal-100 flex items-center justify-between">
-            <span className="text-sm text-teal-700">
-              <i className="fas fa-check-circle mr-1"></i>
-              已选 <strong>{selected.size}</strong> 项，预计金额 <strong>¥{Number(selectedAmount || 0).toFixed(2)}</strong>
-            </span>
-            <button
-              onClick={createOrders}
-              disabled={creating}
-              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
-            >
-              {creating ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-file-invoice"></i>}
-              一键生成采购单
-            </button>
-          </div>
-        )}
+        <ActionToolbar 
+          selectedSize={selected.size} 
+          selectedAmount={selectedAmount} 
+          createOrders={createOrders} 
+          creating={creating} 
+        />
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -203,155 +180,12 @@ const PurchaseSuggestionPage = () => {
             <p className="text-sm text-gray-400">当前无需采购的物料，所有库存均满足安全库存和订单需求</p>
           </div>
         ) : (
-          <div className="w-full">
-            {/* 桌面端：标准表格 */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-3 text-left w-10">
-                      <input type="checkbox" checked={selected.size === data.length && data.length > 0} onChange={selectAll}
-                        className="w-4 h-4 text-teal-600 rounded border-gray-300" />
-                    </th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500">紧急度</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500">物料编码</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500">物料名称</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500">当前库存</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500">安全库存</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500">订单缺口</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500">在途采购</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500 text-teal-600">建议采购</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500">参考单价</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500">预计金额</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500">首选供应商</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {data.map(item => {
-                    const cfg = urgencyConfig[item.urgency] || urgencyConfig.normal;
-                    return (
-                      <tr key={item.product_id} className={`hover:bg-gray-50 ${selected.has(item.product_id) ? 'bg-teal-50/30' : ''}`}>
-                        <td className="px-3 py-3">
-                          <input type="checkbox" checked={selected.has(item.product_id)} onChange={() => toggleSelect(item.product_id)}
-                            className="w-4 h-4 text-teal-600 rounded border-gray-300" />
-                        </td>
-                        <td className="px-3 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cfg.bg} ${cfg.color}`}>
-                            <i className={`fas ${cfg.icon}`}></i>{cfg.label}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 font-mono text-xs">{item.product_code}</td>
-                        <td className="px-3 py-3">
-                          <div className="font-medium">{item.product_name}</div>
-                          {item.specification && <div className="text-xs text-gray-400">{item.specification}</div>}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <span className={item.current_stock === 0 ? 'text-red-600 font-bold' : ''}>{item.current_stock}</span>
-                          <span className="text-gray-400 text-xs ml-0.5">{item.unit}</span>
-                        </td>
-                        <td className="px-3 py-3 text-right text-gray-500">{item.min_stock || '-'}</td>
-                        <td className="px-3 py-3 text-right">
-                          {item.order_shortage > 0 ? (
-                            <span className="text-amber-600 font-medium">{item.order_shortage}</span>
-                          ) : '-'}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {item.in_transit > 0 ? (
-                            <span className="text-blue-600">{item.in_transit}</span>
-                          ) : '-'}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <span className="font-bold text-teal-700 text-base">{item.suggested_quantity}</span>
-                          <span className="text-gray-400 text-xs ml-0.5">{item.unit}</span>
-                        </td>
-                        <td className="px-3 py-3 text-right text-gray-600">¥{Number(item.unit_price || 0).toFixed(2)}</td>
-                        <td className="px-3 py-3 text-right font-medium">¥{Number(item.estimated_amount || 0).toFixed(2)}</td>
-                        <td className="px-3 py-3">
-                          {item.default_supplier ? (
-                            <span className="text-sm">{item.default_supplier.name}</span>
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">未绑定</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* 移动端/PDA：触碰友好的大卡片流 */}
-            <div className="block md:hidden space-y-3 p-2 bg-gray-50/30">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <label className="flex items-center gap-2 text-sm text-gray-600 font-medium bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm active:bg-gray-50 transition-colors w-full justify-center">
-                  <input type="checkbox" checked={selected.size === data.length && data.length > 0} onChange={selectAll} className="w-5 h-5 text-teal-600 rounded border-gray-300" />
-                  全选本页所有缺口
-                </label>
-              </div>
-              
-              {data.map(item => {
-                const cfg = urgencyConfig[item.urgency] || urgencyConfig.normal;
-                const isSelected = selected.has(item.product_id);
-                return (
-                  <div 
-                    key={item.product_id} 
-                    onClick={() => toggleSelect(item.product_id)} 
-                    className={`relative bg-white rounded-2xl shadow-sm border p-4 transition-all active:scale-[0.98] ${isSelected ? 'border-teal-500 ring-1 ring-teal-500 bg-teal-50/5' : 'border-gray-100'}`}
-                  >
-                    {/* 右上角定制大触碰区 Checkbox（视觉居中，实际点击响应整张卡片） */}
-                    <div className="absolute right-4 top-4">
-                      <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-teal-600 border-teal-600' : 'border-gray-300 bg-gray-50'}`}>
-                        {isSelected && <i className="fas fa-check text-white text-sm"></i>}
-                      </div>
-                    </div>
-                    
-                    {/* 首部标识：名称、规格与紧急度 */}
-                    <div className="flex flex-col items-start gap-1 mb-4 pr-10">
-                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold ${cfg.bg} ${cfg.color}`}>
-                          <i className={`fas ${cfg.icon}`}></i>{cfg.label}
-                       </span>
-                       <div className="font-bold text-gray-800 text-lg leading-snug mt-1">{item.product_name}</div>
-                       <div className="text-xs text-gray-500 font-mono flex gap-2 w-full truncate">
-                         <span>{item.product_code}</span>
-                         {item.specification && <span className="text-gray-400">· {item.specification}</span>}
-                       </div>
-                    </div>
-                    
-                    {/* 核心数据网格对比 */}
-                    <div className="grid grid-cols-2 gap-3 mb-4 text-sm mt-2 border-t border-gray-50 pt-3">
-                       <div className="bg-gray-50/80 rounded-lg p-2 flex flex-col items-center justify-center text-center">
-                         <span className="text-xs text-gray-400 mb-1">当前存量</span>
-                         <span className={`text-xl font-bold ${item.current_stock === 0 ? 'text-red-500' : 'text-gray-700'}`}>{item.current_stock}<span className="text-xs font-normal ml-0.5">{item.unit}</span></span>
-                       </div>
-                       <div className="bg-orange-50/50 rounded-lg p-2 flex flex-col items-center justify-center text-center border border-orange-100/50">
-                         <span className="text-xs text-orange-400 mb-1">订单挂起缺口</span>
-                         <span className="text-xl font-bold text-orange-600">{item.order_shortage > 0 ? item.order_shortage : '-'}<span className="text-xs font-normal ml-0.5 hidden">{item.unit}</span></span>
-                       </div>
-                       
-                       <div className="col-span-2 flex justify-between items-center bg-teal-50 rounded-xl p-3 border border-teal-100">
-                         <div className="flex flex-col">
-                           <span className="text-xs text-teal-600 mb-0.5 font-medium"><i className="fas fa-shopping-cart mr-1"></i>建议系统生成采购量</span>
-                           <span className="text-teal-700 font-black text-2xl tracking-tight">{item.suggested_quantity} <span className="text-sm font-medium tracking-normal text-teal-600">{item.unit}</span></span>
-                         </div>
-                         <div className="text-right flex flex-col justify-end">
-                           <span className="text-xs text-gray-400 mb-1">参考: ¥{Number(item.unit_price || 0).toFixed(2)} / {item.unit}</span>
-                           <span className="font-bold text-teal-800 text-sm">预估 <span className="text-base text-gray-900">¥{Number(item.estimated_amount || 0).toFixed(2)}</span></span>
-                         </div>
-                       </div>
-                    </div>
-                    
-                    {/* 特性与供应商 */}
-                    <div className="flex justify-between items-center text-xs border-t border-gray-50 pt-3">
-                       <div className="text-gray-500 flex items-center gap-1.5"><i className="fas fa-truck-loading text-blue-400"></i> 在途待收: {item.in_transit > 0 ? <strong className="text-blue-600">{item.in_transit}</strong> : '无'}</div>
-                       <div className={`px-2 py-1.5 rounded-lg truncate max-w-[50%] font-medium ${item.default_supplier ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-gray-100 text-gray-400 italic'}`}>
-                         {item.default_supplier ? item.default_supplier.name : '⚠ 未绑定供应商'}
-                       </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <SuggestionTable 
+            data={data}
+            selected={selected}
+            toggleSelect={toggleSelect}
+            selectAll={selectAll}
+          />
         )}
       </div>
 

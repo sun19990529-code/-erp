@@ -17,9 +17,31 @@
 - **性能红线 (SQL 优先)**: 严禁在 Node.js 内存中使用 `.filter()`, `.map()`, `Set()` 对从数据库里捞出的大几千条（N+1查询）全量数据做聚合统计与过滤！一律使用原生 PostgreSQL 强大的 `LEFT JOIN`，`GROUP BY`，`jsonb_agg`，`CTE 子查询` 引擎来完成计算。
 - **权限与越权防御**: 虽然前端组件通过 `useAuth().isAdmin` 控制了按钮隐藏，但当编写如"强制删除"这类高级 API 时，**后端路由层绝对不能省略权限验证**（例: 后端仍需判定 `!req.user.role_code || req.user.role_code !== 'admin'`）。
 - **迁移规范**: 新增字段或表时，不能去修改旧的 `database.js`。你必须编写类似 `migrate-xxxx.js` 的脚本，使用 PostgreSQL `ALTER TABLE` 或 `CREATE TABLE` 原生执行。
+- **高级事务编排 (AsyncLocalStorage)**: 后端已引入原生异步钩子构建了无侵入的事务上下文。在进行多表关联写入时，必须且只能使用 `await dbHelper.withTransaction(async () => { ... })` 包裹代码块。**严禁**在函数调用链路中手动传递 `client` 连接句柄，底层会自动挂载并处理回滚！
 
-## 3. 前端开发规范
-- **核心栈**: `React`, `React Router v6`, `Zustand` (状态管理), `Tailwind CSS`, `React Hook Form` + `Zod` (严格表单验证)。
-- **上下文管理**: 已废弃旧的 `AuthContext.Provider`（仅作路由透传），状态直接通过 `import { useAuth } from '../context/AuthContext'` 桥接读取 Zustand 里的 `user`, `permissions`, `isAdmin`。
+## 3. 前端开发规范与性能标准
+- **核心栈**: `React 19`, `React Router v7`, `Zustand` (状态管理), `Tailwind CSS 3/4`, `React Hook Form` + `Zod` (严格表单验证), `Vite 8`。
+- **上下文管理**: 已废弃旧的 `AuthContext.Provider`（仅作路由透传），状态直接通过 `import { useAuthStore } from '../store/useAuthStore'` 桥接读取 Zustand 里的鉴权状态。
+- **身份验证鉴权机制 (HttpOnly Cookie)**: 系统已从早期的 LocalStorage JWT 模式，全面升级为安全的 HttpOnly Cookie 架构。**绝对禁止**尝试通过 JavaScript 去读取 Token 或将其拼接到 Authorization Header 中。所有 API 请求必须自动携带凭证（`credentials: 'include'`，此逻辑已在 Axios/useSafeFetch 中封装完毕）。
 - **数据类型的致命陷阱**: 后端返回或 RHF (React Hook Form) 管理的数字字段（如 `unit_price`, `quantity`）很可能实质是 String。如果在前端对它们调用 `.toFixed()` 之前，**必须套上一层安全强转**，例如: `Number(item.unit_price || 0).toFixed(2)`，否则会引起页面崩溃！
-- **长列表渲染**: 如果是动辄上千行数据的表格，请使用项目中自带了虚拟滚动机制的 `Table.jsx` 渲染组件。
+- **长列表与表单渲染优化**: 如果是动辄上千行数据的表格，请优先使用项目中自带虚拟滚动机制的 `Table.jsx` 渲染组件。对于包含复选框、输入框的长列表子项（如采购建议页行组件），**必须使用 `React.memo` 包裹子组件**，以防单行状态变更引发全量数百行的级联重绘卡顿。
+- **大屏显示与自适应渲染引擎**: 针对车间监控大屏（如 `WorkshopMonitor.jsx`），**严禁使用 `transform: scale()` 进行整体缩放**（会导致文字在超高分辨率下发虚失真）。必须使用原生 CSS 属性 `zoom` 构建的矩阵自适应缩放方案。
+- **PDA 与工业设备静默扫码**: 在编写车间或仓库的扫码页面时，必须使用统一封装的 `useScanner` Hook 处理激光扫码头的拦截。它能在不唤起 Android 软键盘的情况下静默接管物理扫码枪的输入，并触发震动。**严禁使用 `<input autoFocus>`** 来接收扫码数据，这会引发严重的焦点丢失与软键盘遮挡问题。
+- **网络请求防卸载崩溃**: 前端禁止使用裸露的 `fetch` 或 `axios` 发起组件级的数据获取。必须使用 `useSafeFetch` Hook，它利用 `isMounted.current` 底层机制自动拦截了组件卸载后的冗余 `setState`，彻底消灭内存泄漏与 React 异步渲染报错。
+
+## 4. 端口与前后端构建部署规范 (Port & Build Rules)
+- **核心预览端口重定向**: 项目主干测试与外延演示环境全部驻守在 **3198 端口** (`http://localhost:3198`)。
+- **静态分离式托管**: 3198 后端端点 (`backend/server.js`) 未开启 Vite/HMR 热更新，而是以直接下发 `frontend/dist` 压缩编译目录作为 SPA 服务代理。这意味着 3198 端口**只能感知到被编译和打包压缩后的前端资源**。
+- **修改前端必须手动执行 Build**: 作为超级代码助手，无论是新增、修改 `.jsx` 布局还是调整前端逻辑层文件，你**绝不能默认代码修改会自动对 3198 端口生效**。只要写了前端代码，你**必须第一时间自主调用终端执行** `cd frontend && npm run build`（或同等编译指令）进行打包落地动作。未能及时编译将导致用户陷入“查不到新代码”的调试地狱。
+
+## 5. UI/UX 视觉体系与代码分包 (Design & Bundling)
+- **苹果风极简设计语言 (Apple Design Language)**: 系统的常规业务页必须保持高对比度的洁白主题，但针对“全景监控看板”等场景，已全面引入毛玻璃拟物风与深渊色调。编写大屏 UI 时，请直接复用 `index.css` 中定义的高级原子类：`.glass-panel`, `.glass-dark-panel`, `.apple-card`，严禁在组件内写丑陋死板的硬编码背景色。
+- **暗黑主题对比度红线**: 在深色背景 (`#020617` 等) 上，严禁使用 `text-gray-400` 以下的暗灰色字体，必须使用高对比度的 `text-slate-200/300` 或纯正的 `text-white` 以确保极端光照环境下的可读性。
+- **Vite (Rolldown) 分包红线**: 为了保持首屏加载速度，前端的沉重依赖库（如 `recharts`, `exceljs/jspdf`）已在 `vite.config.js` 的 `manualChunks` 中被隔离拆分打包。**禁止随便引入庞大且未做按需加载的第三方库**，若必须引入，请同时更新 `manualChunks` 将其剥离，确保 `index-xxxx.js` 主入口包体控制在 100KB 内。
+
+## 6. 安全与质量维护 (Security & Quality Assurance)
+- **导出库的逆向使用规范 (SheetJS vs ExcelJS)**：项目此前经历了 NPM 版老旧 `xlsx` 库的漏洞危机。当前，前端业务使用的其实是 **官方安全版 CDN 直连的 SheetJS (`xlsx@0.20.1`)**，而不是被废弃且存在嵌套漏洞风险的 `exceljs`。如果看到 `export.js` 里有 `import * as XLSX from 'xlsx'`，**这是完全合法且经过安全审计的**，请勿出于强迫症将其替换为 `exceljs`！
+- **依赖漏洞与 Overrides (NPM Audit)**: 若后续再遇到底层依赖安全漏洞预警（如 `uuid` 越界），禁止通过回滚父级模块版本进行破坏性规避。正确的战术是修改 `package.json` 中的 `overrides` 字段，强行接管并覆盖其子包的危险版本。
+- **存留 Eslint 的战术性让步 (The "Do Not Touch" Hook Array)**：项目中存在一些关于 `useEffect` 缺少依赖的警告（`react-hooks/exhaustive-deps`），已被主动降级为 Warn。在处理现有历史文件时，**请将它们视为神圣不可侵犯的领域**，切勿去自动在依赖数组中增加参数，这往往会导致 ERP 复杂的页面组件陷入毁灭性的无限重渲死循环。
+- **前端清理插件 (Unused Imports)**：项目已内置了 `eslint-plugin-unused-imports` 并彻底关闭了原生 `no-unused-vars` 和部分不成熟的 React 实验规则（如 `set-state-in-effect`）。不要盲目质疑项目内这些宽松或严格配置的共存现象，这是为了防御大规模重构带来的脆弱性而设立的平衡防线。
+- **后端纵深防御网 (Helmet & RateLimit)**：后端服务器已全局覆盖 `Helmet` 安全头，并在 `/api` 层部署了防 CC 的高频限流（300次/分钟）。新增开放且高频的接口（如登录、工位大屏直连请求）时，必须评估是否需要单独调整其速率上限，不可随意移除全局防护网。

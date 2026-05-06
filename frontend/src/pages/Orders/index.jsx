@@ -173,6 +173,8 @@ const OrderManager = () => {
               { value: 'pending', label: '待处理' }, 
               { value: 'confirmed', label: '已确认' }, 
               { value: 'processing', label: '进行中' }, 
+              { value: 'partial_shipped', label: '部分发货' },
+              { value: 'shipped', label: '已发货' },
               { value: 'completed', label: '已完成' }, 
               { value: 'cancelled', label: '已取消' }
             ]
@@ -213,6 +215,10 @@ const OrderManager = () => {
         item={modal.item} 
         onUpdateStatus={updateOrderStatus}
         onCreateProduction={createProductionFromOrder}
+        onRefresh={() => {
+          openView(modal.item);
+          load(1, isMountedRef);
+        }}
       />
       
       <OrderFormModal 

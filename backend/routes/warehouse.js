@@ -29,18 +29,26 @@ router.get('/warehouses', requirePermission('warehouse_view'), async (req, res) 
 // ==================== 库存查询 ====================
 router.get('/inventory', requirePermission('warehouse_view'), async (req, res) => {
   try {
-    const { warehouse_type, category } = req.query;
+    const { warehouse_type, category, product_id, warehouse_id } = req.query;
     let sql = `
       SELECT i.*, p.code, p.name as product_name, p.specification, p.unit, p.category, p.stock_threshold as alert_threshold, w.name as warehouse_name, w.type as warehouse_type
       FROM inventory i
       JOIN products p ON i.product_id = p.id
       JOIN warehouses w ON i.warehouse_id = w.id
-      WHERE 1=1
+      WHERE i.quantity > 0
     `;
     const params = [];
     if (warehouse_type) { sql += ' AND w.type = ?'; params.push(warehouse_type); }
     if (category) { sql += ' AND p.category = ?'; params.push(category); }
-    sql += ' ORDER BY i.updated_at DESC';
+    if (product_id) { sql += ' AND i.product_id = ?'; params.push(product_id); }
+    if (warehouse_id) { sql += ' AND i.warehouse_id = ?'; params.push(warehouse_id); }
+    
+    // 如果查询特定产品批次，按更新时间正序(FIFO)，否则倒序
+    if (product_id) {
+      sql += ' ORDER BY i.updated_at ASC';
+    } else {
+      sql += ' ORDER BY i.updated_at DESC';
+    }
     const inventory = await req.db.all(sql, params);
     res.json({ success: true, data: inventory });
   } catch (error) {
@@ -257,8 +265,11 @@ router.delete('/inbound/:id', validateId, requirePermission('warehouse_delete'),
     const { force } = req.query;
     const order = await req.db.get('SELECT * FROM inbound_orders WHERE id = ?', [req.params.id]);
     const isAdmin = req.user?.role_code === 'admin';
-    if (order && (order.status === 'completed' || order.status === 'approved') && force !== 'true' && !isAdmin) {
-      return res.status(400).json({ success: false, message: '已入库的单据不能删除，如需删除请联系管理员' });
+    const isForce = req.query.force === 'true';
+    if (order && (order.status === 'completed' || order.status === 'approved')) {
+      if (!(isAdmin && isForce)) {
+        return res.status(400).json({ success: false, message: '已入库的单据不能删除，如需硬删除请使用管理员账号并添加 force=true' });
+      }
     }
     
     await req.db.transaction(async () => {
@@ -271,6 +282,9 @@ router.delete('/inbound/:id', validateId, requirePermission('warehouse_delete'),
           if (inventory && inventory.quantity > 0) {
             const newQty = Math.max(0, inventory.quantity - item.quantity);
             await req.db.run('UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newQty, inventory.id]);
+            if (newQty <= 0) {
+              await req.db.run('DELETE FROM inventory WHERE id = ?', [inventory.id]);
+            }
           }
         }
       }
@@ -370,6 +384,15 @@ router.post('/outbound', requirePermission('warehouse_create'), validate(outboun
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = item.batch_no || 'DEFAULT_BATCH';
+        
+        // 校验库存并增加锁定数量
+        const inv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse_id, item.product_id, batchNo]);
+        const lockedQty = inv?.locked_quantity || 0;
+        if (!inv || (inv.quantity - lockedQty) < quantityKg) {
+           throw new BusinessError(`${product?.name || '产品'} (批次: ${batchNo}) 可用库存不足`);
+        }
+        await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [quantityKg, inv.id]);
+
         await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [outboundId, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
       }
@@ -391,61 +414,63 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
     }
     await req.db.transaction(async () => {
       const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ? FOR UPDATE', [req.params.id]);
-      // 【防重复】只有从非完成状态变为 completed/approved 时才扣减库存
-      const alreadyDeducted = order && (order.status === 'completed' || order.status === 'approved');
-      if ((status === 'completed' || status === 'approved') && !alreadyDeducted) {
+      // 【防呆防重复】加入乐观锁，必须是 pending 或 approved 状态才能扣库存
+      if (status === 'completed' || status === 'approved') {
+        const updateResult = await req.db.run("UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('pending', 'approved')", [status, req.params.id]);
+        if (updateResult.changes === 0) {
+           throw new BusinessError('单据状态已变更，请刷新后重试');
+        }
+
         const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
         if (items.length > 0) {
-          // N+1优化：批量预加载库存与产品信息
-          const productIds = [...new Set(items.map(i => i.product_id))];
-          const ph = productIds.map(() => '?').join(',');
-          const invRows = await req.db.all(`SELECT * FROM inventory WHERE warehouse_id = ? AND product_id IN (${ph})`, [order.warehouse_id, ...productIds]);
-          const pRows = await req.db.all(`SELECT id, name FROM products WHERE id IN (${ph})`, productIds);
-          
-          const invMap = {};
-          for(let row of invRows) invMap[`${row.product_id}_${row.batch_no}`] = row;
-          const pMap = {};
-          for(let row of pRows) pMap[row.id] = row;
-
-          // 第一遍循环纯校验（不写库）
+          // 确认出库：核销真实的物理库存，同时释放之前锁定的库存
           for (const item of items) {
             const batch = item.batch_no || 'DEFAULT_BATCH';
-            const key = `${item.product_id}_${batch}`;
-            const inv = invMap[key];
-            if (!inv || inv.quantity < item.quantity) {
-              const pName = pMap[item.product_id]?.name || '产品';
-              throw new BusinessError(`${pName} (批次: ${batch}) 对应的库存不足，无法出库`);
-            }
-            inv.quantity -= item.quantity; // 内存扣减，防止同一单内同产品重复相加透支
-          }
-
-          // 第二遍循环执行写入
-          for (const item of items) {
-            const batch = item.batch_no || 'DEFAULT_BATCH';
-            await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, order.warehouse_id, item.product_id, batch]);
+            await req.db.run('UPDATE inventory SET quantity = quantity - ?, locked_quantity = COALESCE(locked_quantity, 0) - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, item.quantity, order.warehouse_id, item.product_id, batch]);
           }
         }
         
         // 【改进#6】成品出库完成后更新关联订单为已发货 + 生成应收账款
         if (order.type === 'finished' && order.order_id) {
           const salesOrder = await req.db.get('SELECT * FROM orders WHERE id = ?', [order.order_id]);
-          if (salesOrder && salesOrder.status === 'completed') {
-            await req.db.run("UPDATE orders SET status = 'shipped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.order_id]);
+          if (salesOrder) {
+            let currentTotalAmount = 0;
+            for (const item of items) {
+              await req.db.run('UPDATE order_items SET shipped_quantity = COALESCE(shipped_quantity, 0) + ? WHERE order_id = ? AND product_id = ?', [item.quantity, order.order_id, item.product_id]);
+              currentTotalAmount += item.quantity * (item.unit_price || 0);
+            }
+            
+            const allItems = await req.db.all('SELECT quantity, COALESCE(shipped_quantity, 0) as shipped_quantity FROM order_items WHERE order_id = ?', [order.order_id]);
+            let allShipped = true;
+            let hasShipped = false;
+            for (const oi of allItems) {
+              if (oi.shipped_quantity > 0) hasShipped = true;
+              if (oi.shipped_quantity < oi.quantity) allShipped = false;
+            }
+            
+            let newStatus = salesOrder.status;
+            if (allShipped) newStatus = 'shipped';
+            else if (hasShipped) newStatus = 'partial_shipped';
+
+            await req.db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newStatus, order.order_id]);
+
             // 财务联动：自动生成应收账款
-            if (salesOrder.total_amount > 0) {
+            if (currentTotalAmount > 0) {
               await createReceivable(req.db, {
                 type: '销售应收',
                 sourceType: 'order',
                 sourceId: order.order_id,
                 customerId: salesOrder.customer_id,
-                amount: salesOrder.total_amount,
-                remark: `订单 ${salesOrder.order_no} 发货自动生成`
+                amount: currentTotalAmount,
+                remark: `订单 ${salesOrder.order_no} 生产完工出库自动生成`
               });
             }
           }
         }
+      } else {
+        // 如果是其他状态变动，不涉及库存核销，普通更新即可
+        await req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
       }
-      await req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
     });
     res.json({ success: true });
   } catch (error) {
@@ -476,13 +501,31 @@ router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), asy
     await req.db.transaction(async () => {
       await req.db.run('UPDATE outbound_orders SET warehouse_id = ?, order_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [warehouse_id, order_id || null, operator, remark, req.params.id]);
+      
+      const oldItems = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      // 释放旧明细的锁定库存
+      for (const old of oldItems) {
+        const batchNo = old.batch_no || 'DEFAULT_BATCH';
+        await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) - ? WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [old.quantity, existingOrder.warehouse_id, old.product_id, batchNo]);
+      }
       await req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      
+      // 增加新明细的锁定库存
       for (const item of items) {
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
         const quantityKg = convertToKg(inputQuantity, inputUnit, product);
         const batchNo = item.batch_no || 'DEFAULT_BATCH';
+        
+        // 校验库存
+        const inv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse_id, item.product_id, batchNo]);
+        const lockedQty = inv?.locked_quantity || 0;
+        if (!inv || (inv.quantity - lockedQty) < quantityKg) {
+           throw new BusinessError(`${product?.name || '产品'} (批次: ${batchNo}) 可用库存不足`);
+        }
+        await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [quantityKg, inv.id]);
+
         await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [req.params.id, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
       }
@@ -499,14 +542,17 @@ router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete')
     const { force } = req.query;
     const order = await req.db.get('SELECT * FROM outbound_orders WHERE id = ?', [req.params.id]);
     const isAdmin = req.user?.role_code === 'admin';
-    if (order && order.status === 'completed' && force !== 'true' && !isAdmin) {
-      return res.status(400).json({ success: false, message: '已出库的单据不能删除，如需删除请联系管理员' });
+    const isForce = req.query.force === 'true';
+    if (order && order.status === 'completed') {
+      if (!(isAdmin && isForce)) {
+        return res.status(400).json({ success: false, message: '已出库的单据不能删除，如需硬删除请使用管理员账号并添加 force=true' });
+      }
     }
     
     await req.db.transaction(async () => {
-      // 仅对已出库的单据回滚库存（出库=加回库存）
+      const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+      // 仅对已出库的单据回滚物理库存（出库=加回库存）
       if (order && (order.status === 'completed' || order.status === 'approved')) {
-        const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
         for (const item of items) {
           const batch = item.batch_no || 'DEFAULT_BATCH';
           const inventory = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [order.warehouse_id, item.product_id, batch]);
@@ -515,6 +561,12 @@ router.delete('/outbound/:id', validateId, requirePermission('warehouse_delete')
           } else {
             await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [order.warehouse_id, item.product_id, batch, item.quantity]);
           }
+        }
+      } else {
+        // 对于未完成（pending）的单据，释放 locked_quantity
+        for (const item of items) {
+          const batch = item.batch_no || 'DEFAULT_BATCH';
+          await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) - ? WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, order.warehouse_id, item.product_id, batch]);
         }
       }
       await req.db.run('DELETE FROM outbound_items WHERE outbound_id = ?', [req.params.id]);

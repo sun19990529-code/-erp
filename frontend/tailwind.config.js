@@ -8,7 +8,7 @@ export default {
     extend: {
       colors: {
         // 利用 CSS 变量代理默认颜色，实现无痛零成本一键换肤
-        white: 'var(--color-bg-base)',
+        base: 'var(--color-bg-base)',
         teal: {
           50: 'var(--color-primary-50)',
           100: 'var(--color-primary-100)',

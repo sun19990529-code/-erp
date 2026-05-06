@@ -7,6 +7,7 @@ import { useAuthStore } from './store/useAuthStore';
 import LoginPage from './pages/LoginPage';
 import Sidebar from './pages/Sidebar';
 import NotificationBell from './components/NotificationBell';
+import AIAssistant from './components/AIAssistant';
 import { ROUTE_CONFIG, MENU_ROUTES, PATH_TO_MENU, WorkshopMonitor, ScanStation, WorkstationScreen } from './routes.config';
 
 
@@ -97,6 +98,9 @@ const AppContent = ({ user, permissions, handleLogout }) => {
           </div>
         </main>
       </div>
+
+      {/* 全局 AI 悬浮助理 */}
+      <AIAssistant />
     </>
   );
 };

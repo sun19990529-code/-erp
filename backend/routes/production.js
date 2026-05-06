@@ -132,6 +132,71 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
   }
 });
 
+// ==================== 极速扫码报工黑盒寻址 ====================
+router.get('/scan/:order_no', requirePermission('production_view'), async (req, res) => {
+  try {
+    const order_no = req.params.order_no;
+    
+    // 1. 查询工单基础信息
+    const order = await req.db.get(`
+      SELECT po.id as production_order_id, po.order_no, po.quantity, po.status, po.current_process,
+             p.code as product_code, p.name as product_name, p.unit
+      FROM production_orders po 
+      JOIN products p ON po.product_id = p.id 
+      WHERE po.order_no = ?
+    `, [order_no]);
+
+    if (!order) {
+      return res.json({ success: false, message: '未找到该流转条码对应的生产工单。' });
+    }
+
+    if (order.status === 'completed' || order.status === 'cancelled') {
+      return res.json({ success: false, message: `工单 [${order_no}] 当前状态为 ${order.status === 'completed' ? '已完工' : '已取消'}，不允许再次报工。`, data: order });
+    }
+
+    if (!order.current_process) {
+      return res.json({ success: false, message: `工单 [${order_no}] 尚未开启流程流转或未配置工艺路线。`, data: order });
+    }
+
+    // 2. 查出当前工序在路由中的 process_id 和额定总投产、历史报废等
+    const currentProcess = await req.db.get(`
+      SELECT pr.id as process_id, pr.code as process_code, pr.name as process_name, pp.sequence
+      FROM product_processes pp
+      JOIN processes pr ON pp.process_id = pr.id
+      WHERE pp.product_id = (SELECT product_id FROM production_orders WHERE order_no = ?)
+        AND pr.code = ?
+    `, [order_no, order.current_process]);
+
+    if (!currentProcess) {
+      return res.json({ success: false, message: `未能找到工单当前流转工序[${order.current_process}]的详细配置。`, data: order });
+    }
+
+    // 3. 统计此工序迄今为止在这张工单下已产出的数量（为了在前台显示：满 100个，已报单 80个）
+    const outputStat = await req.db.get(`
+      SELECT COALESCE(SUM(output_quantity), 0) as cumulative_output,
+             COALESCE(SUM(defect_quantity), 0) as cumulative_defect
+      FROM production_process_records 
+      WHERE production_order_id = ? AND process_id = ? AND status = 'completed'
+    `, [order.production_order_id, currentProcess.process_id]);
+
+    const payload = {
+      ...order,
+      process_id: currentProcess.process_id,
+      process_code: currentProcess.process_code,
+      process_name: currentProcess.process_name,
+      sequence: currentProcess.sequence,
+      cumulative_output: parseFloat(outputStat.cumulative_output || 0),
+      cumulative_defect: parseFloat(outputStat.cumulative_defect || 0)
+    };
+
+    res.json({ success: true, data: payload, message: `成功锁定工单 ${order.order_no} 当前流转节点：${payload.process_name}` });
+  } catch (error) {
+    console.error(`[production.js /scan/]`, error.message);
+    res.status(500).json({ success: false, message: '扫码解析发生内部错误' });
+  }
+});
+
+
 router.get('/:id', validateId, requirePermission('production_view'), async (req, res) => {
   try {
     const id = req.params.id;
@@ -183,6 +248,102 @@ router.get('/:id', validateId, requirePermission('production_view'), async (req,
   }
 });
 
+// 获取工单的原材料需求 (按 BOM 展开汇总)
+router.get('/:id/materials', validateId, requirePermission('production_view'), async (req, res) => {
+  try {
+    const id = req.params.id;
+    // 按物料维度聚合需求量（避免同一物料在多道工序中重复出现导致领料单多行）
+    const materials = await req.db.all(`
+      SELECT pmc.material_id, p.name as material_name, p.code as material_code, p.unit, p.outer_diameter, p.wall_thickness, p.length as material_length,
+             SUM(pmc.planned_quantity) as required_quantity,
+             SUM(pmc.actual_quantity) as picked_quantity
+      FROM production_material_consumption pmc
+      JOIN products p ON pmc.material_id = p.id
+      WHERE pmc.production_order_id = ?
+      GROUP BY pmc.material_id, p.name, p.code, p.unit, p.outer_diameter, p.wall_thickness, p.length
+    `, [id]);
+    res.json({ success: true, data: materials });
+  } catch (error) {
+    console.error(`[production.js /materials]`, error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+
+// ==================== 智能防呆自动切片派发 (Bulk Dispatch) ====================
+router.post('/bulk', requirePermission('production_create'), async (req, res) => {
+  try {
+    const { order_id, product_id, total_quantity, batch_capacity, operator, remark, start_time, end_time } = req.body;
+    
+    // 参数严防校验
+    if (!total_quantity || !batch_capacity || batch_capacity <= 0 || total_quantity <= 0) {
+      return res.status(400).json({ success: false, message: '无效的拆包或总数参数。' });
+    }
+
+    // 【防呆】检验销售订单剩余可派发产出量（防超发）
+    if (order_id) {
+      const orderItem = await req.db.get('SELECT quantity FROM order_items WHERE order_id = ? AND product_id = ?', [order_id, product_id]);
+      if (orderItem) {
+        const relatedOrders = await req.db.all("SELECT status, quantity, completed_quantity FROM production_orders WHERE order_id = ? AND product_id = ? AND status != 'cancelled'", [order_id, product_id]);
+        let consumed = 0;
+        for (const po of relatedOrders) {
+          if (po.status === 'completed') consumed += (po.completed_quantity || 0);
+          else consumed += (po.quantity || 0);
+        }
+        const remaining = orderItem.quantity - consumed;
+        if (total_quantity > remaining) {
+          return res.status(400).json({ success: false, message: `总拆包数已超发！订单剩需 ${Math.max(0, remaining)} 件，但您试图自动切割下发 ${total_quantity} 件。` });
+        }
+      }
+    }
+
+    // 智能数理切割: eg. 100 拆 30 -> [30, 30, 30, 10]
+    const chunks = [];
+    let rem = total_quantity;
+    while (rem > 0) {
+      chunks.push(Math.min(batch_capacity, rem));
+      rem -= batch_capacity;
+    }
+
+    const baseOrderNo = generateOrderNo('PO');
+    let generatedCount = 0;
+    
+    // 开启高并发大事务：一旦中途有一单挂了，全盘回档！
+    await req.db.transaction(async () => {
+      // 单独拉取此产品的预设工序路线流水线，避免放进 loop 查几千遍
+      const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [product_id]);
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const qty = chunks[i];
+        // 挂载直系血统序号 (PO2025XXXX-1, PO2025XXXX-2...)
+        const subOrderNo = `${baseOrderNo}-${i + 1}`;
+        
+        const result = await req.db.run(`INSERT INTO production_orders (order_no, order_id, product_id, quantity, operator, remark, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [subOrderNo, order_id || null, product_id, qty, operator || null, `【智能切包 批次${i+1}/${chunks.length}】${remark || ''}`, start_time || null, end_time || null]);
+        
+        const productionId = result.lastInsertRowid;
+        
+        if (productProcesses.length > 0) {
+          for (const pp of productProcesses) { 
+             await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [productionId, pp.process_id]); 
+          }
+          await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, productionId]);
+        }
+        
+        await ProductionService.generatePlannedConsumption(req.db, productionId, product_id, qty);
+        
+        writeLog(req.db, req.user?.id, '智能拆包下发', 'production', productionId, `批次化自动子派工单: ${subOrderNo} 量:${qty}`);
+        generatedCount++;
+      }
+    });
+
+    res.json({ success: true, message: `兵贵神速！已凭借智能算法将总量 ${total_quantity} 一把划分为 ${generatedCount} 个单独流水单流转！` });
+  } catch (error) {
+    console.error(`[production.js /bulk]`, error.message);
+    res.status(500).json({ success: false, message: '拆单算数及锁冲突，发生回滚' });
+  }
+});
+
 router.post('/', requirePermission('production_create'), validate(createProductionSchema), async (req, res) => {
   try {
     const { order_id, product_id, quantity, operator, remark, start_time, end_time } = req.body;
@@ -221,6 +382,7 @@ router.post('/', requirePermission('production_create'), validate(createProducti
         for (const pp of productProcesses) { await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [productionId, pp.process_id]); }
         await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, productionId]);
       }
+      await ProductionService.generatePlannedConsumption(req.db, productionId, product_id, quantity);
     });
     writeLog(req.db, req.user?.id, '创建生产工单', 'production', productionId, `工单号: ${orderNo}`);
     res.json({ success: true, data: { id: productionId, order_no: orderNo } });
@@ -405,6 +567,150 @@ router.post('/:id/rework', validateId, requirePermission('production_edit'), val
   } catch (error) {
     console.error('[production.js/rework]', error.message);
     res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ==================== 异常分流引擎 (Split & Scrap) ====================
+router.post('/:id/split', validateId, requirePermission('production_edit'), async (req, res) => {
+  try {
+    const { split_quantity, split_type, target_process_code, reason, process_sequence } = req.body;
+    if (!split_quantity || split_quantity <= 0) return res.status(400).json({ success: false, message: '剥离数量必须大于0' });
+    if (!['REWORK', 'SCRAP'].includes(split_type)) return res.status(400).json({ success: false, message: '无效的分流类型' });
+
+    const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
+    if (!production) return res.status(404).json({ success: false, message: '母工单不存在' });
+
+    // 严苛防超发校验
+    const remaining = (production.quantity || 0) - (production.completed_quantity || 0);
+    if (split_quantity > remaining) {
+      return res.status(400).json({ success: false, message: `母工单剩余未完成数量(${remaining})不足以支撑拆分(${split_quantity})` });
+    }
+
+    // 智能后缀生成逻辑：-R1 (返工), -S1 (报废)
+    const suffix = split_type === 'REWORK' ? `-R${process_sequence || 1}` : `-S${process_sequence || 1}`;
+    const newOrderNo = `${production.order_no}${suffix}`;
+    const newBatchNo = production.batch_no ? `${production.batch_no}${suffix}` : null;
+    
+    let newProductionId;
+    await req.db.transaction(async () => {
+      // 1. 扣减母单 (父批次变小)
+      await req.db.run('UPDATE production_orders SET quantity = quantity - ? WHERE id = ?', [split_quantity, req.params.id]);
+
+      // 2. 衍生子单
+      const status = split_type === 'SCRAP' ? 'scrapped' : 'pending';
+      const current_process = split_type === 'SCRAP' ? null : target_process_code;
+      
+      const insertResult = await req.db.run(`
+        INSERT INTO production_orders 
+        (order_no, order_id, product_id, batch_no, quantity, current_process, status, remark, parent_id, split_reason, original_quantity)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [newOrderNo, production.order_id, production.product_id, newBatchNo, split_quantity, current_process, status, 
+          `由主单[${production.order_no}]剥离。原因: ${reason || '无'}`, req.params.id, reason, split_quantity]);
+      
+      newProductionId = insertResult.lastInsertRowid;
+
+      // 3. 报废分支：底层自动拦截，生成入库单打入废品仓
+      if (split_type === 'SCRAP') {
+        const scrapWh = await req.db.get("SELECT id FROM warehouses WHERE code = 'WH-SCRAP'");
+        if (scrapWh) {
+          const inboundNo = 'IN' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 1000); // 防冲突轻量级编号
+          const ibRes = await req.db.run(`
+            INSERT INTO inbound_orders (order_no, type, warehouse_id, operator, status, remark, production_order_id)
+            VALUES (?, 'scrap', ?, ?, 'completed', '批次分裂：自动废品入库', ?)
+          `, [inboundNo, scrapWh.id, req.user?.username || 'SplitEngine', newProductionId]);
+          
+          await req.db.run(`
+            INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, remark)
+            VALUES (?, ?, ?, ?, ?)
+          `, [ibRes.lastInsertRowid, production.product_id, newBatchNo || 'DEFAULT', split_quantity, '拆批报废损耗入库']);
+        }
+      }
+
+      // 4. 返工分支：重构工艺路线记录
+      if (split_type === 'REWORK') {
+        const productProcesses = await req.db.all(`
+          SELECT pp.*, p.code as process_code, p.name as process_name
+          FROM product_processes pp JOIN processes p ON pp.process_id = p.id
+          WHERE pp.product_id = ? ORDER BY pp.sequence
+        `, [production.product_id]);
+        
+        const targetIndex = productProcesses.findIndex(pp => pp.process_code === target_process_code);
+        if (targetIndex !== -1) {
+          for (let i = targetIndex; i < productProcesses.length; i++) {
+            await req.db.run(
+              `INSERT INTO production_process_records (production_order_id, process_id, status, remark) VALUES (?, ?, 'pending', ?)`,
+              [newProductionId, productProcesses[i].process_id, i === targetIndex ? `自动跳站返工(${reason})` : '随动待加工']);
+          }
+        }
+      }
+
+      await ProductionService.generatePlannedConsumption(req.db, newProductionId, production.product_id, split_quantity);
+    });
+
+    writeLog(req.db, req.user?.id, '批次异常分流', 'production', req.params.id, `裂变数量: ${split_quantity}, 裂变模式: ${split_type}, 衍生子单号: ${newOrderNo}`);
+    
+    res.json({ success: true, message: `成功拆分并生成子工单 ${newOrderNo}`, data: { newOrderNo } });
+  } catch (error) {
+    console.error('[production.js/split]', error.message);
+    res.status(500).json({ success: false, message: '拆批引擎发生内部断言错误' });
+  }
+});
+
+// ==================== 批次血缘追溯 (Genealogy) ====================
+router.get('/:id/genealogy', validateId, requirePermission('production_view'), async (req, res) => {
+  try {
+    // 1. 向上追溯寻找真正的“始祖母卷” (Root Parent)
+    const rootOrder = await req.db.get(`
+      WITH RECURSIVE parent_tree AS (
+        SELECT id, parent_id FROM production_orders WHERE id = ?
+        UNION ALL
+        SELECT po.id, po.parent_id FROM production_orders po
+        INNER JOIN parent_tree pt ON po.id = pt.parent_id
+      )
+      SELECT id FROM parent_tree WHERE parent_id IS NULL LIMIT 1;
+    `, [req.params.id]);
+
+    const targetRootId = rootOrder ? rootOrder.id : req.params.id;
+
+    // 2. 从始祖开始，向下查找所有血脉子嗣 (Children)
+    const allNodes = await req.db.all(`
+      WITH RECURSIVE child_tree AS (
+        SELECT id, order_no, parent_id, quantity, original_quantity, split_reason, status, batch_no, current_process, created_at 
+        FROM production_orders WHERE id = ?
+        UNION ALL
+        SELECT po.id, po.order_no, po.parent_id, po.quantity, po.original_quantity, po.split_reason, po.status, po.batch_no, po.current_process, po.created_at
+        FROM production_orders po
+        INNER JOIN child_tree ct ON po.parent_id = ct.id
+      )
+      SELECT ct.*, p.name as process_name
+      FROM child_tree ct
+      LEFT JOIN processes p ON ct.current_process = p.code
+      ORDER BY ct.created_at ASC
+    `, [targetRootId]);
+
+    // 3. 关联查出报废子批次对应的入库废品仓
+    const nodeIds = allNodes.map(n => n.id);
+    if (nodeIds.length > 0) {
+      const ph = nodeIds.map(() => '?').join(',');
+      const inbounds = await req.db.all(`
+        SELECT io.production_order_id, w.name as warehouse_name 
+        FROM inbound_orders io 
+        JOIN warehouses w ON io.warehouse_id = w.id 
+        WHERE io.production_order_id IN (${ph}) AND io.type = 'scrap'
+      `, nodeIds);
+      
+      const inboundMap = {};
+      inbounds.forEach(ib => inboundMap[ib.production_order_id] = ib.warehouse_name);
+      
+      allNodes.forEach(n => {
+        if (inboundMap[n.id]) n.scrap_warehouse = inboundMap[n.id];
+      });
+    }
+
+    res.json({ success: true, data: allNodes });
+  } catch (error) {
+    console.error('[production.js/genealogy]', error.message);
+    res.status(500).json({ success: false, message: '获取血缘图谱失败' });
   }
 });
 

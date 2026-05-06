@@ -31,8 +31,8 @@ const convertToKg = (quantity, unit, product) => {
     if (product && product.outer_diameter && product.wall_thickness && product.length) {
       const outerDiameter = parseFloat(product.outer_diameter) || 0;
       const wallThickness = parseFloat(product.wall_thickness) || 0;
-      const length = parseFloat(product.length) || 0;
-      const kgPerPiece = ((outerDiameter - wallThickness) * wallThickness) * 0.02491 * length;
+      const lengthInMeters = (parseFloat(product.length) || 0) / 1000;
+      const kgPerPiece = ((outerDiameter - wallThickness) * wallThickness) * 0.02491 * lengthInMeters;
       return quantity * kgPerPiece;
     }
     return 0;
@@ -210,7 +210,7 @@ const WarehouseFormModal = forwardRef(({
             <label className="block text-sm font-medium">明细</label>
             {errors.items?.root && <p className="text-red-500 text-xs">{errors.items.root.message}</p>}
           </div>
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/50 max-h-[50vh] overflow-y-auto">
+          <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/50">
             {fields.map((fieldItem, index) => {
               const currentProductId = currentItems?.[index]?.product_id;
               const currentInputQty = currentItems?.[index]?.input_quantity || 0;
@@ -221,11 +221,12 @@ const WarehouseFormModal = forwardRef(({
               
               let kgPerPiece = null;
               if (currentUnit === '支' && productInfo?.outer_diameter && productInfo?.wall_thickness && productInfo?.length) {
-                kgPerPiece = ((parseFloat(productInfo.outer_diameter) - parseFloat(productInfo.wall_thickness)) * parseFloat(productInfo.wall_thickness) * 0.02491 * parseFloat(productInfo.length)).toFixed(4);
+                const lenInMeters = parseFloat(productInfo.length) / 1000;
+                kgPerPiece = ((parseFloat(productInfo.outer_diameter) - parseFloat(productInfo.wall_thickness)) * parseFloat(productInfo.wall_thickness) * 0.02491 * lenInMeters).toFixed(4);
               }
 
               return (
-                <div key={fieldItem.id} className="flex flex-wrap lg:flex-nowrap gap-3 items-center bg-white p-2.5 rounded-lg border border-gray-200 shadow-sm relative group hover:border-teal-300 transition-colors">
+                <div key={fieldItem.id} style={{ zIndex: 50 - index }} className="flex flex-wrap lg:flex-nowrap gap-3 items-center bg-white p-2.5 rounded-lg border border-gray-200 shadow-sm relative group hover:border-teal-300 transition-colors">
                   <div className="w-full lg:flex-1">
                     <Controller
                       name={`items.${index}.product_id`}

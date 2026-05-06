@@ -12,6 +12,50 @@ import { useDraftForm } from '../hooks/useDraftForm';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import { useConfirm } from '../components/ConfirmModal';
 
+const AISettings = () => {
+  const columns = [
+    { key: 'name', label: '配置名称', className: 'font-medium text-gray-800' },
+    { key: 'model', label: '模型 (Model)' },
+    { key: 'base_url', label: 'API 地址' },
+    { key: 'is_active', label: '当前状态', render: (val, item) => (
+      item.is_active === 1 
+        ? <span className="bg-green-100 text-green-700 px-2.5 py-1 rounded-full text-xs font-bold shadow-sm flex items-center gap-1 w-max"><i className="fas fa-satellite-dish animate-pulse"></i>运行中</span> 
+        : <span className="bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full text-xs flex items-center gap-1 w-max"><i className="fas fa-bed"></i>已休眠</span>
+    )}
+  ];
+
+  const fields = [
+    { name: 'name', label: '配置名称', required: true, placeholder: '例如: DeepSeek 官方', fullWidth: true },
+    { name: 'base_url', label: 'Base URL (API 地址)', required: true, placeholder: '例如: https://api.deepseek.com/v1', fullWidth: true },
+    { name: 'api_key', label: 'API Key', required: false, type: 'password', placeholder: '新增时必填；编辑时留空则不修改原密钥', fullWidth: true },
+    { name: 'model', label: '模型名称 (Model)', required: true, placeholder: '例如: deepseek-chat' },
+    { name: 'wechat_webhook', label: '企微机器人 Webhook (选填)', placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' }
+  ];
+
+  return (
+    <div className="h-full flex flex-col fade-in space-y-4">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 text-blue-800 p-4 rounded-xl text-sm shadow-sm flex items-start gap-3">
+        <div className="mt-0.5 text-blue-500 text-lg"><i className="fas fa-robot"></i></div>
+        <div>
+          <div className="font-bold mb-1">AI 引擎配置中心</div>
+          <div>您可以在这里预先保存多套不同的大模型配置。在列表中点击 <strong className="text-green-600">启用</strong> 即可瞬间切换全系统的 AI 大脑，无需反复输入长串的 API 密钥。</div>
+        </div>
+      </div>
+      
+      <div className="flex-1 min-h-[500px] bg-white rounded-xl shadow-sm border border-gray-100 p-2 sm:p-4">
+        <SimpleCRUDManager
+          title="AI 引擎"
+          apiPath="ai/configs"
+          columns={columns}
+          fields={fields}
+          searchFields={['name', 'model', 'base_url']}
+          hasStatus={true}
+        />
+      </div>
+    </div>
+  );
+};
+
 const BackupSettings = () => {
   const [config, setConfig] = useState({
     enabled: true,
@@ -356,4 +400,4 @@ const AboutSystem = () => {
   );
 };
 
-export { BackupSettings, AboutSystem };
+export { BackupSettings, AboutSystem, AISettings };

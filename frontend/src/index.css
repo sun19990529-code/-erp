@@ -57,8 +57,45 @@
 }
 
 body {
-  @apply bg-gray-100 text-gray-800; /* 全局底层使用代理过的灰色体系 */
+  @apply bg-gray-50 text-gray-800; /* Apple 偏好的全白或微灰背景 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
+
+/* ==================================================== */
+/* Apple Design Language & Glassmorphism Utilities      */
+/* ==================================================== */
+@layer components {
+  .glass-panel {
+    background-color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    @apply backdrop-blur-xl shadow-sm transition-all duration-300;
+  }
+  .glass-dark-panel {
+    background-color: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    @apply backdrop-blur-2xl shadow-lg transition-all duration-300;
+  }
+  .apple-card {
+    background-color: var(--color-bg-base);
+    border: 1px solid rgba(226, 232, 240, 0.5);
+    @apply rounded-2xl shadow-[0_4px_24px_-8px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.08)] transition-all duration-500;
+  }
+  .apple-btn-primary {
+    border: 1px solid rgba(13, 148, 136, 0.3);
+    @apply bg-gradient-to-b from-teal-500 to-teal-600 text-white shadow-[0_2px_12px_rgba(20,184,166,0.3)] hover:shadow-[0_4px_16px_rgba(20,184,166,0.4)] active:scale-95 transition-all duration-300;
+  }
+  .apple-btn-secondary {
+    background-color: var(--color-bg-base);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    @apply shadow-sm hover:opacity-90 active:scale-95 transition-all duration-300;
+  }
+  .smooth-focus {
+    @apply focus:outline-none focus-visible:ring-4 focus-visible:border-teal-500 transition-all duration-200;
+  }
+}
+
 
 /* ================== 下方保留原有自定义类 ================== */
 

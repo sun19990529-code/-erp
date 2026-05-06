@@ -23,6 +23,30 @@ class ProductionService {
     _warehouseCacheTime = now;
     return _warehouseCache;
   }
+
+  static async generatePlannedConsumption(db, productionId, productId, quantity) {
+    try {
+      // 查询工序及工序绑定的物料(BOM展开)
+      const materials = await db.all(`
+        SELECT pp.process_id, pm.material_id, pm.quantity as unit_qty, pm.unit 
+        FROM product_processes pp 
+        JOIN process_materials pm ON pm.product_process_id = pp.id 
+        WHERE pp.product_id = ?
+      `, [productId]);
+
+      for (const m of materials) {
+        const plannedQty = (parseFloat(m.unit_qty) || 0) * (parseFloat(quantity) || 0);
+        await db.run(`
+          INSERT INTO production_material_consumption 
+          (production_order_id, process_id, material_id, planned_quantity, actual_quantity, unit) 
+          VALUES (?, ?, ?, ?, 0, ?)
+        `, [productionId, m.process_id, m.material_id, plannedQty, m.unit]);
+      }
+    } catch (e) {
+      console.error('[ProductionService.generatePlannedConsumption]', e.message);
+    }
+  }
+  
   
   static async createOutsourcingOrderForProcess(db, production, processInfo, quantity) {
     const existing = await db.get(`SELECT * FROM outsourcing_orders WHERE production_order_id = ? AND process_id = ?`, [production.id, processInfo.process_id]);
@@ -45,11 +69,38 @@ class ProductionService {
     if (!finishedId) return null;
     const warehouse = { id: finishedId };
     const orderNo = generateOrderNo('IN');
-    const result = await db.run(`INSERT INTO inbound_orders (order_no, type, warehouse_id, production_order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, 0, '系统自动', ?, 'approved')`,
-      [orderNo, warehouse.id, production.id, `生产完成自动入库 - 生产工单: ${production.order_no}`]);
+    
+    // ======== 成本归集 (Cost Rollup) ========
+    // 1. 领料成本 (通过 products.unit_price 作为标准成本)
+    const materialCostRow = await db.get(`
+      SELECT COALESCE(SUM(
+        CASE WHEN pk.type = 'return' THEN -pi.quantity * COALESCE(p.unit_price, 0)
+             ELSE pi.quantity * COALESCE(p.unit_price, 0) END
+      ), 0) as total_material_cost
+      FROM pick_items pi
+      JOIN pick_orders pk ON pi.pick_order_id = pk.id
+      JOIN products p ON pi.material_id = p.id
+      WHERE pk.production_order_id = ? AND pk.status = 'completed'
+    `, [production.id]);
+    const totalMaterialCost = parseFloat(materialCostRow.total_material_cost || 0);
+
+    // 2. 委外成本
+    const outsourceCostRow = await db.get(`
+      SELECT COALESCE(SUM(total_amount), 0) as total_outsourcing_cost
+      FROM outsourcing_orders
+      WHERE production_order_id = ? AND status = 'completed'
+    `, [production.id]);
+    const totalOutsourcingCost = parseFloat(outsourceCostRow.total_outsourcing_cost || 0);
+
+    // 3. 计算单位成本
+    const totalCost = totalMaterialCost + totalOutsourcingCost;
+    const unitPrice = quantity > 0 ? (totalCost / quantity).toFixed(4) : 0;
+
+    const result = await db.run(`INSERT INTO inbound_orders (order_no, type, warehouse_id, production_order_id, total_amount, operator, remark, status) VALUES (?, 'finished', ?, ?, ?, '系统自动', ?, 'approved')`,
+      [orderNo, warehouse.id, production.id, totalCost, `生产完成自动入库 - 生产工单: ${production.order_no}`]);
     const inboundId = result.lastInsertRowid;
     const batchNo = `PRD-${production.order_no}`;
-    await db.run(`INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, 0)`, [inboundId, production.product_id, batchNo, quantity]);
+    await db.run(`INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, ?)`, [inboundId, production.product_id, batchNo, quantity, unitPrice]);
     const inventory = await db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse.id, production.product_id, batchNo]);
     if (inventory) {
       await db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [quantity, inventory.id]);
@@ -132,8 +183,10 @@ class ProductionService {
     const invMap = Object.fromEntries(invRecords.map(r => [r.product_id, r.total]));
 
     for (const item of orderItems) {
+      const remainingQty = item.quantity - (item.shipped_quantity || 0);
+      if (remainingQty <= 0) continue;
       const invTotal = invMap[item.product_id] || 0;
-      if (invTotal < item.quantity) {
+      if (invTotal < remainingQty) {
         return { pending: true, message: `成品库存不足，请入库后手动创建出库单` };
       }
     }
@@ -143,7 +196,8 @@ class ProductionService {
       [orderNo, warehouse.id, orderId, `订单完成自动出库 - 销售订单: ${order.order_no}`]);
     const outboundId = result.lastInsertRowid;
     for (const item of orderItems) {
-      let remaining = item.quantity;
+      let remaining = item.quantity - (item.shipped_quantity || 0);
+      if (remaining <= 0) continue;
       const batches = await db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND quantity > 0 ORDER BY updated_at ASC FOR UPDATE', [warehouse.id, item.product_id]);
       for (const batch of batches) {
         if (remaining <= 0) break;
@@ -157,7 +211,7 @@ class ProductionService {
   }
 
   static async submitProcessReport(db, productionId, params) {
-    const { process_id, operator, input_quantity, output_quantity, defect_quantity, remark, outsourcing_id, force } = params;
+    const { process_id, operator, input_quantity, output_quantity, defect_quantity, remark, outsourcing_id, force, parameter_data } = params;
     let responseData = { success: true };
     
     const production = await db.get('SELECT * FROM production_orders WHERE id = ? FOR UPDATE', [productionId]);
@@ -168,24 +222,30 @@ class ProductionService {
     const currentIndex = productProcesses.findIndex(pp => pp.process_id == process_id);
     
     const historyTotal = await db.get('SELECT COALESCE(SUM(input_quantity), 0) as total_input, COALESCE(SUM(output_quantity), 0) as total_output, COALESCE(SUM(defect_quantity), 0) as total_defect FROM production_process_records WHERE production_order_id = ? AND process_id = ? AND status = ?', [productionId, process_id, 'completed']);
-    const willTotalOutput = (historyTotal.total_output || 0) + (output_quantity || 0);
-    const willTotalDefect = (historyTotal.total_defect || 0) + (defect_quantity || 0);
+    
+    const inQty = Number(input_quantity) || 0;
+    const outQty = Number(output_quantity) || 0;
+    const defQty = Number(defect_quantity) || 0;
+    
+    const willTotalOutput = Number(historyTotal.total_output || 0) + outQty;
+    const willTotalDefect = Number(historyTotal.total_defect || 0) + defQty;
     
     if (currentIndex > 0) {
       const prevProcess = productProcesses[currentIndex - 1];
       const prevProcessTotal = await db.get('SELECT COALESCE(SUM(output_quantity), 0) as total_output FROM production_process_records WHERE production_order_id = ? AND process_id = ? AND status = ?', [productionId, prevProcess.process_id, 'completed']);
-      if ((willTotalOutput + willTotalDefect) > prevProcessTotal.total_output) {
-        throw new BusinessError(`越界拦截：前置工序[${prevProcess.process_name}]累计产出为 ${prevProcessTotal.total_output}，本次报工后总产出将达 ${willTotalOutput + willTotalDefect}，已超限！请核对报工数量。`);
+      const prevTotalOut = Number(prevProcessTotal.total_output || 0);
+      if ((willTotalOutput + willTotalDefect) > prevTotalOut) {
+        throw new BusinessError(`越界拦截：前置工序[${prevProcess.process_name}]累计产出为 ${prevTotalOut}，本次报工后总产出将达 ${willTotalOutput + willTotalDefect}，已超限！请核对报工数量。`);
       }
     } else {
-      const willTotalInput = (historyTotal.total_input || 0) + (input_quantity || 0);
+      const willTotalInput = Number(historyTotal.total_input || 0) + inQty;
       if ((willTotalOutput + willTotalDefect) > willTotalInput) {
         throw new BusinessError(`越界拦截：首道工序本次报工后总产出(${willTotalOutput + willTotalDefect})将超过总投入数量(${willTotalInput})！`);
       }
     }
     
-    await db.run(`INSERT INTO production_process_records (production_order_id, process_id, operator, input_quantity, output_quantity, defect_quantity, status, start_time, end_time, remark, outsourcing_id) VALUES (?, ?, ?, ?, ?, ?, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)`,
-      [productionId, process_id, operator, input_quantity, output_quantity, defect_quantity, remark, outsourcing_id || null]);
+    await db.run(`INSERT INTO production_process_records (production_order_id, process_id, operator, input_quantity, output_quantity, defect_quantity, status, start_time, end_time, remark, outsourcing_id, parameter_data) VALUES (?, ?, ?, ?, ?, ?, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)`,
+      [productionId, process_id, operator, input_quantity, output_quantity, defect_quantity, remark, outsourcing_id || null, parameter_data ? JSON.stringify(parameter_data) : null]);
     
     const cumulativeOutput = willTotalOutput;
     

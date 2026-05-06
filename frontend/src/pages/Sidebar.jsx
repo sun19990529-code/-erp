@@ -75,6 +75,7 @@ const menuConfig = [
       { key: 'permission', label: '权限管理' },
       { key: 'user-internal', label: '内部用户' },
       { key: 'user-external', label: '外部用户' },
+      { key: 'settings-ai', label: 'AI 助手配置' },
       { key: 'settings-backup', label: '数据备份' },
       { key: 'data-import', label: '数据导入' },
       { key: 'operation-logs', label: '操作日志' },
@@ -118,6 +119,7 @@ const menuPermissions = {
   // 系统管理（仅管理员，前端走 isAdmin 判断，权限码置 null）
   'role': null, 'permission': null,
   'user-internal': null, 'user-external': null,
+  'settings-ai': 'admin',
   'settings-backup': 'admin',
   'settings-about': null,
   'data-import': 'basic_data_create',

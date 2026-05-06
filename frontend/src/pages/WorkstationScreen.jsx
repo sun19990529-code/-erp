@@ -25,6 +25,8 @@ const WorkstationScreen = () => {
   const [countdown, setCountdown] = useState(30);
   const [modal, setModal] = useState({ type: null }); // report | inspect
   const [form, setForm] = useState({});
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
+  const [splitForm, setSplitForm] = useState({ type: 'REWORK', target_process: '', reason: '' });
 
   // 轻量 inline toast（暗色主题，替代 alert）
   const [toast, setToast] = useState(null);
@@ -83,20 +85,56 @@ const WorkstationScreen = () => {
     loadDetail(task.id);
   };
 
-  // 报工提交
-  const submitReport = async () => {
-    if (!form.operator?.trim()) return showToast('请填写操作人', 'warning');
-    if (!form.output_quantity || form.output_quantity <= 0) return showToast('请填写产出数量', 'warning');
+  // 报工提交及差值拦截引擎
+  const submitReport = async (splitConfig = null) => {
+    const diff = (form.input_quantity || 0) - (form.output_quantity || 0);
+    const payload = {
+      ...form,
+      defect_quantity: 0 // 差值将被后端引擎拦截并拆单，所以原单不再报不良数
+    };
+
+    if (diff > 0 && splitConfig) {
+      payload.split_type = splitConfig.type;
+      payload.target_process_code = splitConfig.target_process;
+      payload.split_reason = splitConfig.reason;
+    }
+
     const res = await fetchApi(`${API_BASE}/${stationCode}/${selectedTask.id}/report`, {
-      method: 'POST', body: JSON.stringify(form)
+      method: 'POST', body: JSON.stringify(payload)
     });
+
     if (res.success) {
       setModal({ type: null });
+      setSplitModalOpen(false);
       setForm({});
       loadTasks();
       loadDetail(selectedTask.id);
+      showToast(diff > 0 && splitConfig ? '报工与智能分流成功' : '报工成功', 'success');
     } else {
       showToast(res.message, 'error');
+    }
+  };
+
+  const handleReportClick = () => {
+    if (!form.operator?.trim()) return showToast('请填写操作人', 'warning');
+    if (!form.input_quantity || form.input_quantity <= 0) return showToast('请填写投入数量', 'warning');
+    if (form.output_quantity === undefined || form.output_quantity < 0) return showToast('产出数量不能小于0', 'warning');
+    
+    const diff = form.input_quantity - form.output_quantity;
+    if (diff < 0) return showToast('产出数量不能大于投入数量', 'warning');
+
+    if (diff > 0) {
+      const isCutting = station?.process_name?.includes('切') || stationCode?.toUpperCase().includes('CUT');
+      if (isCutting) {
+         // 切割自动报废
+         submitReport({ type: 'SCRAP', reason: '切割边角料系统自动分流' });
+      } else {
+         // 弹窗确认
+         setSplitForm({ type: 'REWORK', target_process: '', reason: '产出不合格打回' });
+         setSplitModalOpen(true);
+      }
+    } else {
+      submitReport();
     }
   };
 
@@ -259,7 +297,7 @@ const WorkstationScreen = () => {
 
               {/* 操作按钮区 */}
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => { setModal({ type: 'report' }); setForm({ output_quantity: '', defect_quantity: 0, operator: '', remark: '' }); }}
+                <button onClick={() => { setModal({ type: 'report' }); setForm({ input_quantity: selectedTask.quantity - selectedTask.completed_quantity, output_quantity: '', operator: '', remark: '' }); }}
                   className="bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl text-lg transition-colors shadow-lg shadow-green-900/30 flex items-center justify-center gap-3">
                   <i className="fas fa-clipboard-check text-2xl"></i>报工
                 </button>
@@ -334,24 +372,101 @@ const WorkstationScreen = () => {
                   className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none text-lg" placeholder="请输入姓名" autoFocus />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">产出数量 *</label>
+                <label className="block text-sm text-gray-400 mb-1">投入数量 (Input) *</label>
+                <input type="number" value={form.input_quantity !== undefined ? form.input_quantity : ''} onChange={e => setForm({ ...form, input_quantity: e.target.value === '' ? '' : parseInt(e.target.value) })}
+                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none text-lg" placeholder="扫码投料总数" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">产出合格 (Good Output) *</label>
                 <input type="number" value={form.output_quantity !== undefined ? form.output_quantity : ''} onChange={e => setForm({ ...form, output_quantity: e.target.value === '' ? '' : parseInt(e.target.value) })}
-                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none text-lg" placeholder="请输入产出数量" />
+                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none text-lg font-bold" placeholder="实际出炉合格数" />
               </div>
+              
+              {(form.input_quantity > 0 && form.output_quantity >= 0 && (form.input_quantity - form.output_quantity) > 0) && (
+                <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-red-400 font-bold text-sm">系统智能拦截：发现产出差值</div>
+                    <div className="text-red-300 text-xs mt-0.5">此差值将被引擎自动剥离并执行防呆分流</div>
+                  </div>
+                  <div className="text-2xl font-mono font-bold text-red-500">{form.input_quantity - form.output_quantity}</div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm text-gray-400 mb-1">不良数</label>
-                <input type="number" value={form.defect_quantity !== undefined ? form.defect_quantity : ''} onChange={e => setForm({ ...form, defect_quantity: e.target.value === '' ? '' : parseInt(e.target.value) })}
-                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none" placeholder="0" />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">备注</label>
+                <label className="block text-sm text-gray-400 mb-1">备注 (可选)</label>
                 <input value={form.remark || ''} onChange={e => setForm({ ...form, remark: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none" placeholder="选填" />
+                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none" placeholder="特殊说明..." />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setModal({ type: null })} className="flex-1 py-3 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 font-medium">取消</button>
-              <button onClick={submitReport} className="flex-1 py-3 rounded-lg bg-green-600 text-white hover:bg-green-500 font-bold text-lg">确认报工</button>
+              <button onClick={() => setModal({ type: null })} className="flex-1 py-3 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 font-medium text-lg">取消</button>
+              <button onClick={handleReportClick} className="flex-1 py-3 rounded-lg bg-green-600 text-white hover:bg-green-500 font-bold text-lg">确认提交</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 异常分流拦截弹窗 */}
+      {splitModalOpen && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                <i className="fas fa-exclamation-triangle text-red-500 text-xl"></i>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">请指定废次品去向</h3>
+                <div className="text-sm text-gray-400">检测到差值 {form.input_quantity - form.output_quantity} {selectedTask?.unit}，去哪了？</div>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setSplitForm({...splitForm, type: 'REWORK'})}
+                  className={`py-3 rounded-xl border-2 transition-all font-bold ${splitForm.type === 'REWORK' ? 'border-yellow-500 bg-yellow-500/20 text-yellow-400' : 'border-gray-600 bg-gray-900 text-gray-400'}`}>
+                  <i className="fas fa-undo-alt mr-2"></i>返工重做
+                </button>
+                <button onClick={() => setSplitForm({...splitForm, type: 'SCRAP'})}
+                  className={`py-3 rounded-xl border-2 transition-all font-bold ${splitForm.type === 'SCRAP' ? 'border-red-500 bg-red-500/20 text-red-400' : 'border-gray-600 bg-gray-900 text-gray-400'}`}>
+                  <i className="fas fa-trash-alt mr-2"></i>直接报废
+                </button>
+              </div>
+
+              {splitForm.type === 'REWORK' && (
+                <div className="animate-fade-in">
+                  <label className="block text-sm text-gray-400 mb-1">退回到哪个工序重新加工？</label>
+                  <select value={splitForm.target_process || ''} onChange={e => setSplitForm({...splitForm, target_process: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-yellow-500 focus:outline-none">
+                    <option value="">-- 请选择打回节点 --</option>
+                    {taskDetail?.processFlow?.map((p, i) => (
+                      <option key={p.process_code} value={p.process_code}>{i + 1}. {p.process_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {splitForm.type === 'SCRAP' && (
+                 <div className="bg-gray-900 p-3 rounded-lg border border-gray-700 text-sm text-gray-400">
+                    <i className="fas fa-info-circle text-blue-400 mr-2"></i>
+                    系统将在后台自动生成 <b>-S</b> 子批次，并自动打印 <b>废品入库单</b>。
+                 </div>
+              )}
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">异常原因补充</label>
+                <input value={splitForm.reason || ''} onChange={e => setSplitForm({...splitForm, reason: e.target.value})}
+                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:outline-none" placeholder="如：尺寸超差..." />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setSplitModalOpen(false)} className="flex-1 py-3 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 font-medium">重新填数</button>
+              <button onClick={() => {
+                if (splitForm.type === 'REWORK' && !splitForm.target_process) return showToast('请选择退回工序', 'warning');
+                submitReport(splitForm);
+              }} className={`flex-1 py-3 rounded-lg font-bold text-white shadow-lg transition-colors ${splitForm.type === 'SCRAP' ? 'bg-red-600 hover:bg-red-500 shadow-red-900/30' : 'bg-yellow-600 hover:bg-yellow-500 shadow-yellow-900/30'}`}>
+                确认拦截并流转
+              </button>
             </div>
           </div>
         </div>

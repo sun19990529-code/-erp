@@ -29,6 +29,7 @@ const PermissionManager = React.lazy(() => import('./pages/UserPages').then(m =>
 const UserManager = React.lazy(() => import('./pages/UserPages').then(m => ({ default: m.UserManager })));
 const BackupSettings = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.BackupSettings })));
 const AboutSystem = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.AboutSystem })));
+const AISettings = React.lazy(() => import('./pages/SettingsPages').then(m => ({ default: m.AISettings })));
 const OperationLogs = React.lazy(() => import('./pages/OperationLogs'));
 const ScanStation = React.lazy(() => import('./components/ScanStation'));
 const WorkshopMonitor = React.lazy(() => import('./pages/WorkshopMonitor'));
@@ -102,6 +103,7 @@ export const ROUTE_CONFIG = [
   { menuKey: 'data-import',          path: '/system/import',           element: <ImportPage /> },
   { menuKey: 'print-template',       path: '/system/print-template',   element: <TemplateManager /> },
   // ==================== 设置 ====================
+  { menuKey: 'settings-ai',          path: '/settings/ai',             element: <AISettings /> },
   { menuKey: 'settings-backup',      path: '/settings/backup',         element: <BackupSettings /> },
   { menuKey: 'settings-about',       path: '/settings/about',          element: <AboutSystem /> },
   // ==================== 大屏与追踪 ====================

@@ -181,6 +181,7 @@ router.post('/:id/processes', validateId, requirePermission('basic_data_edit'), 
       
       // 插入新的配置
       const validProcesses = processes.filter(p => p.process_id);
+      const collectedMaterialIds = new Set(); // 归集去重物料集，自动构建绑定关系
       for (let index = 0; index < validProcesses.length; index++) {
         const p = validProcesses[index];
         const result = await req.db.run(`
@@ -191,12 +192,19 @@ router.post('/:id/processes', validateId, requirePermission('basic_data_edit'), 
         if (p.materials && p.materials.length > 0) {
           const productProcessId = result.lastInsertRowid;
           for (const m of p.materials.filter(m => m.material_id)) {
+            collectedMaterialIds.add(parseInt(m.material_id)); // 动态装载收集
             await req.db.run(`
               INSERT INTO process_materials (product_process_id, material_id, quantity, unit, remark)
               VALUES (?, ?, ?, ?, ?)
             `, [productProcessId, m.material_id, m.quantity || 0, m.unit || '公斤', m.remark]);
           }
         }
+      }
+      
+      // 直接基于实际发生的工序原物料清单，自动维护其全局的商品可用物料档案，实现单源驱动。
+      await req.db.run('DELETE FROM product_bound_materials WHERE product_id = ?', [req.params.id]);
+      for (const mid of collectedMaterialIds) {
+         await req.db.run('INSERT INTO product_bound_materials (product_id, material_id) VALUES (?, ?)', [req.params.id, mid]);
       }
     });
     

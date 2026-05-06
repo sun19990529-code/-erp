@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { useState } from 'react';
 import { api } from '../api';
 import { useSafeFetch } from '../hooks/useSafeFetch';
+import { ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend } from 'recharts';
 
 const CHART_STYLES = {
   axisTick: { fontSize: 12, fill: '#64748b' },
