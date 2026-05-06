@@ -39,3 +39,9 @@ backend/config/wechat_targets.json
 
 # Test coverage
 coverage/
+
+# SSL certificates (server-specific, do NOT track)
+backend/config/server.pem
+backend/config/server.key
+*.pem
+*.key
