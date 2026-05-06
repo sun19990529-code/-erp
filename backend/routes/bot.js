@@ -16,6 +16,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const axios = require('axios');
 
 // ==================== 关键词路由 ====================
 
@@ -75,7 +76,36 @@ async function handleCommand(text, db) {
     return await queryOverdue(db);
   }
 
-  // 未识别命令
+  // 未匹配固定指令 → 转发给 AI 大模型
+  try {
+    const aiConfig = await db.get('SELECT * FROM ai_models WHERE is_active = 1 LIMIT 1');
+    if (aiConfig && aiConfig.api_key && aiConfig.api_url) {
+      const response = await axios.post(
+        `${aiConfig.api_url}/chat/completions`,
+        {
+          model: aiConfig.model_name,
+          messages: [
+            { role: 'system', content: '你是铭晟ERP系统的企微群助手。请用简洁友好的中文回答问题。如果用户的问题涉及ERP系统操作，可以引导他们使用固定指令（生产状态、日报、工单 PO-xxx、订单 SO-xxx、库存 产品名、超期检查、帮助）。' },
+            { role: 'user', content: msg }
+          ],
+          max_tokens: 500
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${aiConfig.api_key}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
+      const aiReply = response.data.choices?.[0]?.message?.content || '抱歉，AI 暂时无法回答。';
+      return { title: '🤖 AI 回复', content: aiReply };
+    }
+  } catch (e) {
+    console.error('[bot] AI fallback error:', e.message);
+  }
+
+  // AI 也不可用时的兜底
   return {
     title: '🤖 未识别命令',
     content: `抱歉，未识别命令「${msg}」。\n\n发送 **帮助** 查看支持的命令列表。`
