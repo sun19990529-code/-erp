@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const API_BASE = '/api/workstation/screen';
 
@@ -13,6 +14,8 @@ const fetchApi = async (url, options = {}) => {
 
 const WorkstationScreen = () => {
   const { stationCode } = useParams();
+  const { user, isAdmin } = useAuth();
+  
   const [station, setStation] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -27,6 +30,9 @@ const WorkstationScreen = () => {
   const [form, setForm] = useState({});
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [splitForm, setSplitForm] = useState({ type: 'REWORK', target_process: '', reason: '' });
+
+  const isReadOnlyOperator = !isAdmin && !!user;
+  const autoOperatorName = user?.real_name || user?.username || '';
 
   // 轻量 inline toast（暗色主题，替代 alert）
   const [toast, setToast] = useState(null);
@@ -88,8 +94,10 @@ const WorkstationScreen = () => {
   // 报工提交及差值拦截引擎
   const submitReport = async (splitConfig = null) => {
     const diff = (form.input_quantity || 0) - (form.output_quantity || 0);
+    const submitOperator = isReadOnlyOperator ? autoOperatorName : form.operator;
     const payload = {
       ...form,
+      operator: submitOperator,
       defect_quantity: 0 // 差值将被后端引擎拦截并拆单，所以原单不再报不良数
     };
 
@@ -116,7 +124,8 @@ const WorkstationScreen = () => {
   };
 
   const handleReportClick = () => {
-    if (!form.operator?.trim()) return showToast('请填写操作人', 'warning');
+    const submitOperator = isReadOnlyOperator ? autoOperatorName : form.operator;
+    if (!submitOperator?.trim()) return showToast('请填写操作人', 'warning');
     if (!form.input_quantity || form.input_quantity <= 0) return showToast('请填写投入数量', 'warning');
     if (form.output_quantity === undefined || form.output_quantity < 0) return showToast('产出数量不能小于0', 'warning');
     
@@ -140,10 +149,12 @@ const WorkstationScreen = () => {
 
   // 巡检提交
   const submitInspect = async () => {
-    if (!form.inspector?.trim()) return showToast('请填写检验员', 'warning');
+    const submitInspector = isReadOnlyOperator ? autoOperatorName : form.inspector;
+    if (!submitInspector?.trim()) return showToast('请填写检验员', 'warning');
     if (!form.result) return showToast('请选择检验结果', 'warning');
+    const payload = { ...form, inspector: submitInspector };
     const res = await fetchApi(`${API_BASE}/${stationCode}/${selectedTask.id}/inspect`, {
-      method: 'POST', body: JSON.stringify(form)
+      method: 'POST', body: JSON.stringify(payload)
     });
     if (res.success) {
       setModal({ type: null });
@@ -368,8 +379,9 @@ const WorkstationScreen = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">操作人 *</label>
-                <input value={form.operator || ''} onChange={e => setForm({ ...form, operator: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-green-500 focus:outline-none text-lg" placeholder="请输入姓名" autoFocus />
+                <input value={isReadOnlyOperator ? autoOperatorName : (form.operator || '')} onChange={e => setForm({ ...form, operator: e.target.value })}
+                  readOnly={isReadOnlyOperator}
+                  className={`w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none text-lg ${isReadOnlyOperator ? 'opacity-70 cursor-not-allowed' : 'focus:border-green-500'}`} placeholder="请输入姓名" autoFocus={!isReadOnlyOperator} />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">投入数量 (Input) *</label>
@@ -480,8 +492,9 @@ const WorkstationScreen = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">检验员 *</label>
-                <input value={form.inspector || ''} onChange={e => setForm({ ...form, inspector: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:outline-none text-lg" placeholder="请输入姓名" autoFocus />
+                <input value={isReadOnlyOperator ? autoOperatorName : (form.inspector || '')} onChange={e => setForm({ ...form, inspector: e.target.value })}
+                  readOnly={isReadOnlyOperator}
+                  className={`w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none text-lg ${isReadOnlyOperator ? 'opacity-70 cursor-not-allowed' : 'focus:border-blue-500'}`} placeholder="请输入姓名" autoFocus={!isReadOnlyOperator} />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-2">检验结果 *</label>
