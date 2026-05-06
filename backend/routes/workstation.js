@@ -40,13 +40,13 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
 // 创建工位
 router.post('/', requirePermission('production_create'), async (req, res) => {
   try {
-    const { code, name, process_id, remark, type, lines_count, schema_config } = req.body;
+    const { code, name, process_id, remark, type, lines_count, schema_config, bound_operator } = req.body;
     if (!code || !name) return res.status(400).json({ success: false, message: '工位编码和名称不能为空' });
     const existing = await req.db.get('SELECT id FROM workstations WHERE code = ?', [code]);
     if (existing) return res.status(400).json({ success: false, message: `工位编码 ${code} 已存在` });
     const result = await req.db.run(
-      'INSERT INTO workstations (code, name, process_id, remark, type, lines_count, schema_config) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [code.trim(), name.trim(), process_id || null, remark || null, type || null, lines_count || 1, schema_config ? JSON.stringify(schema_config) : '{}']
+      'INSERT INTO workstations (code, name, process_id, remark, type, lines_count, schema_config, bound_operator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [code.trim(), name.trim(), process_id || null, remark || null, type || null, lines_count || 1, schema_config ? JSON.stringify(schema_config) : '{}', bound_operator || null]
     );
     writeLog(req.db, req.user?.id, '创建工位', 'workstation', result.lastInsertRowid, `${code} - ${name}`);
     res.json({ success: true, data: { id: result.lastInsertRowid } });
@@ -59,10 +59,10 @@ router.post('/', requirePermission('production_create'), async (req, res) => {
 // 修改工位
 router.put('/:id', validateId, requirePermission('production_edit'), async (req, res) => {
   try {
-    const { code, name, process_id, status, remark, type, lines_count, schema_config } = req.body;
+    const { code, name, process_id, status, remark, type, lines_count, schema_config, bound_operator } = req.body;
     await req.db.run(
-      'UPDATE workstations SET code = ?, name = ?, process_id = ?, status = ?, remark = ?, type = ?, lines_count = ?, schema_config = ? WHERE id = ?',
-      [code, name, process_id || null, status ?? 1, remark || null, type || null, lines_count || 1, schema_config ? JSON.stringify(schema_config) : '{}', req.params.id]
+      'UPDATE workstations SET code = ?, name = ?, process_id = ?, status = ?, remark = ?, type = ?, lines_count = ?, schema_config = ?, bound_operator = ? WHERE id = ?',
+      [code, name, process_id || null, status ?? 1, remark || null, type || null, lines_count || 1, schema_config ? JSON.stringify(schema_config) : '{}', bound_operator || null, req.params.id]
     );
     res.json({ success: true });
   } catch (error) {

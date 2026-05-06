@@ -6,18 +6,26 @@ import { useConfirm } from '../components/ConfirmModal';
 const WorkstationQRPage = () => {
   const [stations, setStations] = useState([]);
   const [processes, setProcesses] = useState([]);
-  const [form, setForm] = useState({ code: '', name: '', process_id: '', remark: '' });
+  const [operators, setOperators] = useState([]);
+  const [form, setForm] = useState({ code: '', name: '', process_id: '', remark: '', bound_operator: '' });
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirm, ConfirmDialog] = useConfirm();
 
   const load = async () => {
-    const [s, p] = await Promise.all([
+    const [s, p, o] = await Promise.all([
       api.get('/workstation'),
-      api.get('/production/processes')
+      api.get('/production/processes'),
+      api.get('/operators')
     ]);
     if (s.success) setStations(s.data);
     if (p.success) setProcesses(p.data);
+    if (o.success) {
+      // 展平分组结构为平坦列表
+      const flat = [];
+      (o.data || []).forEach(g => g.members.forEach(m => flat.push(m.name)));
+      setOperators(flat);
+    }
     setLoading(false);
   };
 
@@ -41,7 +49,7 @@ const WorkstationQRPage = () => {
       : await api.post('/workstation', form);
     if (res.success) {
       window.__toast?.success(editing ? '修改成功' : '创建成功');
-      setForm({ code: '', name: '', process_id: '', remark: '' });
+      setForm({ code: '', name: '', process_id: '', remark: '', bound_operator: '' });
       setEditing(null);
       load();
     } else {
@@ -132,7 +140,7 @@ const WorkstationQRPage = () => {
         <h3 className="font-bold text-gray-700 mb-3 text-sm">
           <i className="fas fa-plus-circle mr-2 text-teal-600"></i>{editing ? '编辑工位' : '添加工位'}
         </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           <input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none" placeholder="工位编码 *（如 CNC-01）" />
           <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
@@ -144,12 +152,17 @@ const WorkstationQRPage = () => {
           </select>
           <input value={form.remark} onChange={e => setForm({ ...form, remark: e.target.value })}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none" placeholder="备注（选填）" />
+          <select value={form.bound_operator} onChange={e => setForm({ ...form, bound_operator: e.target.value })}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none">
+            <option value="">绑定操作员（选填）</option>
+            {operators.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
           <div className="flex gap-2">
             <button onClick={save} className="flex-1 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium">
               {editing ? '保存' : '添加'}
             </button>
             {editing && (
-              <button onClick={() => { setEditing(null); setForm({ code: '', name: '', process_id: '', remark: '' }); }}
+              <button onClick={() => { setEditing(null); setForm({ code: '', name: '', process_id: '', remark: '', bound_operator: '' }); }}
                 className="px-3 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300 text-sm">取消</button>
             )}
           </div>
@@ -171,7 +184,12 @@ const WorkstationQRPage = () => {
             <div key={s.id} className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow overflow-hidden">
               <div className="p-4 text-center">
                 <div className="font-bold text-gray-800 text-lg">{s.name}</div>
-                <div className="text-xs text-gray-500 mb-3">{s.code} · {s.process_name || '未关联工序'}</div>
+                <div className="text-xs text-gray-500 mb-1">{s.code} · {s.process_name || '未关联工序'}</div>
+                {s.bound_operator && (
+                  <div className="text-xs text-teal-600 font-medium mb-2">
+                    <i className="fas fa-user-check mr-1"></i>操作员: {s.bound_operator}
+                  </div>
+                )}
                 <div id={`qr-${s.id}`} className="inline-block bg-white p-2 rounded-lg border border-gray-200">
                   <QRCodeSVG value={getQRUrl(s.code)} size={140} level="H" />
                 </div>
@@ -182,7 +200,7 @@ const WorkstationQRPage = () => {
                   <button onClick={() => printSingle(s)} className="text-xs text-teal-600 hover:text-teal-800 px-2 py-1 rounded hover:bg-teal-50">
                     <i className="fas fa-print mr-1"></i>打印
                   </button>
-                  <button onClick={() => { setEditing(s.id); setForm({ code: s.code, name: s.name, process_id: s.process_id || '', remark: s.remark || '' }); }}
+                  <button onClick={() => { setEditing(s.id); setForm({ code: s.code, name: s.name, process_id: s.process_id || '', remark: s.remark || '', bound_operator: s.bound_operator || '' }); }}
                     className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50">
                     <i className="fas fa-edit mr-1"></i>编辑
                   </button>

@@ -31,8 +31,13 @@ const WorkstationScreen = () => {
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [splitForm, setSplitForm] = useState({ type: 'REWORK', target_process: '', reason: '' });
 
-  const isReadOnlyOperator = !isAdmin && !!user;
-  const autoOperatorName = user?.real_name || user?.username || '';
+  // 操作员锁定逻辑：登录用户非管理员“或”工位已绑定操作员，都锁定
+  const boundName = station?.bound_operator || '';
+  const loginName = user?.real_name || user?.username || '';
+  // 优先级：工位绑定 > 登录账号
+  const autoOperatorName = boundName || loginName;
+  // 只要能确定操作员且非管理员，就锁定
+  const isReadOnlyOperator = !!boundName || (!isAdmin && !!user);
 
   // 轻量 inline toast（暗色主题，替代 alert）
   const [toast, setToast] = useState(null);
@@ -203,6 +208,7 @@ const WorkstationScreen = () => {
             <div className="text-[10px] text-blue-400 flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
               {station?.process_name || '—'} · {tasks.length} 个在制任务 · {countdown}s 后刷新
+              {station?.bound_operator && <span className="ml-1 text-teal-400">· 操作员: {station.bound_operator}</span>}
             </div>
           </div>
         </div>
@@ -308,11 +314,11 @@ const WorkstationScreen = () => {
 
               {/* 操作按钮区 */}
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => { setModal({ type: 'report' }); setForm({ input_quantity: selectedTask.quantity - selectedTask.completed_quantity, output_quantity: '', operator: '', remark: '' }); }}
+                <button onClick={() => { setModal({ type: 'report' }); setForm({ input_quantity: selectedTask.quantity - selectedTask.completed_quantity, output_quantity: '', operator: autoOperatorName, remark: '' }); }}
                   className="bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl text-lg transition-colors shadow-lg shadow-green-900/30 flex items-center justify-center gap-3">
                   <i className="fas fa-clipboard-check text-2xl"></i>报工
                 </button>
-                <button onClick={() => { setModal({ type: 'inspect' }); setForm({ result: '', inspector: '', defect_quantity: 0, remark: '' }); }}
+                <button onClick={() => { setModal({ type: 'inspect' }); setForm({ result: '', inspector: autoOperatorName, defect_quantity: 0, remark: '' }); }}
                   className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl text-lg transition-colors shadow-lg shadow-blue-900/30 flex items-center justify-center gap-3">
                   <i className="fas fa-search text-2xl"></i>巡检
                 </button>
