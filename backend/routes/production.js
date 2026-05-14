@@ -273,73 +273,13 @@ router.get('/:id/materials', validateId, requirePermission('production_view'), a
 // ==================== 智能防呆自动切片派发 (Bulk Dispatch) ====================
 router.post('/bulk', requirePermission('production_create'), async (req, res) => {
   try {
-    const { order_id, product_id, total_quantity, batch_capacity, operator, remark, start_time, end_time } = req.body;
-    
-    // 参数严防校验
-    if (!total_quantity || !batch_capacity || batch_capacity <= 0 || total_quantity <= 0) {
-      return res.status(400).json({ success: false, message: '无效的拆包或总数参数。' });
-    }
-
-    // 【防呆】检验销售订单剩余可派发产出量（防超发）
-    if (order_id) {
-      const orderItem = await req.db.get('SELECT quantity FROM order_items WHERE order_id = ? AND product_id = ?', [order_id, product_id]);
-      if (orderItem) {
-        const relatedOrders = await req.db.all("SELECT status, quantity, completed_quantity FROM production_orders WHERE order_id = ? AND product_id = ? AND status != 'cancelled'", [order_id, product_id]);
-        let consumed = 0;
-        for (const po of relatedOrders) {
-          if (po.status === 'completed') consumed += (po.completed_quantity || 0);
-          else consumed += (po.quantity || 0);
-        }
-        const remaining = orderItem.quantity - consumed;
-        if (total_quantity > remaining) {
-          return res.status(400).json({ success: false, message: `总拆包数已超发！订单剩需 ${Math.max(0, remaining)} 件，但您试图自动切割下发 ${total_quantity} 件。` });
-        }
-      }
-    }
-
-    // 智能数理切割: eg. 100 拆 30 -> [30, 30, 30, 10]
-    const chunks = [];
-    let rem = total_quantity;
-    while (rem > 0) {
-      chunks.push(Math.min(batch_capacity, rem));
-      rem -= batch_capacity;
-    }
-
-    const baseOrderNo = generateOrderNo('PO');
-    let generatedCount = 0;
-    
-    // 开启高并发大事务：一旦中途有一单挂了，全盘回档！
-    await req.db.transaction(async () => {
-      // 单独拉取此产品的预设工序路线流水线，避免放进 loop 查几千遍
-      const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [product_id]);
-      
-      for (let i = 0; i < chunks.length; i++) {
-        const qty = chunks[i];
-        // 挂载直系血统序号 (PO2025XXXX-1, PO2025XXXX-2...)
-        const subOrderNo = `${baseOrderNo}-${i + 1}`;
-        
-        const result = await req.db.run(`INSERT INTO production_orders (order_no, order_id, product_id, quantity, operator, remark, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [subOrderNo, order_id || null, product_id, qty, operator || null, `【智能切包 批次${i+1}/${chunks.length}】${remark || ''}`, start_time || null, end_time || null]);
-        
-        const productionId = result.lastInsertRowid;
-        
-        if (productProcesses.length > 0) {
-          for (const pp of productProcesses) { 
-             await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [productionId, pp.process_id]); 
-          }
-          await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, productionId]);
-        }
-        
-        await ProductionService.generatePlannedConsumption(req.db, productionId, product_id, qty);
-        
-        writeLog(req.db, req.user?.id, '智能拆包下发', 'production', productionId, `批次化自动子派工单: ${subOrderNo} 量:${qty}`);
-        generatedCount++;
-      }
-    });
-
-    res.json({ success: true, message: `兵贵神速！已凭借智能算法将总量 ${total_quantity} 一把划分为 ${generatedCount} 个单独流水单流转！` });
+    const responseData = await ProductionService.bulkDispatch(req.db, req.user, req.body);
+    res.json(responseData);
   } catch (error) {
     console.error(`[production.js /bulk]`, error.message);
+    if (error instanceof BusinessError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: '拆单算数及锁冲突，发生回滚' });
   }
 });
@@ -379,7 +319,9 @@ router.post('/', requirePermission('production_create'), validate(createProducti
       productionId = result.lastInsertRowid;
       const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [product_id]);
       if (productProcesses.length > 0) {
-        for (const pp of productProcesses) { await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [productionId, pp.process_id]); }
+        const placeholders = productProcesses.map(() => '(?, ?, ?)').join(', ');
+        const params = productProcesses.flatMap(pp => [productionId, pp.process_id, 'pending']);
+        await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES ${placeholders}`, params);
         await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, productionId]);
       }
       await ProductionService.generatePlannedConsumption(req.db, productionId, product_id, quantity);
@@ -426,9 +368,9 @@ router.post('/:id/sync-processes', validateId, requirePermission('production_edi
       
       const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [order.product_id]);
       if (productProcesses.length > 0) {
-        for (const pp of productProcesses) { 
-          await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [req.params.id, pp.process_id]); 
-        }
+        const placeholders = productProcesses.map(() => '(?, ?, ?)').join(', ');
+        const params = productProcesses.flatMap(pp => [req.params.id, pp.process_id, 'pending']);
+        await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES ${placeholders}`, params);
         await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, req.params.id]);
       } else {
         await req.db.run('UPDATE production_orders SET current_process = NULL WHERE id = ?', [req.params.id]);
@@ -479,7 +421,9 @@ router.put('/:id', validateId, requirePermission('production_edit'), validate(up
         await req.db.run('DELETE FROM production_process_records WHERE production_order_id = ?', [req.params.id]);
         const productProcesses = await req.db.all(`SELECT pp.*, p.code as process_code FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [product_id]);
         if (productProcesses.length > 0) {
-          for (const pp of productProcesses) { await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES (?, ?, 'pending')`, [req.params.id, pp.process_id]); }
+          const placeholders = productProcesses.map(() => '(?, ?, ?)').join(', ');
+          const params = productProcesses.flatMap(pp => [req.params.id, pp.process_id, 'pending']);
+          await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status) VALUES ${placeholders}`, params);
           await req.db.run('UPDATE production_orders SET current_process = ? WHERE id = ?', [productProcesses[0].process_code, req.params.id]);
         }
       }
@@ -525,47 +469,14 @@ router.delete('/:id', validateId, requirePermission('production_delete'), async 
 // ==================== 返工流程 ====================
 router.post('/:id/rework', validateId, requirePermission('production_edit'), validate(reworkSchema), async (req, res) => {
   try {
-    const { target_process_id, quantity, reason, operator } = req.body;
-
-    const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
-    if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
-
-    // 允许从 quality_hold（质检暂停）或 completed（客户退回返工）发起
-    if (!['quality_hold', 'completed'].includes(production.status)) {
-      return res.status(400).json({ success: false, message: '只有质检暂停或已完成（客户退回）的工单才能发起返工' });
-    }
-
-    // 校验目标工序属于该产品的工序配置
-    const productProcesses = await req.db.all(
-      `SELECT pp.*, p.code as process_code, p.name as process_name
-       FROM product_processes pp JOIN processes p ON pp.process_id = p.id
-       WHERE pp.product_id = ? ORDER BY pp.sequence`, [production.product_id]);
-    const targetIndex = productProcesses.findIndex(pp => pp.process_id == target_process_id);
-    if (targetIndex === -1) return res.status(400).json({ success: false, message: '目标工序不属于该产品的工序配置' });
-
-    const targetProcess = productProcesses[targetIndex];
-    const reworkQty = quantity || production.quantity;
-
-    await req.db.transaction(async () => {
-      // 1. 回退工单：current_process 设为目标工序，状态恢复 processing
-      await req.db.run(
-        'UPDATE production_orders SET current_process = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [targetProcess.process_code, 'processing', req.params.id]);
-
-      // 2. 为目标工序及其之后的工序插入新的 pending 记录（标记为返工重做）
-      for (let i = targetIndex; i < productProcesses.length; i++) {
-        await req.db.run(
-          `INSERT INTO production_process_records (production_order_id, process_id, status, remark) VALUES (?, ?, 'pending', ?)`,
-          [req.params.id, productProcesses[i].process_id, i === targetIndex ? `返工(${reason})` : '返工待重做']);
-      }
-    });
-
-    writeLog(req.db, req.user?.id, '发起返工', 'production', req.params.id,
-      `回退到工序「${targetProcess.process_name}」，数量 ${reworkQty}，原因：${reason}`);
-
-    res.json({ success: true, message: `已回退到工序「${targetProcess.process_name}」，请安排车间重新报工` });
+    const responseData = await ProductionService.reworkOrder(req.db, req.user, req.params.id, req.body);
+    writeLog(req.db, req.user?.id, '发起返工', 'production', req.params.id, `回退返工，原因：${req.body.reason}`);
+    res.json(responseData);
   } catch (error) {
     console.error('[production.js/rework]', error.message);
+    if (error instanceof BusinessError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
@@ -573,85 +484,14 @@ router.post('/:id/rework', validateId, requirePermission('production_edit'), val
 // ==================== 异常分流引擎 (Split & Scrap) ====================
 router.post('/:id/split', validateId, requirePermission('production_edit'), async (req, res) => {
   try {
-    const { split_quantity, split_type, target_process_code, reason, process_sequence } = req.body;
-    if (!split_quantity || split_quantity <= 0) return res.status(400).json({ success: false, message: '剥离数量必须大于0' });
-    if (!['REWORK', 'SCRAP'].includes(split_type)) return res.status(400).json({ success: false, message: '无效的分流类型' });
-
-    const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [req.params.id]);
-    if (!production) return res.status(404).json({ success: false, message: '母工单不存在' });
-
-    // 严苛防超发校验
-    const remaining = (production.quantity || 0) - (production.completed_quantity || 0);
-    if (split_quantity > remaining) {
-      return res.status(400).json({ success: false, message: `母工单剩余未完成数量(${remaining})不足以支撑拆分(${split_quantity})` });
-    }
-
-    // 智能后缀生成逻辑：-R1 (返工), -S1 (报废)
-    const suffix = split_type === 'REWORK' ? `-R${process_sequence || 1}` : `-S${process_sequence || 1}`;
-    const newOrderNo = `${production.order_no}${suffix}`;
-    const newBatchNo = production.batch_no ? `${production.batch_no}${suffix}` : null;
-    
-    let newProductionId;
-    await req.db.transaction(async () => {
-      // 1. 扣减母单 (父批次变小)
-      await req.db.run('UPDATE production_orders SET quantity = quantity - ? WHERE id = ?', [split_quantity, req.params.id]);
-
-      // 2. 衍生子单
-      const status = split_type === 'SCRAP' ? 'scrapped' : 'pending';
-      const current_process = split_type === 'SCRAP' ? null : target_process_code;
-      
-      const insertResult = await req.db.run(`
-        INSERT INTO production_orders 
-        (order_no, order_id, product_id, batch_no, quantity, current_process, status, remark, parent_id, split_reason, original_quantity)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [newOrderNo, production.order_id, production.product_id, newBatchNo, split_quantity, current_process, status, 
-          `由主单[${production.order_no}]剥离。原因: ${reason || '无'}`, req.params.id, reason, split_quantity]);
-      
-      newProductionId = insertResult.lastInsertRowid;
-
-      // 3. 报废分支：底层自动拦截，生成入库单打入废品仓
-      if (split_type === 'SCRAP') {
-        const scrapWh = await req.db.get("SELECT id FROM warehouses WHERE code = 'WH-SCRAP'");
-        if (scrapWh) {
-          const inboundNo = 'IN' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 1000); // 防冲突轻量级编号
-          const ibRes = await req.db.run(`
-            INSERT INTO inbound_orders (order_no, type, warehouse_id, operator, status, remark, production_order_id)
-            VALUES (?, 'scrap', ?, ?, 'completed', '批次分裂：自动废品入库', ?)
-          `, [inboundNo, scrapWh.id, req.user?.username || 'SplitEngine', newProductionId]);
-          
-          await req.db.run(`
-            INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, remark)
-            VALUES (?, ?, ?, ?, ?)
-          `, [ibRes.lastInsertRowid, production.product_id, newBatchNo || 'DEFAULT', split_quantity, '拆批报废损耗入库']);
-        }
-      }
-
-      // 4. 返工分支：重构工艺路线记录
-      if (split_type === 'REWORK') {
-        const productProcesses = await req.db.all(`
-          SELECT pp.*, p.code as process_code, p.name as process_name
-          FROM product_processes pp JOIN processes p ON pp.process_id = p.id
-          WHERE pp.product_id = ? ORDER BY pp.sequence
-        `, [production.product_id]);
-        
-        const targetIndex = productProcesses.findIndex(pp => pp.process_code === target_process_code);
-        if (targetIndex !== -1) {
-          for (let i = targetIndex; i < productProcesses.length; i++) {
-            await req.db.run(
-              `INSERT INTO production_process_records (production_order_id, process_id, status, remark) VALUES (?, ?, 'pending', ?)`,
-              [newProductionId, productProcesses[i].process_id, i === targetIndex ? `自动跳站返工(${reason})` : '随动待加工']);
-          }
-        }
-      }
-
-      await ProductionService.generatePlannedConsumption(req.db, newProductionId, production.product_id, split_quantity);
-    });
-
-    writeLog(req.db, req.user?.id, '批次异常分流', 'production', req.params.id, `裂变数量: ${split_quantity}, 裂变模式: ${split_type}, 衍生子单号: ${newOrderNo}`);
-    
-    res.json({ success: true, message: `成功拆分并生成子工单 ${newOrderNo}`, data: { newOrderNo } });
+    const responseData = await ProductionService.splitAndScrap(req.db, req.user, req.params.id, req.body);
+    writeLog(req.db, req.user?.id, '批次异常分流', 'production', req.params.id, `裂变数量: ${req.body.split_quantity}, 衍生子单号: ${responseData.data?.newOrderNo}`);
+    res.json(responseData);
   } catch (error) {
     console.error('[production.js/split]', error.message);
+    if (error instanceof BusinessError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: '拆批引擎发生内部断言错误' });
   }
 });

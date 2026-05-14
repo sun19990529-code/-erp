@@ -13,12 +13,18 @@ const app = express();
 const PORT = process.env.PORT || 3198;
 
 // ==================== PostgreSQL 连接池 ====================
+const poolConfig = process.env.DATABASE_URL 
+  ? { connectionString: process.env.DATABASE_URL }
+  : {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 54321,
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD ? String(process.env.DB_PASSWORD) : '',
+      database: process.env.DB_NAME || 'msgy-erp',
+    };
+
 const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 54321,
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'msgy-erp',
+  ...poolConfig,
   max: parseInt(process.env.DB_POOL_MAX) || 10,  // 最大连接数
   min: 2,                         // 最小保持连接数
   idleTimeoutMillis: 30000,       // 空闲连接超时
@@ -94,6 +100,33 @@ function convertPlaceholders(sql) {
       continue;
     }
 
+    // 跳过单行注释
+    if (char === '-' && i + 1 < len && sql[i + 1] === '-') {
+      result += '--';
+      i += 2;
+      while (i < len && sql[i] !== '\n') {
+        result += sql[i];
+        i++;
+      }
+      continue;
+    }
+
+    // 跳过多行注释
+    if (char === '/' && i + 1 < len && sql[i + 1] === '*') {
+      result += '/*';
+      i += 2;
+      while (i < len) {
+        if (sql[i] === '*' && i + 1 < len && sql[i + 1] === '/') {
+          result += '*/';
+          i += 2;
+          break;
+        }
+        result += sql[i];
+        i++;
+      }
+      continue;
+    }
+
     // 核心：替换 ? 占位符
     if (char === '?') {
       result += `$${++idx}`;
@@ -139,8 +172,15 @@ const dbHelper = {
   async paginate(sql, params = [], page = 1, pageSize = 20) {
     const pgSql = convertPlaceholders(sql);
     const executor = txStorage.getStore() || pool;
-    // COUNT 子查询
-    const countSql = `SELECT COUNT(*) as total FROM (${pgSql}) as _t`;
+    // COUNT 子查询优化：剥离顶层的 ORDER BY 避免全表排序耗时
+    let countBaseSql = pgSql;
+    const lastOrderBy = countBaseSql.toUpperCase().lastIndexOf(' ORDER BY ');
+    const lastParen = countBaseSql.lastIndexOf(')');
+    // 如果 ORDER BY 在最后（不在子查询的括号内），则安全剔除
+    if (lastOrderBy !== -1 && lastOrderBy > lastParen) {
+      countBaseSql = countBaseSql.substring(0, lastOrderBy);
+    }
+    const countSql = `SELECT COUNT(*) as total FROM (${countBaseSql}) as _t`;
     const countResult = await executor.query(countSql, params);
     const total = parseInt(countResult.rows[0]?.total || 0);
     const totalPages = Math.ceil(total / pageSize);

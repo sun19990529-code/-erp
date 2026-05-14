@@ -467,6 +467,48 @@ router.put('/outbound/:id/status', validateId, requirePermission('warehouse_edit
             }
           }
         }
+      } else if (status === 'cancelled') {
+        if (order.status === 'completed') {
+           // 这是【撤销/冲销】操作
+           const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+           // 1. 库存物理回滚 (加回实际库存)
+           for (const item of items) {
+             const batch = item.batch_no || 'DEFAULT_BATCH';
+             await req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, order.warehouse_id, item.product_id, batch]);
+           }
+           // 2. 联动回滚：撤回销售发货进度
+           if (order.type === 'finished' && order.order_id) {
+             const salesOrder = await req.db.get('SELECT * FROM orders WHERE id = ?', [order.order_id]);
+             if (salesOrder) {
+               for (const item of items) {
+                 await req.db.run('UPDATE order_items SET shipped_quantity = MAX(0, COALESCE(shipped_quantity, 0) - ?) WHERE order_id = ? AND product_id = ?', [item.quantity, order.order_id, item.product_id]);
+               }
+               const allItems = await req.db.all('SELECT quantity, COALESCE(shipped_quantity, 0) as shipped_quantity FROM order_items WHERE order_id = ?', [order.order_id]);
+               let allShipped = true;
+               let hasShipped = false;
+               for (const oi of allItems) {
+                 if (oi.shipped_quantity > 0) hasShipped = true;
+                 if (oi.shipped_quantity < oi.quantity) allShipped = false;
+               }
+               let newStatus = 'approved'; 
+               if (allShipped) newStatus = 'shipped';
+               else if (hasShipped) newStatus = 'partial_shipped';
+               await req.db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newStatus, order.order_id]);
+               
+               // 作废相关应收账款
+               await req.db.run("UPDATE accounts_receivable SET status = 'cancelled', remark = remark || ' (出库单被冲销自动作废)' WHERE source_type = 'order' AND source_id = ? AND status != 'paid' AND created_at >= ?", [order.order_id, order.updated_at]);
+             }
+           }
+           await req.db.run("UPDATE outbound_orders SET status = ?, remark = COALESCE(remark, '') || ' [系统红字冲销]', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [status, req.params.id]);
+        } else {
+           // 正常撤销未完成的单据：仅释放锁定库存
+           const items = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
+           for (const item of items) {
+             const batch = item.batch_no || 'DEFAULT_BATCH';
+             await req.db.run('UPDATE inventory SET locked_quantity = MAX(0, COALESCE(locked_quantity, 0) - ?), updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, order.warehouse_id, item.product_id, batch]);
+           }
+           await req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
+        }
       } else {
         // 如果是其他状态变动，不涉及库存核销，普通更新即可
         await req.db.run('UPDATE outbound_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);

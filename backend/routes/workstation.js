@@ -127,6 +127,7 @@ router.get('/screen/:code', async (req, res) => {
 router.get('/screen/:code/:poId', async (req, res) => {
   try {
     const poId = parseInt(req.params.poId);
+    if (isNaN(poId)) return res.status(400).json({ success: false, message: '无效的工单ID' });
     const order = await req.db.get(`
       SELECT po.*, p.code as product_code, p.name as product_name, p.specification, p.unit,
              p.outer_diameter, p.inner_diameter, p.wall_thickness, p.length,
@@ -185,8 +186,10 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
     if (!station?.pid) return res.status(400).json({ success: false, message: '工位未绑定工序' });
 
     const poId = parseInt(req.params.poId);
+    if (isNaN(poId)) return res.status(400).json({ success: false, message: '非法的工单ID' });
+
     const production = await req.db.get(`
-      SELECT po.*, p.outer_diameter as out_od, p.wall_thickness as out_wt, p.density 
+      SELECT po.*, p.outer_diameter as out_od, p.wall_thickness as out_wt, p.density, p.category 
       FROM production_orders po 
       JOIN products p ON po.product_id = p.id 
       WHERE po.id = ?
@@ -196,14 +199,23 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
     if (['completed', 'cancelled'].includes(production.status)) return res.status(400).json({ success: false, message: `该工单状态为「${production.status}」，无法报工` });
 
     // 【硬核物理防呆】：针对管材金属压延拉伸体积守恒引擎核算
-    // 当该机器的类型为轧制类，或者是前端表单明确指定需要 Rolling 防呆的
     const schemaParams = parameter_data || {};
     if (station.type === 'TWO_ROLL' || station.type === 'FOUR_ROLL' || station.process_code === 'ROLLING') {
       const inputWeight = parseFloat(schemaParams.input_weight);
       if (inputWeight > 0 && production.out_od && production.out_wt) {
         const out_od = parseFloat(production.out_od);
         const out_wt = parseFloat(production.out_wt);
-        const density = parseFloat(production.density) || 0.02491;
+        
+        // 方案 B：从系统配置中按材质分类获取密度，而不是写死 0.02491
+        let density = parseFloat(production.density);
+        if (!density) {
+          const densityConfigRow = await req.db.get("SELECT value FROM system_settings WHERE key = 'material_densities'");
+          let densityDict = {};
+          if (densityConfigRow) {
+            try { densityDict = JSON.parse(densityConfigRow.value); } catch(e){}
+          }
+          density = parseFloat(densityDict[production.category]) || parseFloat(densityDict['default']) || 0.02491;
+        }
         
         if (out_od > out_wt && out_wt > 0) {
           // 核心体积守恒算式：产出米数 = 材料总重量(kg) / [ (外径-壁厚) * 壁厚 * 密度常数 ]
@@ -211,7 +223,11 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
           const toleranceLength = theoretical_max_length * 1.05; // 允许 +5% 的理论公差
 
           if (parseFloat(output_quantity) > toleranceLength) {
-            throw new BusinessError(`报工总米数(${output_quantity}米)违背客观材质体积换算定律超发！理论产出顶天也只能长达 ${theoretical_max_length.toFixed(2)} 米。严禁过账！`);
+            // 将强拦截降级为异步系统警告，允许报工入库但在备注中打上红字烙印
+            const warnMsg = `[物理核算告警] 产出(${output_quantity}米)超理论体积上限(${theoretical_max_length.toFixed(2)}米)5%以上。密度:${density}`;
+            schemaParams._system_warning = warnMsg;
+            // 异步发送通知 (无需 await，不阻塞流程)
+            sendNotification(req.db, null, 'warning', '车间报工体积异常', warnMsg, 'production', poId).catch(e => console.error(e));
           }
         }
       }
@@ -229,7 +245,8 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
           [poId]
         );
         if (!completedPick) {
-          throw new BusinessError('请先为该工单创建并完成领料单，再进行首道工序报工');
+          const warnMsg = '发生无单耗料报工：该工单尚未完成系统领料，但车间已产生首道工序报工';
+          sendNotification(req.db, null, 'warning', '车间无单耗料预警', warnMsg, 'production', poId).catch(e => console.error(e));
         }
       }
 
@@ -259,12 +276,21 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
 
         // 3. 报废自动入废品仓
         if (split_type === 'SCRAP') {
-          const scrapWh = await req.db.get("SELECT id FROM warehouses WHERE code = 'WH-SCRAP'");
+          // 方案 B：优先读取系统全局设置的废品仓配置，如果找不到则降级回写死的 CODE 以兼容老数据
+          const scrapWhConfig = await req.db.get("SELECT value FROM system_settings WHERE key = 'scrap_warehouse_id'");
+          let scrapWh = null;
+          if (scrapWhConfig && scrapWhConfig.value) {
+            scrapWh = await req.db.get("SELECT id FROM warehouses WHERE id = ?", [scrapWhConfig.value]);
+          }
+          if (!scrapWh) {
+            scrapWh = await req.db.get("SELECT id FROM warehouses WHERE code = 'WH-SCRAP'");
+          }
+          
           if (scrapWh) {
             const inboundNo = 'IN' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 1000);
             const ibRes = await req.db.run(`
               INSERT INTO inbound_orders (order_no, type, warehouse_id, operator, status, remark, production_order_id)
-              VALUES (?, 'scrap', ?, ?, 'completed', '自动差值废品入库', ?)
+              VALUES (?, 'scrap', ?, ?, 'pending_inspection', '车间差值废品(待仓管实物过磅入库)', ?)
             `, [inboundNo, scrapWh.id, operator, newProductionId]);
             await req.db.run(`
               INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, remark)
@@ -278,10 +304,15 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
            const allProcs = await req.db.all(`SELECT pp.*, p.code as pcode FROM product_processes pp JOIN processes p ON pp.process_id = p.id WHERE pp.product_id = ? ORDER BY pp.sequence`, [production.product_id]);
            const tIdx = allProcs.findIndex(p => p.pcode === target_process_code);
            if (tIdx !== -1) {
-             for (let i = tIdx; i < allProcs.length; i++) {
-               await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status, remark) VALUES (?, ?, 'pending', ?)`,
-                [newProductionId, allProcs[i].process_id, i === tIdx ? `返工(${split_reason})` : '待加']);
-             }
+              const procsToInsert = allProcs.slice(tIdx);
+              if (procsToInsert.length > 0) {
+                const placeholders = procsToInsert.map(() => '(?, ?, ?, ?)').join(', ');
+                const params = procsToInsert.flatMap((proc, i) => [
+                  newProductionId, proc.process_id, 'pending',
+                  i === 0 ? `返工(${split_reason})` : '待加'
+                ]);
+                await req.db.run(`INSERT INTO production_process_records (production_order_id, process_id, status, remark) VALUES ${placeholders}`, params);
+              }
            }
         }
         // 差值被分流走了，本单不需要记不良数
@@ -325,6 +356,7 @@ router.post('/screen/:code/:poId/inspect', async (req, res) => {
     if (!station?.pid) return res.status(400).json({ success: false, message: '工位未绑定工序' });
 
     const poId = parseInt(req.params.poId);
+    if (isNaN(poId)) return res.status(400).json({ success: false, message: '无效的工单ID' });
     const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [poId]);
     if (!production) return res.status(404).json({ success: false, message: '工单不存在' });
 
