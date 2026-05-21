@@ -12,7 +12,7 @@ describe('convertToKg', () => {
   });
 
   it('支转换应使用产品尺寸公式计算', () => {
-    const productInfo = { outer_diameter: '89', wall_thickness: '4', length: '6' };
+    const productInfo = { outer_diameter: '89', wall_thickness: '4', length: '6000' };
     const result = convertToKg(10, '支', productInfo);
     // 公式：((89-4)*4)*0.02491*6 = 85*4*0.02491*6 = 50.8764
     // 10支 = 508.764
@@ -43,14 +43,14 @@ describe('convertFromKg', () => {
   });
 
   it('公斤转支应使用产品尺寸公式逆计算', () => {
-    const productInfo = { outer_diameter: '89', wall_thickness: '4', length: '6' };
+    const productInfo = { outer_diameter: '89', wall_thickness: '4', length: '6000' };
     const kgPerPiece = ((89 - 4) * 4) * 0.02491 * 6;
     const result = convertFromKg(kgPerPiece * 5, '支', productInfo);
     expect(result).toBeCloseTo(5, 4);
   });
 
   it('convertToKg 和 convertFromKg 应互为逆运算', () => {
-    const productInfo = { outer_diameter: '114', wall_thickness: '5', length: '12' };
+    const productInfo = { outer_diameter: '114', wall_thickness: '5', length: '12000' };
     const originalQty = 20;
     const kg = convertToKg(originalQty, '支', productInfo);
     const backToQty = convertFromKg(kg, '支', productInfo);

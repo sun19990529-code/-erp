@@ -312,4 +312,75 @@ router.get('/check-overdue', requirePermission('production_view'), async (req, r
   }
 });
 
+/**
+ * 理磅比分析
+ * GET /report/weight-ratio?start=2026-03-01&end=2026-03-31
+ */
+router.get('/weight-ratio', requirePermission('warehouse_view'), async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const startDate = start || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const endDate = end || new Date().toISOString().slice(0, 10);
+
+    const rows = await req.db.all(`
+      SELECT 
+        'inbound' AS type,
+        io.order_no,
+        io.created_at,
+        p.code AS product_code,
+        p.name AS product_name,
+        p.specification AS product_spec,
+        p.unit AS product_unit,
+        ii.quantity,
+        ii.theoretical_weight,
+        ii.actual_weight
+      FROM inbound_items ii
+      JOIN inbound_orders io ON ii.inbound_id = io.id
+      JOIN products p ON ii.product_id = p.id
+      WHERE DATE(io.created_at) BETWEEN ? AND ?
+        AND ii.theoretical_weight IS NOT NULL 
+        AND ii.actual_weight IS NOT NULL
+      
+      UNION ALL
+      
+      SELECT 
+        'outbound' AS type,
+        oo.order_no,
+        oo.created_at,
+        p.code AS product_code,
+        p.name AS product_name,
+        p.specification AS product_spec,
+        p.unit AS product_unit,
+        oi.quantity,
+        oi.theoretical_weight,
+        oi.actual_weight
+      FROM outbound_items oi
+      JOIN outbound_orders oo ON oi.outbound_id = oo.id
+      JOIN products p ON oi.product_id = p.id
+      WHERE DATE(oo.created_at) BETWEEN ? AND ?
+        AND oi.theoretical_weight IS NOT NULL 
+        AND oi.actual_weight IS NOT NULL
+        
+      ORDER BY created_at DESC
+    `, [startDate, endDate, startDate, endDate]);
+
+    const enriched = rows.map(r => {
+      const theoretical = r.theoretical_weight || 0;
+      const actual = r.actual_weight || 0;
+      const ratio = theoretical > 0 ? parseFloat((actual / theoretical).toFixed(4)) : 1;
+      const deviation = theoretical > 0 ? parseFloat((Math.abs(actual - theoretical) / theoretical * 100).toFixed(2)) : 0;
+      return {
+        ...r,
+        ratio,
+        deviation
+      };
+    });
+
+    res.json({ success: true, data: enriched });
+  } catch (error) {
+    console.error('[report/weight-ratio]', error.message);
+    res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
 module.exports = router;

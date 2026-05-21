@@ -335,38 +335,48 @@ const OutsourcingManager = () => {
               <div><strong>关联工单：</strong>{modal.item?.production_order_no || '合批（详见明细）'}</div>
             </div>
             <div className="hidden md:block">
-              <table className="w-full border">
-                <thead className="bg-gray-50"><tr>
-                  <th className="px-3 py-2 text-left text-xs">产品编码</th>
-                  <th className="px-3 py-2 text-left text-xs">产品名称</th>
-                  <th className="px-3 py-2 text-left text-xs">来源工单</th>
-                  <th className="px-3 py-2 text-left text-xs">工序</th>
-                  <th className="px-3 py-2 text-right text-xs">委外数量</th>
-                  <th className="px-3 py-2 text-right text-xs">已收货</th>
-                  <th className="px-3 py-2 text-right text-xs">单价(¥)</th>
-                  <th className="px-3 py-2 text-right text-xs">金额(¥)</th>
+              <table className="w-full border text-xs sm:text-sm">
+                <thead className="bg-gray-50 border-b"><tr>
+                  <th className="px-3 py-2 text-left">产品编码</th>
+                  <th className="px-3 py-2 text-left">产品名称</th>
+                  <th className="px-3 py-2 text-left">来源工单</th>
+                  <th className="px-3 py-2 text-left">工序</th>
+                  <th className="px-3 py-2 text-right">委外数量</th>
+                  <th className="px-3 py-2 text-right">已收货</th>
+                  <th className="px-3 py-2 text-center bg-gray-50/50">计价单位</th>
+                  <th className="px-3 py-2 text-right bg-gray-50/50">计价数量</th>
+                  <th className="px-3 py-2 text-right">单价(¥)</th>
+                  <th className="px-3 py-2 text-right">加工费(¥)</th>
                 </tr></thead>
                 <tbody>
-                  {(modal.item?.items || []).map((it, i) => (
-                    <tr key={i} className="border-t">
-                      <td className="px-3 py-2 text-sm">{it.code}</td>
-                      <td className="px-3 py-2 text-sm">{it.name}{it.specification ? ` (${it.specification})` : ''}</td>
-                      <td className="px-3 py-2 text-sm">
-                        {it.production_order_no ? <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{it.production_order_no}</span> : <span className="text-gray-400">-</span>}
-                      </td>
-                      <td className="px-3 py-2 text-sm">
-                        {it.process_name ? <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded">{it.process_name}</span> : <span className="text-gray-400">-</span>}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-right">{formatQuantity(it.quantity)}</td>
-                      <td className="px-3 py-2 text-sm text-right">
-                        <span className={`font-medium ${(it.received_quantity || 0) >= it.quantity ? 'text-green-600' : (it.received_quantity || 0) > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
-                          {it.received_quantity || 0}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-sm text-right">¥{formatAmount(it.unit_price || 0)}</td>
-                      <td className="px-3 py-2 text-sm text-right font-medium">¥{formatAmount((it.unit_price || 0) * (it.quantity || 0))}</td>
-                    </tr>
-                  ))}
+                  {(modal.item?.items || []).map((it, i) => {
+                    const priceUnit = it.pricing_unit || '元/公斤';
+                    const pricingQty = it.pricing_quantity !== null && it.pricing_quantity !== undefined ? it.pricing_quantity : it.quantity;
+                    const amount = (pricingQty || 0) * (it.unit_price || 0);
+
+                    return (
+                      <tr key={i} className="border-t hover:bg-gray-50/50">
+                        <td className="px-3 py-2">{it.code}</td>
+                        <td className="px-3 py-2 font-medium">{it.name}{it.specification ? ` (${it.specification})` : ''}</td>
+                        <td className="px-3 py-2">
+                          {it.production_order_no ? <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{it.production_order_no}</span> : <span className="text-gray-400">-</span>}
+                        </td>
+                        <td className="px-3 py-2">
+                          {it.process_name ? <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded">{it.process_name}</span> : <span className="text-gray-400">-</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right">{formatQuantity(it.quantity)} {it.unit || '公斤'}</td>
+                        <td className="px-3 py-2 text-right font-medium">
+                          <span className={`font-medium ${(it.received_quantity || 0) >= it.quantity ? 'text-green-600' : (it.received_quantity || 0) > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            {it.received_quantity || 0}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-center font-medium bg-gray-50/50">{priceUnit}</td>
+                        <td className="px-3 py-2 text-right font-medium bg-gray-50/50">{formatQuantity(pricingQty, 2)}</td>
+                        <td className="px-3 py-2 text-right">¥{formatAmount(it.unit_price || 0)}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-teal-700">¥{formatAmount(amount)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -135,7 +135,7 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
     for (const id of productIds) {
-      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length, density FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
     }
     
@@ -143,8 +143,10 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
     items.forEach(item => {
       const product = productMap.get(item.product_id);
       const inputUnit = product?.unit || '公斤';
-      const quantityKg = convertToKg(item.input_quantity || item.quantity, inputUnit, product);
-      totalAmount += quantityKg * (item.unit_price || 0);
+      const theoreticalWeight = convertToKg(item.input_quantity || item.quantity, inputUnit, product);
+      let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+      if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
+      totalAmount += actualWeight * (item.unit_price || 0);
     });
     
     let inboundId;
@@ -160,10 +162,13 @@ router.post('/inbound', requirePermission('warehouse_create'), validate(inboundC
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
-        const quantityKg = convertToKg(inputQuantity, inputUnit, product);
+        const theoreticalWeight = convertToKg(inputQuantity, inputUnit, product);
+        let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+        if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
+        
         const batchNo = `${orderNo}-${index + 1}`;
-        await req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [inboundId, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null]);
+        await req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no, theoretical_weight, actual_weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [inboundId, item.product_id, batchNo, actualWeight, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null, theoreticalWeight, actualWeight]);
       }
     });
     res.json({ success: true, data: { id: inboundId, order_no: orderNo } });
@@ -232,25 +237,37 @@ router.put('/inbound/:id', validateId, requirePermission('warehouse_edit'), asyn
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
     for (const id of productIds) {
-      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length, density FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
     }
     
     await req.db.transaction(async () => {
       const baseOrderNo = existingOrder.order_no || `MOD-${req.params.id}`;
       
-      await req.db.run('UPDATE inbound_orders SET warehouse_id = ?, supplier_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [warehouse_id, supplier_id || null, operator, remark, req.params.id]);
+      let totalAmount = 0;
+      items.forEach(item => {
+        const product = productMap.get(item.product_id);
+        const inputUnit = product?.unit || '公斤';
+        const theoreticalWeight = convertToKg(item.input_quantity || item.quantity, inputUnit, product);
+        let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+        if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
+        totalAmount += actualWeight * (item.unit_price || 0);
+      });
+
+      await req.db.run('UPDATE inbound_orders SET warehouse_id = ?, supplier_id = ?, total_amount = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [warehouse_id, supplier_id || null, totalAmount, operator, remark, req.params.id]);
       await req.db.run('DELETE FROM inbound_items WHERE inbound_id = ?', [req.params.id]);
       for (let index = 0; index < items.length; index++) {
         const item = items[index];
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
-        const quantityKg = convertToKg(inputQuantity, inputUnit, product);
+        const theoreticalWeight = convertToKg(inputQuantity, inputUnit, product);
+        let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+        if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
         const batchNo = item.batch_no || `${baseOrderNo}-${index + 1}`;
-        await req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [req.params.id, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null]);
+        await req.db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, supplier_batch_no, heat_no, theoretical_weight, actual_weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [req.params.id, item.product_id, batchNo, actualWeight, inputQuantity, inputUnit, item.unit_price || 0, item.supplier_batch_no || null, item.heat_no || null, theoreticalWeight, actualWeight]);
       }
     });
     res.json({ success: true });
@@ -359,15 +376,17 @@ router.post('/outbound', requirePermission('warehouse_create'), validate(outboun
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
     for (const id of productIds) {
-      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length, density FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
     }
     
     let totalAmount = 0;
     items.forEach(item => {
       const product = productMap.get(item.product_id);
-      const quantityKg = convertToKg(item.input_quantity || item.quantity, item.input_unit || '公斤', product);
-      totalAmount += quantityKg * (item.unit_price || 0);
+      const theoreticalWeight = convertToKg(item.input_quantity || item.quantity, item.input_unit || '公斤', product);
+      let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+      if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
+      totalAmount += actualWeight * (item.unit_price || 0);
     });
     
     let outboundId;
@@ -382,19 +401,21 @@ router.post('/outbound', requirePermission('warehouse_create'), validate(outboun
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
-        const quantityKg = convertToKg(inputQuantity, inputUnit, product);
+        const theoreticalWeight = convertToKg(inputQuantity, inputUnit, product);
+        let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+        if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
         const batchNo = item.batch_no || 'DEFAULT_BATCH';
         
         // 校验库存并增加锁定数量
         const inv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse_id, item.product_id, batchNo]);
         const lockedQty = inv?.locked_quantity || 0;
-        if (!inv || (inv.quantity - lockedQty) < quantityKg) {
+        if (!inv || (inv.quantity - lockedQty) < actualWeight) {
            throw new BusinessError(`${product?.name || '产品'} (批次: ${batchNo}) 可用库存不足`);
         }
-        await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [quantityKg, inv.id]);
+        await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [actualWeight, inv.id]);
 
-        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [outboundId, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
+        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, theoretical_weight, actual_weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [outboundId, item.product_id, batchNo, actualWeight, inputQuantity, inputUnit, item.unit_price || 0, theoreticalWeight, actualWeight]);
       }
     });
     res.json({ success: true, data: { id: outboundId, order_no: orderNo } });
@@ -536,13 +557,22 @@ router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), asy
     const productIds = [...new Set(items.map(i => i.product_id))];
     const productMap = new Map();
     for (const id of productIds) {
-      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length FROM products WHERE id = ?', [id]);
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length, density FROM products WHERE id = ?', [id]);
       if (p) productMap.set(id, p);
     }
     
     await req.db.transaction(async () => {
-      await req.db.run('UPDATE outbound_orders SET warehouse_id = ?, order_id = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [warehouse_id, order_id || null, operator, remark, req.params.id]);
+      let totalAmount = 0;
+      items.forEach(item => {
+        const product = productMap.get(item.product_id);
+        const theoreticalWeight = convertToKg(item.input_quantity || item.quantity, item.input_unit || '公斤', product);
+        let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+        if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
+        totalAmount += actualWeight * (item.unit_price || 0);
+      });
+
+      await req.db.run('UPDATE outbound_orders SET warehouse_id = ?, order_id = ?, total_amount = ?, operator = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [warehouse_id, order_id || null, totalAmount, operator, remark, req.params.id]);
       
       const oldItems = await req.db.all('SELECT * FROM outbound_items WHERE outbound_id = ?', [req.params.id]);
       // 释放旧明细的锁定库存
@@ -557,19 +587,21 @@ router.put('/outbound/:id', validateId, requirePermission('warehouse_edit'), asy
         const product = productMap.get(item.product_id);
         const inputUnit = product?.unit || '公斤';
         const inputQuantity = item.input_quantity || item.quantity;
-        const quantityKg = convertToKg(inputQuantity, inputUnit, product);
+        const theoreticalWeight = convertToKg(inputQuantity, inputUnit, product);
+        let actualWeight = (item.actual_weight !== undefined && item.actual_weight !== null && item.actual_weight !== '') ? parseFloat(item.actual_weight) : theoreticalWeight;
+        if (isNaN(actualWeight) || actualWeight <= 0) actualWeight = theoreticalWeight;
         const batchNo = item.batch_no || 'DEFAULT_BATCH';
         
         // 校验库存
         const inv = await req.db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [warehouse_id, item.product_id, batchNo]);
         const lockedQty = inv?.locked_quantity || 0;
-        if (!inv || (inv.quantity - lockedQty) < quantityKg) {
+        if (!inv || (inv.quantity - lockedQty) < actualWeight) {
            throw new BusinessError(`${product?.name || '产品'} (批次: ${batchNo}) 可用库存不足`);
         }
-        await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [quantityKg, inv.id]);
+        await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [actualWeight, inv.id]);
 
-        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [req.params.id, item.product_id, batchNo, quantityKg, inputQuantity, inputUnit, item.unit_price || 0]);
+        await req.db.run('INSERT INTO outbound_items (outbound_id, product_id, batch_no, quantity, input_quantity, input_unit, unit_price, theoretical_weight, actual_weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [req.params.id, item.product_id, batchNo, actualWeight, inputQuantity, inputUnit, item.unit_price || 0, theoreticalWeight, actualWeight]);
       }
     });
     res.json({ success: true });

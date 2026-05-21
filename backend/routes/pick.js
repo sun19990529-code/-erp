@@ -63,7 +63,7 @@ router.post('/', requirePermission('warehouse_create'), async (req, res) => {
     const productMap = new Map();
     if (materialIds.length > 0) {
       const ph = materialIds.map(() => '?').join(',');
-      const rows = await req.db.all(`SELECT id, name, unit, outer_diameter, wall_thickness, length FROM products WHERE id IN (${ph})`, materialIds);
+      const rows = await req.db.all(`SELECT id, name, unit, outer_diameter, wall_thickness, length, density FROM products WHERE id IN (${ph})`, materialIds);
       rows.forEach(p => productMap.set(p.id, p));
     }
 
@@ -106,25 +106,40 @@ router.post('/', requirePermission('warehouse_create'), async (req, res) => {
           const quantityKg = convertToKg(inputQuantity, inputUnit, product);
           
           if (pickType !== 'return') {
-            // FIFO 锁定库存
+            // FIFO 锁定库存并拆分写入
             let remaining = quantityKg;
             const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? ORDER BY updated_at ASC', [warehouse_id, item.material_id]);
+            const allocations = [];
             for (const batch of batches) {
               if (remaining <= 0) break;
               const available = batch.quantity - (batch.locked_quantity || 0);
               if (available > 0) {
                 const lockAmt = Math.min(remaining, available);
                 await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [lockAmt, batch.id]);
+                allocations.push({
+                  batch_no: batch.batch_no,
+                  supplier_batch_no: batch.supplier_batch_no,
+                  heat_no: batch.heat_no,
+                  quantity: lockAmt
+                });
                 remaining -= lockAmt;
               }
             }
             if (remaining > 0) {
               throw new BusinessError(`物料「${product?.name || item.material_id}」可用库存不足`);
             }
-          }
 
-          await req.db.run(`INSERT INTO pick_items (pick_order_id, material_id, quantity, input_quantity, input_unit, remark) VALUES (?, ?, ?, ?, ?, ?)`,
-            [pickId, item.material_id, quantityKg, inputQuantity, inputUnit, item.remark || null]);
+            // 写入拆分后的明细
+            for (const alloc of allocations) {
+              const ratio = quantityKg > 0 ? alloc.quantity / quantityKg : 0;
+              const splitInputQty = item.input_quantity ? Number((item.input_quantity * ratio).toFixed(4)) : alloc.quantity;
+              await req.db.run(`INSERT INTO pick_items (pick_order_id, material_id, batch_no, quantity, input_quantity, input_unit, supplier_batch_no, heat_no, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [pickId, item.material_id, alloc.batch_no, alloc.quantity, splitInputQty, inputUnit, alloc.supplier_batch_no || null, alloc.heat_no || null, item.remark || null]);
+            }
+          } else {
+            await req.db.run(`INSERT INTO pick_items (pick_order_id, material_id, batch_no, quantity, input_quantity, input_unit, remark) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [pickId, item.material_id, item.batch_no || 'DEFAULT_BATCH', quantityKg, inputQuantity, inputUnit, item.remark || null]);
+          }
         }
       }
     });
@@ -145,13 +160,17 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
     }
     
     await req.db.transaction(async () => {
-      if (status === 'completed') {
-        const updateResult = await req.db.run("UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'", [status, req.params.id]);
-        if (updateResult.changes === 0) {
-           throw new BusinessError('领料单状态已变更，请刷新后重试');
-        }
+      const order = await req.db.get('SELECT * FROM pick_orders WHERE id = ? FOR UPDATE', [req.params.id]);
+      if (!order) {
+        throw new BusinessError('领料单不存在');
+      }
 
-        const order = await req.db.get('SELECT * FROM pick_orders WHERE id = ?', [req.params.id]);
+      if (status === 'completed') {
+        if (order.status !== 'pending') {
+          throw new BusinessError('只有待处理状态的领料单才能确认为已完成');
+        }
+        await req.db.run("UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [status, req.params.id]);
+
         const isReturn = order.type === 'return';
         const items = await req.db.all('SELECT pi.*, p.name as material_name FROM pick_items pi JOIN products p ON pi.material_id = p.id WHERE pi.pick_order_id = ?', [req.params.id]);
         
@@ -164,17 +183,7 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
           const totalInvMap = {}; // key: product_id
           const batchLists = {}; // key: product_id
           
-          for(let r of invRows) {
-            const key = `${r.product_id}_${r.batch_no}`;
-            invMap[key] = r;
-            totalInvMap[r.product_id] = (totalInvMap[r.product_id] || 0) + r.quantity;
-            if (!batchLists[r.product_id]) batchLists[r.product_id] = [];
-            batchLists[r.product_id].push(r);
-          }
-          
-          Object.values(batchLists).forEach(list => list.sort((a,b) => new Date(a.updated_at) - new Date(b.updated_at)));
-
-          // 第一遍内存校验（如果是领料）
+                 // 第一遍内存校验（如果是领料）
           if (!isReturn) {
             const consumedMap = {};
             for (const item of items) {
@@ -183,16 +192,13 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
               if (consumedMap[item.material_id] > totalAvailable) {
                 throw new BusinessError(`物料「${item.material_name}」库存不足，累计需要 ${consumedMap[item.material_id]}，当前总库存 ${totalAvailable}`);
               }
-              if (item.batch_no && item.batch_no !== 'DEFAULT_BATCH') {
-                const bKey = `${item.material_id}_${item.batch_no}`;
-                const bInv = invMap[bKey];
-                if (!bInv || bInv.quantity < item.quantity) {
-                  throw new BusinessError(`物料「${item.material_name}」批次[${item.batch_no}]库存不足，需要 ${item.quantity}，该批次库存 ${bInv?.quantity || 0}`);
-                }
-                bInv.quantity -= item.quantity; // 内存扣减占用
-              } else {
-                // 内存模拟 FIFO 检测，这里不再模拟扣减，因为上面 totalAvailable 已经阻断
+              const batchNo = item.batch_no || 'DEFAULT_BATCH';
+              const bKey = `${item.material_id}_${batchNo}`;
+              const bInv = invMap[bKey];
+              if (!bInv || bInv.quantity < item.quantity) {
+                throw new BusinessError(`物料「${item.material_name}」批次[${batchNo}]库存不足，需要 ${item.quantity}，该批次库存 ${bInv?.quantity || 0}`);
               }
+              bInv.quantity -= item.quantity;
             }
           }
 
@@ -204,42 +210,15 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
               const existingInv = invMap[key];
               if (existingInv) {
                 await req.db.run('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, existingInv.id]);
-                // 同步内存防止同一项出现多次叠加写入异常
                 existingInv.quantity += item.quantity; 
               } else {
                 const resIns = await req.db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)', [order.warehouse_id, item.material_id, batch, item.quantity]);
                 invMap[key] = { id: resIns.lastInsertRowid, quantity: item.quantity };
               }
             } else {
-              let traceSupplierBatch = null, traceHeatNo = null;
-              if (item.batch_no && item.batch_no !== 'DEFAULT_BATCH') {
-                const bKey = `${item.material_id}_${item.batch_no}`;
-                // 注意第一遍校验已经将 invMap[bKey].quantity 减去了。这只影响逻辑状态。执行写入直接用恒定数字。
-                await req.db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?', [item.quantity, order.warehouse_id, item.material_id, item.batch_no]);
-                // 获取原本行的追溯信息
-                const originalRow = invRows.find(r => r.product_id === item.material_id && r.batch_no === item.batch_no);
-                if (originalRow) {
-                  traceSupplierBatch = originalRow.supplier_batch_no;
-                  traceHeatNo = originalRow.heat_no;
-                }
-              } else {
-                let remaining = item.quantity;
-                const batches = batchLists[item.material_id] || [];
-                for (const batch of batches) {
-                  if (remaining <= 0) break;
-                  if (batch.quantity <= 0) continue; // 已经被前面耗尽（同种物品分配多行时）
-                  const deduct = Math.min(remaining, batch.quantity);
-                  // 核销真实的物理库存，同时释放之前锁定的库存
-                  await req.db.run('UPDATE inventory SET quantity = quantity - ?, locked_quantity = COALESCE(locked_quantity, 0) - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, deduct, batch.id]);
-                  if (!traceSupplierBatch) traceSupplierBatch = batch.supplier_batch_no;
-                  if (!traceHeatNo) traceHeatNo = batch.heat_no;
-                  batch.quantity -= deduct; // 内存扣减供后续同行使用
-                  remaining -= deduct;
-                }
-              }
-              if (traceSupplierBatch || traceHeatNo) {
-                await req.db.run('UPDATE pick_items SET supplier_batch_no = ?, heat_no = ? WHERE id = ?', [traceSupplierBatch || null, traceHeatNo || null, item.id]);
-              }
+              const batchNo = item.batch_no || 'DEFAULT_BATCH';
+              await req.db.run('UPDATE inventory SET quantity = quantity - ?, locked_quantity = COALESCE(locked_quantity, 0) - ?, updated_at = CURRENT_TIMESTAMP WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+                [item.quantity, item.quantity, order.warehouse_id, item.material_id, batchNo]);
             }
             
             if (order.order_id && !isReturn) {
@@ -256,6 +235,7 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
             }
           } // end for items
         } // end if items.length > 0
+
         // 【联动#6】领料完成后检查生产工单原材料是否领齐
         if (order.production_order_id) {
           const production = await req.db.get('SELECT * FROM production_orders WHERE id = ?', [order.production_order_id]);
@@ -282,6 +262,20 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
             }
           }
         }
+      } else if (status === 'cancelled') {
+        if (order.status === 'completed') {
+          throw new BusinessError('已完成的领料单不能直接取消，如果需要退料请发起退料单');
+        }
+        if (order.status === 'pending' && order.type !== 'return') {
+          // 释放 locked_quantity
+          const items = await req.db.all('SELECT * FROM pick_items WHERE pick_order_id = ?', [req.params.id]);
+          for (const item of items) {
+            const batchNo = item.batch_no || 'DEFAULT_BATCH';
+            await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) - ? WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+              [item.quantity, order.warehouse_id, item.material_id, batchNo]);
+          }
+        }
+        await req.db.run('UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
       } else {
         await req.db.run('UPDATE pick_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id]);
       }
@@ -296,6 +290,7 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
   }
 });
 
+
 router.put('/:id', validateId, requirePermission('warehouse_edit'), async (req, res) => {
   try {
     const { order_id, production_order_id, warehouse_id, operator, remark, items } = req.body;
@@ -305,7 +300,7 @@ router.put('/:id', validateId, requirePermission('warehouse_edit'), async (req, 
     const productMap = new Map();
     if (materialIds.length > 0) {
       const ph = materialIds.map(() => '?').join(',');
-      const rows = await req.db.all(`SELECT id, unit, outer_diameter, wall_thickness, length FROM products WHERE id IN (${ph})`, materialIds);
+      const rows = await req.db.all(`SELECT id, unit, outer_diameter, wall_thickness, length, density FROM products WHERE id IN (${ph})`, materialIds);
       rows.forEach(p => productMap.set(p.id, p));
     }
 
@@ -317,15 +312,9 @@ router.put('/:id', validateId, requirePermission('warehouse_edit'), async (req, 
       if (order.type !== 'return') {
         // 释放旧明细的锁定库存
         for (const old of oldItems) {
-          let remaining = old.quantity;
-          const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND locked_quantity > 0 ORDER BY updated_at DESC', [order.warehouse_id, old.material_id]);
-          for (const batch of batches) {
-            if (remaining <= 0) break;
-            const locked = batch.locked_quantity || 0;
-            const unlockAmt = Math.min(remaining, locked);
-            await req.db.run('UPDATE inventory SET locked_quantity = locked_quantity - ? WHERE id = ?', [unlockAmt, batch.id]);
-            remaining -= unlockAmt;
-          }
+          const batchNo = old.batch_no || 'DEFAULT_BATCH';
+          await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) - ? WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+            [old.quantity, order.warehouse_id, old.material_id, batchNo]);
         }
       }
 
@@ -343,22 +332,37 @@ router.put('/:id', validateId, requirePermission('warehouse_edit'), async (req, 
           // 重新锁定新明细
           let remaining = quantityKg;
           const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? ORDER BY updated_at ASC', [warehouse_id, item.material_id]);
+          const allocations = [];
           for (const batch of batches) {
             if (remaining <= 0) break;
             const available = batch.quantity - (batch.locked_quantity || 0);
             if (available > 0) {
               const lockAmt = Math.min(remaining, available);
               await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) + ? WHERE id = ?', [lockAmt, batch.id]);
+              allocations.push({
+                batch_no: batch.batch_no,
+                supplier_batch_no: batch.supplier_batch_no,
+                heat_no: batch.heat_no,
+                quantity: lockAmt
+              });
               remaining -= lockAmt;
             }
           }
           if (remaining > 0) {
             throw new BusinessError(`物料「${product?.name || item.material_id}」可用库存不足`);
           }
-        }
 
-        await req.db.run('INSERT INTO pick_items (pick_order_id, material_id, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?)',
-          [req.params.id, item.material_id, quantityKg, inputQuantity, inputUnit]);
+          // 写入分批后的明细
+          for (const alloc of allocations) {
+            const ratio = quantityKg > 0 ? alloc.quantity / quantityKg : 0;
+            const splitInputQty = item.input_quantity ? Number((item.input_quantity * ratio).toFixed(4)) : alloc.quantity;
+            await req.db.run(`INSERT INTO pick_items (pick_order_id, material_id, batch_no, quantity, input_quantity, input_unit, supplier_batch_no, heat_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [req.params.id, item.material_id, alloc.batch_no, alloc.quantity, splitInputQty, inputUnit, alloc.supplier_batch_no || null, alloc.heat_no || null]);
+          }
+        } else {
+          await req.db.run('INSERT INTO pick_items (pick_order_id, material_id, batch_no, quantity, input_quantity, input_unit) VALUES (?, ?, ?, ?, ?, ?)',
+            [req.params.id, item.material_id, item.batch_no || 'DEFAULT_BATCH', quantityKg, inputQuantity, inputUnit]);
+        }
       }
     });
     res.json({ success: true });
@@ -398,15 +402,9 @@ router.delete('/:id', validateId, requirePermission('warehouse_delete'), async (
       } else if (order && order.status === 'pending' && order.type !== 'return') {
         // 对于未完成（pending）的领料单，释放 locked_quantity
         for (const item of items) {
-          let remaining = item.quantity;
-          const batches = await req.db.all('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND locked_quantity > 0 ORDER BY updated_at DESC', [order.warehouse_id, item.material_id]);
-          for (const batch of batches) {
-            if (remaining <= 0) break;
-            const locked = batch.locked_quantity || 0;
-            const unlockAmt = Math.min(remaining, locked);
-            await req.db.run('UPDATE inventory SET locked_quantity = locked_quantity - ? WHERE id = ?', [unlockAmt, batch.id]);
-            remaining -= unlockAmt;
-          }
+          const batchNo = item.batch_no || 'DEFAULT_BATCH';
+          await req.db.run('UPDATE inventory SET locked_quantity = COALESCE(locked_quantity, 0) - ? WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
+            [item.quantity, order.warehouse_id, item.material_id, batchNo]);
         }
       }
       await req.db.run('DELETE FROM pick_items WHERE pick_order_id = ?', [req.params.id]);

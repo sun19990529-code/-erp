@@ -21,10 +21,18 @@ async function syncAll() {
       { table: 'inbound_items', name: 'input_unit', type: "VARCHAR(50) DEFAULT '公斤'" },
       { table: 'inbound_items', name: 'supplier_batch_no', type: 'VARCHAR(100)' },
       { table: 'inbound_items', name: 'heat_no', type: 'VARCHAR(100)' },
+      { table: 'inbound_items', name: 'theoretical_weight', type: 'REAL' },
+      { table: 'inbound_items', name: 'actual_weight', type: 'REAL' },
       
       // outbound_items
       { table: 'outbound_items', name: 'input_quantity', type: 'REAL' },
       { table: 'outbound_items', name: 'input_unit', type: "VARCHAR(50) DEFAULT '公斤'" },
+      { table: 'outbound_items', name: 'theoretical_weight', type: 'REAL' },
+      { table: 'outbound_items', name: 'actual_weight', type: 'REAL' },
+      
+      // outsourcing_items
+      { table: 'outsourcing_items', name: 'pricing_unit', type: "VARCHAR(50) DEFAULT '公斤'" },
+      { table: 'outsourcing_items', name: 'pricing_quantity', type: 'REAL DEFAULT 0' },
       
       // pick_items
       { table: 'pick_items', name: 'input_quantity', type: 'REAL' },

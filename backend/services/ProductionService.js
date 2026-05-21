@@ -236,12 +236,14 @@ class ProductionService {
       const prevProcessTotal = await db.get('SELECT COALESCE(SUM(output_quantity), 0) as total_output FROM production_process_records WHERE production_order_id = ? AND process_id = ? AND status = ?', [productionId, prevProcess.process_id, 'completed']);
       const prevTotalOut = Number(prevProcessTotal.total_output || 0);
       if ((willTotalOutput + willTotalDefect) > prevTotalOut) {
-        throw new BusinessError(`越界拦截：前置工序[${prevProcess.process_name}]累计产出为 ${prevTotalOut}，本次报工后总产出将达 ${willTotalOutput + willTotalDefect}，已超限！请核对报工数量。`);
+        const warnMsg = `越界警告：前置工序[${prevProcess.process_name}]累计产出为 ${prevTotalOut}，本次报工后总产出将达 ${willTotalOutput + willTotalDefect}，已超限！已自动记录。`;
+        sendNotification(db, null, 'warning', '报工数量超限预警', warnMsg, 'production', productionId).catch(e => console.error(e));
       }
     } else {
       const willTotalInput = Number(historyTotal.total_input || 0) + inQty;
       if ((willTotalOutput + willTotalDefect) > willTotalInput) {
-        throw new BusinessError(`越界拦截：首道工序本次报工后总产出(${willTotalOutput + willTotalDefect})将超过总投入数量(${willTotalInput})！`);
+        const warnMsg = `越界警告：首道工序本次报工后总产出(${willTotalOutput + willTotalDefect})将超过总投入数量(${willTotalInput})！已自动记录。`;
+        sendNotification(db, null, 'warning', '报工数量超限预警', warnMsg, 'production', productionId).catch(e => console.error(e));
       }
     }
     
@@ -272,7 +274,8 @@ class ProductionService {
       const totalPicked = pickedTotal?.total_picked || 0;
       const willTotalInput = (historyTotal.total_input || 0) + (input_quantity || 0);
       if (totalPicked > 0 && willTotalInput > totalPicked) {
-        throw new BusinessError(`投入量超限：已领料 ${totalPicked}，累计投入将达 ${willTotalInput}，超出已领材料数量！`);
+        const warnMsg = `投入量超限警告：已领料 ${totalPicked}，累计投入将达 ${willTotalInput}，超出已领材料数量！已自动记录。`;
+        sendNotification(db, null, 'warning', '投入数量超限预警', warnMsg, 'production', productionId).catch(e => console.error(e));
       }
 
       const pickedMaterials = await db.all(
@@ -315,7 +318,8 @@ class ProductionService {
         
         if (available < actualOutput) {
           const prevProduct = await db.get('SELECT name FROM products WHERE id = ?', [prevPP.output_product_id]);
-          throw new BusinessError(`半成品「${prevProduct?.name || prevPP.output_product_id}」库存不足！需要 ${actualOutput}，当前 ${available}`);
+          const warnMsg = `半成品「${prevProduct?.name || prevPP.output_product_id}」库存不足！需要 ${actualOutput}，当前可用仅 ${available}。系统已允许超扣以保障生产。`;
+          sendNotification(db, null, 'warning', '半成品库存不足警告', warnMsg, 'production', productionId).catch(e => console.error(e));
         }
         
         let remaining = actualOutput;
@@ -324,6 +328,17 @@ class ProductionService {
           const deduct = Math.min(remaining, batch.quantity);
           await db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [deduct, batch.id]);
           remaining -= deduct;
+        }
+
+        if (remaining > 0) {
+          if (batches.length > 0) {
+            const lastBatch = batches[batches.length - 1];
+            await db.run('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [remaining, lastBatch.id]);
+          } else {
+            const batchNo = `PRD-AUTO-MINUS`;
+            await db.run('INSERT INTO inventory (warehouse_id, product_id, batch_no, quantity) VALUES (?, ?, ?, ?)',
+              [semiWarehouse.id, prevPP.output_product_id, batchNo, -remaining]);
+          }
         }
       }
     }

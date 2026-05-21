@@ -398,34 +398,62 @@ const WarehouseOrderManager = ({ orderType }) => {
               <div><strong>操作员：</strong>{modal.item?.operator || '-'}</div>
               <div><strong>备注：</strong>{modal.item?.remark || '-'}</div>
             </div>
-            <table className="w-full border">
-              <thead className="bg-gray-50"><tr>
-                <th className="px-3 py-2 text-left text-xs">产品编码</th><th className="px-3 py-2 text-left text-xs">产品名称</th>
-                <th className="px-3 py-2 text-left text-xs">供应商批号</th>
-                <th className="px-3 py-2 text-left text-xs">炉号</th>
-                <th className="px-3 py-2 text-left text-xs">入库批号</th>
-                <th className="px-3 py-2 text-left text-xs">输入数量</th>
-                <th className="px-3 py-2 text-left text-xs">库存数量(公斤)</th>
-                {orderType === 'inbound' && <th className="px-3 py-2 text-right text-xs">单价/预计总金</th>}
+            <table className="w-full border text-xs sm:text-sm">
+              <thead className="bg-gray-50 border-b"><tr>
+                <th className="px-3 py-2 text-left">产品编码</th>
+                <th className="px-3 py-2 text-left">产品名称</th>
+                <th className="px-3 py-2 text-left">供应商批号</th>
+                <th className="px-3 py-2 text-left">炉号</th>
+                <th className="px-3 py-2 text-left">入库批号</th>
+                <th className="px-3 py-2 text-left">输入数量</th>
+                <th className="px-3 py-2 text-right">理重(kg)</th>
+                <th className="px-3 py-2 text-right">过磅(kg)</th>
+                <th className="px-3 py-2 text-center">理磅比</th>
+                {orderType === 'inbound' && <th className="px-3 py-2 text-right">单价/预计总额</th>}
               </tr></thead>
               <tbody>
-                {(modal.item?.items || []).map((it, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-3 py-2 text-sm">{it.code}</td>
-                    <td className="px-3 py-2 text-sm">{it.name}</td>
-                    <td className="px-3 py-2 text-sm text-blue-600">{it.supplier_batch_no || '-'}</td>
-                    <td className="px-3 py-2 text-sm text-orange-600">{it.heat_no || '-'}</td>
-                    <td className="px-3 py-2 text-sm text-teal-700 font-medium">{it.batch_no || '-'}</td>
-                    <td className="px-3 py-2 text-sm">{it.input_quantity || it.quantity} {it.input_unit || '公斤'}</td>
-                    <td className="px-3 py-2 text-sm">{it.quantity} 公斤</td>
-                    {orderType === 'inbound' && (
-                      <td className="px-3 py-2 text-right text-sm">
-                        <div className="text-gray-500 text-xs">¥{formatAmount(it.unit_price || 0)}</div>
-                        <div className="font-medium">¥{formatAmount((it.unit_price || 0) * (it.quantity || 0))}</div>
+                {(modal.item?.items || []).map((it, i) => {
+                  const theoretical = it.theoretical_weight !== null && it.theoretical_weight !== undefined ? parseFloat(it.theoretical_weight) : 0;
+                  const actual = it.actual_weight !== null && it.actual_weight !== undefined ? parseFloat(it.actual_weight) : null;
+                  
+                  let ratioStr = '-';
+                  let isDeviationWarning = false;
+                  if (theoretical > 0 && actual !== null) {
+                    const ratioVal = actual / theoretical;
+                    ratioStr = (ratioVal * 100).toFixed(1) + '%';
+                    const deviation = Math.abs(ratioVal - 1);
+                    if (deviation > 0.05) {
+                      isDeviationWarning = true;
+                    }
+                  }
+                  
+                  return (
+                    <tr key={i} className="border-t hover:bg-gray-50/50">
+                      <td className="px-3 py-2">{it.code}</td>
+                      <td className="px-3 py-2 font-medium">{it.name}</td>
+                      <td className="px-3 py-2 text-blue-600">{it.supplier_batch_no || '-'}</td>
+                      <td className="px-3 py-2 text-orange-600">{it.heat_no || '-'}</td>
+                      <td className="px-3 py-2 text-teal-700 font-medium">{it.batch_no || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{it.input_quantity || it.quantity} {it.input_unit || '公斤'}</td>
+                      <td className="px-3 py-2 text-right text-gray-500">{theoretical > 0 ? formatQuantity(theoretical, 2) : '-'}</td>
+                      <td className="px-3 py-2 text-right font-bold text-teal-600">{actual !== null ? formatQuantity(actual, 2) : '-'}</td>
+                      <td className="px-3 py-2 text-center whitespace-nowrap">
+                        {ratioStr !== '-' ? (
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${isDeviationWarning ? 'text-red-600 bg-red-50 border border-red-200 animate-pulse' : 'text-gray-600 bg-gray-100'}`}>
+                            {ratioStr}
+                            {isDeviationWarning && <i className="fas fa-exclamation-triangle ml-1" title="偏差超过5%"></i>}
+                          </span>
+                        ) : '-'}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {orderType === 'inbound' && (
+                        <td className="px-3 py-2 text-right">
+                          <div className="text-gray-500 text-xs">¥{formatAmount(it.unit_price || 0)}</div>
+                          <div className="font-semibold text-teal-700">¥{formatAmount((it.unit_price || 0) * (it.quantity || 0))}</div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             

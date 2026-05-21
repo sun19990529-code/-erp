@@ -69,6 +69,12 @@ const inboundCreate = z.object({
     quantity: requiredPositive('数量必须大于0'),
     batch_no: z.string().optional().nullable(),
     unit_price: optionalNonNeg,
+    actual_weight: z.coerce.number().optional().nullable(),
+    theoretical_weight: z.coerce.number().optional().nullable(),
+    input_quantity: z.coerce.number().optional().nullable(),
+    input_unit: z.string().optional().nullable(),
+    supplier_batch_no: z.string().optional().nullable(),
+    heat_no: z.string().optional().nullable(),
   })).min(1, '请至少添加一个产品'),
 });
 
@@ -84,6 +90,10 @@ const outboundCreate = z.object({
     quantity: requiredPositive('数量必须大于0'),
     batch_no: z.string().optional().nullable(),
     unit_price: optionalNonNeg,
+    actual_weight: z.coerce.number().optional().nullable(),
+    theoretical_weight: z.coerce.number().optional().nullable(),
+    input_quantity: z.coerce.number().optional().nullable(),
+    input_unit: z.string().optional().nullable(),
   })).min(1, '请至少添加一个产品'),
 });
 
@@ -99,6 +109,9 @@ const outsourcingCreate = z.object({
     product_id: requiredPositiveInt('请选择产品'),
     quantity: requiredPositive('数量必须大于0'),
     unit_price: optionalNonNeg,
+    unit: z.string().optional().nullable(),
+    production_order_id: optionalPositiveInt,
+    process_id: optionalPositiveInt,
   })).min(1, '请至少添加一个产品'),
 });
 

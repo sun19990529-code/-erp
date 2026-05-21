@@ -8,6 +8,7 @@ const { generateOrderNo } = require('../utils/order-number');
 const { createPayable } = require('./finance');
 const { safeInClause } = require('../utils/sql');
 const ProductionService = require('../services/ProductionService');
+const { convertToKg } = require('../utils/unit-convert');
 
 // 待处理委外任务（只展示前置工序已完成的委外工序）
 router.get('/pending', requirePermission('outsourcing_view'), async (req, res) => {
@@ -122,12 +123,45 @@ router.post('/', requirePermission('outsourcing_create'), async (req, res) => {
     }
 
     const orderNo = generateOrderNo('WW');
+    
+    // 预取产品信息
+    const productIds = [...new Set(items.map(i => i.product_id))];
+    const productMap = new Map();
+    for (const id of productIds) {
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length, density FROM products WHERE id = ?', [id]);
+      if (p) productMap.set(id, p);
+    }
+
     let totalAmount = 0;
-    items.forEach(item => { totalAmount += (item.quantity || 0) * (item.unit_price || 0); });
+    const processedItems = items.map(item => {
+      const product = productMap.get(item.product_id);
+      const inputUnit = product?.unit || '公斤';
+      const pricingUnit = item.pricing_unit || '元/公斤';
+      let pricingQuantity = item.pricing_quantity;
+      if (pricingQuantity === undefined || pricingQuantity === null || pricingQuantity === '') {
+        if (pricingUnit === '元/支') {
+          pricingQuantity = item.quantity;
+        } else {
+          pricingQuantity = convertToKg(item.quantity, inputUnit, product);
+        }
+      } else {
+        pricingQuantity = parseFloat(pricingQuantity);
+      }
+      if (isNaN(pricingQuantity) || pricingQuantity < 0) pricingQuantity = 0;
+
+      const itemAmount = pricingQuantity * (item.unit_price || 0);
+      totalAmount += itemAmount;
+
+      return {
+        ...item,
+        pricing_unit: pricingUnit,
+        pricing_quantity: pricingQuantity
+      };
+    });
 
     // 向后兼容：如果所有明细来自同一个工单/工序，也记录到 orders 表顶层
-    const uniquePo = [...new Set(items.filter(i => i.production_order_id).map(i => i.production_order_id))];
-    const uniqueProc = [...new Set(items.filter(i => i.process_id).map(i => i.process_id))];
+    const uniquePo = [...new Set(processedItems.filter(i => i.production_order_id).map(i => i.production_order_id))];
+    const uniqueProc = [...new Set(processedItems.filter(i => i.process_id).map(i => i.process_id))];
     const topLevelPoId = uniquePo.length === 1 ? uniquePo[0] : null;
     const topLevelProcId = uniqueProc.length === 1 ? uniqueProc[0] : null;
 
@@ -136,10 +170,10 @@ router.post('/', requirePermission('outsourcing_create'), async (req, res) => {
       const result = await req.db.run(`INSERT INTO outsourcing_orders (order_no, supplier_id, production_order_id, process_id, total_amount, expected_date, operator, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [orderNo, supplier_id, topLevelPoId, topLevelProcId, totalAmount, expected_date, operator, remark]);
       outsourcingId = result.lastInsertRowid;
-      for (const item of items) {
+      for (const item of processedItems) {
         await req.db.run(
-          'INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price, production_order_id, process_id, remark) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [outsourcingId, item.product_id, item.quantity, item.unit_price || 0, item.production_order_id || null, item.process_id || null, item.remark || null]
+          'INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price, pricing_unit, pricing_quantity, production_order_id, process_id, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [outsourcingId, item.product_id, item.quantity, item.unit_price || 0, item.pricing_unit, item.pricing_quantity, item.production_order_id || null, item.process_id || null, item.remark || null]
         );
       }
     });
@@ -161,7 +195,32 @@ async function handleOutsourcingInbound(db, outsourcing, items) {
 
   const inboundNo = generateOrderNo('IN');
   let totalAmount = 0;
-  items.forEach(item => { totalAmount += (item.quantity || 0) * (item.unit_price || 0); });
+
+  // 预先计算入库总金额及各明细加工单价
+  const processedInbounds = [];
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    const qty = item.quantity; // 本次入库数量
+    const totalItemQty = item.quantity_original || qty || 1;
+    const ratio = qty / totalItemQty;
+    const itemProcessingFee = (item.pricing_quantity || item.quantity || 0) * (item.unit_price || 0) * ratio;
+    totalAmount += itemProcessingFee;
+
+    const inboundUnitPrice = qty > 0 ? (itemProcessingFee / qty) : 0;
+    
+    // 查询产品计算双重重量
+    const product = await db.get('SELECT unit, outer_diameter, wall_thickness, length, density FROM products WHERE id = ?', [item.product_id]);
+    const theoreticalWeight = convertToKg(qty, product?.unit || '公斤', product);
+    const actualWeight = theoreticalWeight; // 委外入库实重默认等于理重
+    
+    processedInbounds.push({
+      item,
+      qty,
+      inboundUnitPrice,
+      theoreticalWeight,
+      actualWeight
+    });
+  }
 
   const inboundResult = await db.run(
     `INSERT INTO inbound_orders (order_no, type, warehouse_id, supplier_id, total_amount, operator, remark, status) VALUES (?, 'semi', ?, ?, ?, ?, ?, 'approved')`,
@@ -169,12 +228,15 @@ async function handleOutsourcingInbound(db, outsourcing, items) {
   );
   const inboundId = inboundResult.lastInsertRowid;
 
-  for (let index = 0; index < items.length; index++) {
-    const item = items[index];
-    const qty = item.received_quantity || item.quantity;
+  for (let index = 0; index < processedInbounds.length; index++) {
+    const { item, qty, inboundUnitPrice, theoreticalWeight, actualWeight } = processedInbounds[index];
     const batchNo = `${inboundNo}-${index + 1}`;
-    await db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, unit_price) VALUES (?, ?, ?, ?, ?)',
-      [inboundId, item.product_id, batchNo, qty, item.unit_price || 0]);
+    
+    // 写入 inbound_items (包含双重重量)
+    await db.run('INSERT INTO inbound_items (inbound_id, product_id, batch_no, quantity, unit_price, theoretical_weight, actual_weight) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [inboundId, item.product_id, batchNo, qty, inboundUnitPrice, theoreticalWeight, actualWeight]);
+      
+    // 写入库存 inventory 
     const existing = await db.get('SELECT * FROM inventory WHERE warehouse_id = ? AND product_id = ? AND batch_no = ?',
       [warehouse.id, item.product_id, batchNo]);
     if (existing) {
@@ -283,11 +345,11 @@ router.put('/:id/receive', validateId, requirePermission('outsourcing_edit'), as
       for (const ri of receivedItems) {
         const fullItem = allItems.find(i => i.id === ri.id);
         if (fullItem && ri.received_quantity > 0) {
-          itemsToInbound.push({ ...fullItem, received_quantity: ri.received_quantity });
+          itemsToInbound.push({ ...fullItem, quantity: ri.received_quantity, quantity_original: fullItem.quantity });
         }
       }
       if (itemsToInbound.length > 0) {
-        await handleOutsourcingInbound(req.db, outsourcing, itemsToInbound.map(i => ({ ...i, quantity: i.received_quantity })));
+        await handleOutsourcingInbound(req.db, outsourcing, itemsToInbound);
       }
 
       // 如果全部收完，推进工序 + 更新状态
@@ -333,7 +395,18 @@ router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), asy
 
       if ((status === 'completed' || status === 'received') && !alreadyProcessed) {
         const items = await req.db.all('SELECT * FROM outsourcing_items WHERE outsourcing_order_id = ?', [req.params.id]);
-        await handleOutsourcingInbound(req.db, outsourcing, items);
+        const itemsToInbound = items.map(item => {
+          const remainingQty = Math.max(0, item.quantity - (item.received_quantity || 0));
+          return { ...item, quantity: remainingQty, quantity_original: item.quantity };
+        }).filter(item => item.quantity > 0);
+        
+        if (itemsToInbound.length > 0) {
+          await handleOutsourcingInbound(req.db, outsourcing, itemsToInbound);
+        }
+        
+        // 更新明细的 received_quantity 为 quantity
+        await req.db.run('UPDATE outsourcing_items SET received_quantity = quantity WHERE outsourcing_order_id = ?', [req.params.id]);
+        
         await advanceProductionProcessByItems(req.db, outsourcing, items);
       }
 
@@ -362,12 +435,45 @@ router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), asy
 router.put('/:id', validateId, requirePermission('outsourcing_edit'), async (req, res) => {
   try {
     const { supplier_id, expected_date, operator, remark, items } = req.body;
+    
+    // 预取产品信息
+    const productIds = [...new Set((items || []).map(i => i.product_id))];
+    const productMap = new Map();
+    for (const id of productIds) {
+      const p = await req.db.get('SELECT unit, outer_diameter, wall_thickness, length, density FROM products WHERE id = ?', [id]);
+      if (p) productMap.set(id, p);
+    }
+
     let totalAmount = 0;
-    (items || []).forEach(item => { totalAmount += (item.quantity || 0) * (item.unit_price || 0); });
+    const processedItems = (items || []).map(item => {
+      const product = productMap.get(item.product_id);
+      const inputUnit = product?.unit || '公斤';
+      const pricingUnit = item.pricing_unit || '元/公斤';
+      let pricingQuantity = item.pricing_quantity;
+      if (pricingQuantity === undefined || pricingQuantity === null || pricingQuantity === '') {
+        if (pricingUnit === '元/支') {
+          pricingQuantity = item.quantity;
+        } else {
+          pricingQuantity = convertToKg(item.quantity, inputUnit, product);
+        }
+      } else {
+        pricingQuantity = parseFloat(pricingQuantity);
+      }
+      if (isNaN(pricingQuantity) || pricingQuantity < 0) pricingQuantity = 0;
+
+      const itemAmount = pricingQuantity * (item.unit_price || 0);
+      totalAmount += itemAmount;
+
+      return {
+        ...item,
+        pricing_unit: pricingUnit,
+        pricing_quantity: pricingQuantity
+      };
+    });
 
     // 向后兼容顶层字段
-    const uniquePo = [...new Set((items || []).filter(i => i.production_order_id).map(i => i.production_order_id))];
-    const uniqueProc = [...new Set((items || []).filter(i => i.process_id).map(i => i.process_id))];
+    const uniquePo = [...new Set(processedItems.filter(i => i.production_order_id).map(i => i.production_order_id))];
+    const uniqueProc = [...new Set(processedItems.filter(i => i.process_id).map(i => i.process_id))];
     const topLevelPoId = uniquePo.length === 1 ? uniquePo[0] : null;
     const topLevelProcId = uniqueProc.length === 1 ? uniqueProc[0] : null;
 
@@ -375,9 +481,9 @@ router.put('/:id', validateId, requirePermission('outsourcing_edit'), async (req
       await req.db.run('UPDATE outsourcing_orders SET supplier_id = ?, production_order_id = ?, process_id = ?, expected_date = ?, operator = ?, remark = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [supplier_id, topLevelPoId, topLevelProcId, expected_date, operator, remark, totalAmount, req.params.id]);
       await req.db.run('DELETE FROM outsourcing_items WHERE outsourcing_order_id = ?', [req.params.id]);
-      for (const item of items) {
-        await req.db.run('INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price, production_order_id, process_id, remark) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [req.params.id, item.product_id, item.quantity, item.unit_price || 0, item.production_order_id || null, item.process_id || null, item.remark || null]);
+      for (const item of processedItems) {
+        await req.db.run('INSERT INTO outsourcing_items (outsourcing_order_id, product_id, quantity, unit_price, pricing_unit, pricing_quantity, production_order_id, process_id, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [req.params.id, item.product_id, item.quantity, item.unit_price || 0, item.pricing_unit, item.pricing_quantity, item.production_order_id || null, item.process_id || null, item.remark || null]);
       }
     });
     res.json({ success: true });

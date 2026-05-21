@@ -11,19 +11,22 @@ const ReportPage = () => {
   const [dailyData, setDailyData] = useState({ data: [], summary: {} });
   const [productData, setProductData] = useState([]);
   const [materialData, setMaterialData] = useState([]);
+  const [weightRatioData, setWeightRatioData] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     const qs = `start=${dateRange.start}&end=${dateRange.end}`;
-    const [d, p, m] = await Promise.all([
+    const [d, p, m, w] = await Promise.all([
       api.get(`/report/daily?${qs}`),
       api.get(`/report/by-product?${qs}`),
-      api.get(`/report/material-consumption?${qs}`)
+      api.get(`/report/material-consumption?${qs}`),
+      api.get(`/report/weight-ratio?${qs}`)
     ]);
     if (d.success) setDailyData({ data: d.data, summary: d.summary });
     if (p.success) setProductData(p.data);
     if (m.success) setMaterialData(m.data);
+    if (w.success) setWeightRatioData(w.data);
     setLoading(false);
   };
 
@@ -77,6 +80,30 @@ const ReportPage = () => {
         data: materialData
       });
     }
+    if (weightRatioData && weightRatioData.length > 0) {
+      sheets.push({
+        sheetName: '理磅偏差分析',
+        columns: [
+          { header: '类型', key: 'typeText', width: 10 },
+          { header: '单据号', key: 'order_no', width: 18 },
+          { header: '日期', key: 'dateText', width: 12 },
+          { header: '产品编码', key: 'product_code', width: 15 },
+          { header: '产品名称', key: 'product_name', width: 20 },
+          { header: '规格', key: 'product_spec', width: 15 },
+          { header: '理重(kg)', key: 'theoretical_weight', width: 12 },
+          { header: '过磅(kg)', key: 'actual_weight', width: 12 },
+          { header: '理磅比(%)', key: 'ratioPercent', width: 12 },
+          { header: '偏差(%)', key: 'deviationPercent', width: 12 }
+        ],
+        data: weightRatioData.map(r => ({
+          ...r,
+          typeText: r.type === 'inbound' ? '入库' : '出库',
+          dateText: r.created_at?.slice(0, 10) || '',
+          ratioPercent: (r.ratio * 100).toFixed(2),
+          deviationPercent: r.deviation.toFixed(2)
+        }))
+      });
+    }
     exportMultiSheet(`生产报表_${dateRange.start}_${dateRange.end}`, sheets);
   };
 
@@ -84,7 +111,8 @@ const ReportPage = () => {
   const tabs = [
     { id: 'daily', label: '生产日报', icon: 'fa-calendar-day' },
     { id: 'product', label: '按产品统计', icon: 'fa-boxes' },
-    { id: 'material', label: '物料消耗', icon: 'fa-cubes' }
+    { id: 'material', label: '物料消耗', icon: 'fa-cubes' },
+    { id: 'weightRatio', label: '理磅偏差分析', icon: 'fa-balance-scale' }
   ];
 
   return (
@@ -218,7 +246,7 @@ const ReportPage = () => {
               ))}
             </tbody>
           </table>
-        ) : (
+        ) : activeTab === 'material' ? (
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
@@ -251,6 +279,56 @@ const ReportPage = () => {
                   <td className="px-4 py-3 text-sm text-right font-mono text-gray-500">{d.usage_count}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">类型</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">单据号</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">日期</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">产品</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">规格</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">理重 (kg)</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">过磅 (kg)</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">理磅比</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">偏差</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {weightRatioData.length === 0 ? (
+                <tr><td colSpan="9" className="px-4 py-12 text-center text-gray-400">
+                  <i className="fas fa-balance-scale text-4xl mb-3 block opacity-30"></i>该时段无理磅比对数据
+                </td></tr>
+              ) : weightRatioData.map((d, index) => {
+                const isWarning = d.deviation > 5;
+                return (
+                  <tr key={index} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3 text-sm">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${d.type === 'inbound' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
+                        {d.type === 'inbound' ? '入库' : '出库'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono text-gray-700">{d.order_no}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 font-mono">{d.created_at?.slice(0, 10)}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <div className="font-semibold text-gray-800">{d.product_name}</div>
+                      <div className="text-xs text-gray-500 font-mono">{d.product_code}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{d.product_spec || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-right font-mono text-gray-500">{d.theoretical_weight?.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-sm text-right font-mono font-semibold text-teal-600">{d.actual_weight?.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-sm text-right font-mono font-semibold">{(d.ratio * 100).toFixed(1)}%</td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${isWarning ? 'bg-red-100 text-red-700 border border-red-200 animate-pulse' : 'bg-gray-100 text-gray-700'}`}>
+                        {d.deviation?.toFixed(2)}%
+                        {isWarning && <i className="fas fa-exclamation-triangle ml-1" title="偏差超过5%"></i>}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

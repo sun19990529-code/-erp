@@ -20,6 +20,7 @@ const warehouseSchema = z.object({
     input_quantity: z.coerce.number({ invalid_type_error: '输入数量必填' }).min(0.001, '数量需大于0'),
     quantity: z.coerce.number().optional(), // 内部折算的实际公斤数
     input_unit: z.string().optional(),
+    actual_weight: z.any().optional(), // 过磅重量
     total_amount: z.coerce.number().optional() // 只有 inbound 需要
   })).min(1, '请至少添加一条明细')
 });
@@ -63,7 +64,7 @@ const WarehouseFormModal = forwardRef(({
       supplier_id: '',
       operator: '',
       remark: '',
-      items: [{ product_id: '', input_quantity: 1, supplier_batch_no: '', heat_no: '', input_unit: '公斤', total_amount: '' }]
+      items: [{ product_id: '', input_quantity: 1, supplier_batch_no: '', heat_no: '', input_unit: '公斤', actual_weight: '', total_amount: '' }]
     }
   });
 
@@ -114,9 +115,10 @@ const WarehouseFormModal = forwardRef(({
                 input_quantity: it.input_quantity || it.quantity || 1,
                 quantity: it.quantity,
                 input_unit: it.input_unit || '公斤',
+                actual_weight: it.actual_weight !== null && it.actual_weight !== undefined ? it.actual_weight : '',
                 total_amount: it.total_amount || (it.unit_price && it.quantity ? parseFloat((it.unit_price * it.quantity).toFixed(2)) : '')
               }))
-            : [{ product_id: '', input_quantity: 1, supplier_batch_no: '', heat_no: '', input_unit: '公斤', total_amount: '' }]
+            : [{ product_id: '', input_quantity: 1, supplier_batch_no: '', heat_no: '', input_unit: '公斤', actual_weight: '', total_amount: '' }]
         });
       } else {
         reset({
@@ -124,7 +126,7 @@ const WarehouseFormModal = forwardRef(({
           supplier_id: '',
           operator: '',
           remark: '',
-          items: [{ product_id: '', input_quantity: 1, supplier_batch_no: '', heat_no: '', input_unit: '公斤', total_amount: '' }]
+          items: [{ product_id: '', input_quantity: 1, supplier_batch_no: '', heat_no: '', input_unit: '公斤', actual_weight: '', total_amount: '' }]
         });
       }
     }
@@ -151,10 +153,13 @@ const WarehouseFormModal = forwardRef(({
     const finalItems = data.items.map(it => {
       const product = allProducts.find(p => String(p.id) === String(it.product_id));
       const kg = convertToKg(it.input_quantity, it.input_unit, product);
+      const actualWt = it.actual_weight !== '' && it.actual_weight !== null && it.actual_weight !== undefined ? parseFloat(it.actual_weight) : kg;
+      const finalActualWt = (isNaN(actualWt) || actualWt <= 0) ? kg : actualWt;
       return {
         ...it,
-        quantity: kg,
-        unit_price: (isInbound && it.total_amount && kg) ? parseFloat((it.total_amount / kg).toFixed(4)) : (it.unit_price || 0)
+        quantity: finalActualWt,
+        actual_weight: it.actual_weight === '' || it.actual_weight === null || it.actual_weight === undefined ? null : parseFloat(it.actual_weight),
+        unit_price: (isInbound && it.total_amount && finalActualWt) ? parseFloat((it.total_amount / finalActualWt).toFixed(4)) : (it.unit_price || 0)
       };
     });
 
@@ -263,6 +268,11 @@ const WarehouseFormModal = forwardRef(({
                       className={`w-full border ${errors.items?.[index]?.input_quantity ? 'border-red-300' : 'border-gray-300'} focus:border-teal-500 rounded-md px-2.5 py-1.5 text-sm outline-none`} />
                   </div>
 
+                  <div className="w-[25%] lg:w-24 relative">
+                    <input type="number" step="0.001" {...register(`items.${index}.actual_weight`)} placeholder="过磅重量(kg)" 
+                      className="w-full border border-gray-300 focus:border-teal-500 rounded-md px-2.5 py-1.5 text-sm outline-none" />
+                  </div>
+
                   {isInbound && (
                      <div className="w-[20%] lg:w-24 relative">
                        <input type="number" step="0.01" {...register(`items.${index}.total_amount`)} placeholder="总额(¥)" 
@@ -293,7 +303,7 @@ const WarehouseFormModal = forwardRef(({
               );
             })}
 
-            <button type="button" onClick={() => append({ product_id: '', input_quantity: 1, input_unit: '公斤', supplier_batch_no: '', heat_no: '', total_amount: '' })} 
+            <button type="button" onClick={() => append({ product_id: '', input_quantity: 1, input_unit: '公斤', supplier_batch_no: '', heat_no: '', actual_weight: '', total_amount: '' })} 
               className="w-full py-2.5 bg-white border-2 border-dashed border-teal-200 text-teal-600 rounded-lg hover:bg-teal-50 hover:border-teal-300 transition-all font-medium flex items-center justify-center gap-2 text-sm mt-2">
               <i className="fas fa-plus-circle"></i> 添加明细
             </button>

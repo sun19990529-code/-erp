@@ -6,6 +6,50 @@ import { api } from '../api';
 import Modal from './Modal';
 import OperatorSelect from './OperatorSelect';
 
+// 单位转换函数
+const convertToKg = (quantity, unit, product) => {
+  if (unit === '吨') return quantity * 1000;
+  if (unit === '支') {
+    if (product && product.outer_diameter && product.wall_thickness && product.length) {
+      const outerDiameter = parseFloat(product.outer_diameter) || 0;
+      const wallThickness = parseFloat(product.wall_thickness) || 0;
+      const lengthInMeters = (parseFloat(product.length) || 0) / 1000;
+      const kgPerPiece = ((outerDiameter - wallThickness) * wallThickness) * 0.02491 * lengthInMeters;
+      return quantity * kgPerPiece;
+    }
+    return 0;
+  }
+  return quantity;
+};
+
+// 计算明细金额函数
+const calculateRowAmount = (item, product) => {
+  const qty = parseFloat(item.quantity) || 0;
+  const price = parseFloat(item.unit_price) || 0;
+  
+  if (item.pricing_quantity !== undefined && item.pricing_quantity !== null && item.pricing_quantity !== '') {
+    return parseFloat((parseFloat(item.pricing_quantity) * price).toFixed(2));
+  }
+  
+  if (item.pricing_unit === '元/支') {
+    let pieces = qty;
+    if (item.unit === '公斤' && product && product.outer_diameter && product.wall_thickness && product.length) {
+      const outerDiameter = parseFloat(product.outer_diameter) || 0;
+      const wallThickness = parseFloat(product.wall_thickness) || 0;
+      const lengthInMeters = (parseFloat(product.length) || 0) / 1000;
+      const kgPerPiece = ((outerDiameter - wallThickness) * wallThickness) * 0.02491 * lengthInMeters;
+      if (kgPerPiece > 0) {
+        pieces = qty / kgPerPiece;
+      }
+    }
+    return parseFloat((pieces * price).toFixed(2));
+  }
+  
+  // 默认：元/公斤
+  const kg = convertToKg(qty, item.unit || '公斤', product);
+  return parseFloat((kg * price).toFixed(2));
+};
+
 // Zod Schema
 const outsourcingSchema = z.object({
   supplier_id: z.string().min(1, "请选择供应商"),
@@ -17,6 +61,8 @@ const outsourcingSchema = z.object({
     quantity: z.coerce.number().min(0.01, "数量必须大于0"),
     unit_price: z.coerce.number().min(0, "单价不能为负数"),
     unit: z.string().default("件"),
+    pricing_unit: z.string().default("元/公斤"),
+    pricing_quantity: z.any().optional(),
     production_order_id: z.union([z.string(), z.number()]).optional().nullable(),
     process_id: z.union([z.string(), z.number()]).optional().nullable(),
     production_order_no: z.string().optional().nullable(),
@@ -33,7 +79,7 @@ const OutsourcingFormModal = ({ isOpen, onClose, mode, initialData, onSuccess, s
       expected_date: '',
       operator: '',
       remark: '',
-      items: [{ product_id: '', quantity: 1, unit_price: 0, unit: '公斤', production_order_id: null, process_id: null }]
+      items: [{ product_id: '', quantity: 1, unit_price: 0, unit: '公斤', pricing_unit: '元/公斤', pricing_quantity: '', production_order_id: null, process_id: null }]
     }
   });
 
@@ -51,6 +97,8 @@ const OutsourcingFormModal = ({ isOpen, onClose, mode, initialData, onSuccess, s
           items: (initialData.items || []).map(i => ({
             ...i,
             product_id: String(i.product_id || ''),
+            pricing_unit: i.pricing_unit || '元/公斤',
+            pricing_quantity: i.pricing_quantity !== null && i.pricing_quantity !== undefined ? i.pricing_quantity : '',
             production_order_id: i.production_order_id || null,
             process_id: i.process_id || null,
             production_order_no: i.production_order_no || null,
@@ -64,12 +112,14 @@ const OutsourcingFormModal = ({ isOpen, onClose, mode, initialData, onSuccess, s
               quantity: i.quantity || 1,
               unit_price: i.unit_price || 0,
               unit: i.unit || '公斤',
+              pricing_unit: i.pricing_unit || '元/公斤',
+              pricing_quantity: i.pricing_quantity !== null && i.pricing_quantity !== undefined ? i.pricing_quantity : '',
               production_order_id: i.production_order_id || null,
               process_id: i.process_id || null,
               production_order_no: i.production_order_no || null,
               process_name: i.process_name || null,
             }))
-          : [{ product_id: '', quantity: 1, unit_price: 0, unit: '公斤', production_order_id: null, process_id: null }];
+          : [{ product_id: '', quantity: 1, unit_price: 0, unit: '公斤', pricing_unit: '元/公斤', pricing_quantity: '', production_order_id: null, process_id: null }];
         reset({
           supplier_id: initialData?.supplier_id ? String(initialData.supplier_id) : '',
           expected_date: '',
@@ -81,18 +131,19 @@ const OutsourcingFormModal = ({ isOpen, onClose, mode, initialData, onSuccess, s
     }
   }, [isOpen, mode, initialData, reset]);
 
-  // 实时计算总价
-  const watchedItems = watch("items", fields);
-  const totalAmount = watchedItems.reduce((acc, curr) => {
-    return acc + (Number(curr.unit_price || 0) * Number(curr.quantity || 0));
-  }, 0);
-
   // 构建产品名称查找 Map（避免 N^2 遍历）
   const productMap = useMemo(() => {
     const map = new Map();
     products.forEach(p => map.set(String(p.id), p));
     return map;
   }, [products]);
+
+  // 实时计算总价
+  const watchedItems = watch("items", fields);
+  const totalAmount = watchedItems.reduce((acc, curr) => {
+    const product = productMap.get(String(curr.product_id));
+    return acc + calculateRowAmount(curr, product);
+  }, 0);
 
   // 提交逻辑
   const onSubmit = async (data) => {
@@ -103,6 +154,8 @@ const OutsourcingFormModal = ({ isOpen, onClose, mode, initialData, onSuccess, s
         quantity: i.quantity,
         unit_price: i.unit_price,
         unit: i.unit,
+        pricing_unit: i.pricing_unit,
+        pricing_quantity: i.pricing_quantity === '' || i.pricing_quantity === null || i.pricing_quantity === undefined ? null : parseFloat(i.pricing_quantity),
         production_order_id: i.production_order_id || null,
         process_id: i.process_id || null,
         remark: i.remark || null,
@@ -192,22 +245,41 @@ const OutsourcingFormModal = ({ isOpen, onClose, mode, initialData, onSuccess, s
                     </div>
 
                     {/* 数量 */}
-                    <div className="flex items-center gap-1 w-28">
+                    <div className="flex items-center gap-1 w-24">
                       <span className="text-xs text-gray-500 shrink-0">数量</span>
                       <input type="number" step="0.01" {...register(`items.${i}.quantity`)} className={`w-full border rounded px-2 py-1 text-sm ${errors.items?.[i]?.quantity ? 'border-red-500' : 'border-gray-300'}`} />
                     </div>
 
                     {/* 单位 */}
-                    <div className="w-20">
+                    <div className="w-18">
                       <select {...register(`items.${i}.unit`)} className="w-full border rounded px-2 py-1 text-sm text-gray-700">
                         <option value="公斤">公斤</option><option value="支">支</option><option value="件">件</option><option value="米">米</option><option value="根">根</option>
                       </select>
                     </div>
 
+                    {/* 计价单位 */}
+                    <div className="w-24">
+                      <select {...register(`items.${i}.pricing_unit`)} className="w-full border rounded px-2 py-1 text-sm text-gray-700">
+                        <option value="元/公斤">元/公斤</option><option value="元/支">元/支</option>
+                      </select>
+                    </div>
+
+                    {/* 计价数量 */}
+                    <div className="flex items-center gap-1 w-28">
+                      <span className="text-xs text-gray-500 shrink-0">计价数</span>
+                      <input type="number" step="0.01" {...register(`items.${i}.pricing_quantity`)} placeholder="自动计算" className="w-full border rounded px-2 py-1 text-sm border-gray-300" />
+                    </div>
+
                     {/* 单价 */}
-                    <div className="flex items-center gap-1 w-32">
+                    <div className="flex items-center gap-1 w-28">
                       <span className="text-xs text-gray-500 shrink-0">单价¥</span>
                       <input type="number" step="0.01" {...register(`items.${i}.unit_price`)} className={`w-full border rounded px-2 py-1 text-sm ${errors.items?.[i]?.unit_price ? 'border-red-500' : 'border-gray-300'}`} />
+                    </div>
+
+                    {/* 行金额小计 */}
+                    <div className="w-24 text-right pr-2">
+                      <span className="text-xs text-gray-400">小计: </span>
+                      <span className="text-sm font-semibold text-teal-700">¥{(calculateRowAmount(item, productMap.get(String(item.product_id)))).toFixed(2)}</span>
                     </div>
 
                     {/* 删除 */}
@@ -219,7 +291,7 @@ const OutsourcingFormModal = ({ isOpen, onClose, mode, initialData, onSuccess, s
               );
             })}
             
-            <button type="button" onClick={() => append({ product_id: '', quantity: 1, unit_price: 0, unit: '公斤', production_order_id: null, process_id: null })} 
+            <button type="button" onClick={() => append({ product_id: '', quantity: 1, unit_price: 0, unit: '公斤', pricing_unit: '元/公斤', pricing_quantity: '', production_order_id: null, process_id: null })} 
               className="mt-2 w-full py-2 bg-teal-50 text-teal-600 rounded-lg text-sm font-medium hover:bg-teal-100 transition-colors border border-dashed border-teal-300">
               <i className="fas fa-plus mr-1"></i> 手动添加明细
             </button>
