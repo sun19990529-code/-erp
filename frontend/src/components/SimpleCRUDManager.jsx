@@ -140,7 +140,7 @@ const SimpleCRUDManager = ({
         </form>
       </Modal>
     </div>
-    {ConfirmDialog}
+    <ConfirmDialog />
     </>
   );
 };
