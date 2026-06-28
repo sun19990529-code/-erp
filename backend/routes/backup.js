@@ -15,24 +15,44 @@ let _pgBinPath = undefined;
 function getPgBinPath() {
   if (_pgBinPath !== undefined) return _pgBinPath;
 
+  const isWin = process.platform === 'win32';
+  const exeSuffix = isWin ? '.exe' : '';
+
   // 1. 优先使用 .env 中的 PG_BIN_PATH
-  if (process.env.PG_BIN_PATH && fs.existsSync(path.join(process.env.PG_BIN_PATH, 'pg_dump.exe'))) {
+  if (process.env.PG_BIN_PATH && fs.existsSync(path.join(process.env.PG_BIN_PATH, `pg_dump${exeSuffix}`))) {
     _pgBinPath = process.env.PG_BIN_PATH;
     return _pgBinPath;
   }
 
   // 2. 自动扫描常见安装目录
-  const drives = ['C', 'D', 'E', 'F'];
-  const patterns = [
-    'PostgreSQL/18/bin', 'PostgreSQL/17/bin', 'PostgreSQL/16/bin', 'PostgreSQL/15/bin',
-    'Program Files/PostgreSQL/18/bin', 'Program Files/PostgreSQL/17/bin',
-    'Program Files/PostgreSQL/16/bin', 'Program Files/PostgreSQL/15/bin',
-    'pgsql/bin',
-  ];
-  for (const drive of drives) {
-    for (const pattern of patterns) {
-      const candidate = `${drive}:/${pattern}`;
-      const pgDumpPath = path.join(candidate, 'pg_dump.exe');
+  if (isWin) {
+    const drives = ['C', 'D', 'E', 'F'];
+    const patterns = [
+      'PostgreSQL/18/bin', 'PostgreSQL/17/bin', 'PostgreSQL/16/bin', 'PostgreSQL/15/bin',
+      'Program Files/PostgreSQL/18/bin', 'Program Files/PostgreSQL/17/bin',
+      'Program Files/PostgreSQL/16/bin', 'Program Files/PostgreSQL/15/bin',
+      'pgsql/bin',
+    ];
+    for (const drive of drives) {
+      for (const pattern of patterns) {
+        const candidate = `${drive}:/${pattern}`;
+        const pgDumpPath = path.join(candidate, 'pg_dump.exe');
+        if (fs.existsSync(pgDumpPath)) {
+          _pgBinPath = candidate;
+          console.log(`[backup] 自动发现 PostgreSQL 工具路径: ${_pgBinPath}`);
+          return _pgBinPath;
+        }
+      }
+    }
+  } else {
+    // Linux/macOS 常见安装目录
+    const linuxPatterns = [
+      '/usr/lib/postgresql/18/bin', '/usr/lib/postgresql/17/bin', '/usr/lib/postgresql/16/bin', '/usr/lib/postgresql/15/bin',
+      '/usr/pgsql-18/bin', '/usr/pgsql-17/bin', '/usr/pgsql-16/bin', '/usr/pgsql-15/bin',
+      '/usr/bin', '/usr/local/bin'
+    ];
+    for (const candidate of linuxPatterns) {
+      const pgDumpPath = path.join(candidate, 'pg_dump');
       if (fs.existsSync(pgDumpPath)) {
         _pgBinPath = candidate;
         console.log(`[backup] 自动发现 PostgreSQL 工具路径: ${_pgBinPath}`);
@@ -103,8 +123,9 @@ async function performBackup(db, saveDatabase, customPath = null) {
   try {
     execFileSync(getPgDumpCmd(), ['-h', host, '-p', port, '-U', user, '-F', 'c', '-f', backupFilePath, dbName], { env, timeout: 60000 });
   } catch (e) {
-    console.error('[backup] pg_dump 失败:', e.message);
-    throw new Error('数据库备份失败', { cause: e });
+    const stderr = e.stderr ? e.stderr.toString() : '';
+    console.error('[backup] pg_dump 失败:', e.message, '\nStderr:', stderr);
+    throw new Error(`数据库备份失败: ${stderr || e.message}`, { cause: e });
   }
   
   config.lastBackup = now.toISOString();
@@ -239,8 +260,10 @@ router.post('/restore', requireAdmin, async (req, res) => {
     execFileSync(getPgRestoreCmd(), ['-h', host, '-p', port, '-U', user, '-d', dbName, '--clean', '--if-exists', backupFilePath], { env, timeout: 120000 });
     res.json({ success: true, message: '数据库恢复成功', previousBackup: currentBackup.file });
   } catch (error) {
-    console.error('[backup] pg_restore 失败:', error.message);
-    res.status(500).json({ success: false, message: `数据库恢复失败，恢复前备份已保存: ${currentBackup.file}` });
+    const stderr = error.stderr ? error.stderr.toString() : '';
+    const stdout = error.stdout ? error.stdout.toString() : '';
+    console.error('[backup] pg_restore 失败:', error.message, '\nStderr:', stderr, '\nStdout:', stdout);
+    res.status(500).json({ success: false, message: `数据库恢复失败，恢复前备份已保存: ${currentBackup.file}。具体原因: ${stderr || error.message}` });
   }
 });
 
