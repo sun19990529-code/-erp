@@ -153,7 +153,7 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
           if (supplier) supplierId = supplier.id;
         }
 
-        await req.db.run(
+        const insProd = await req.db.run(
           `INSERT INTO products (code, name, specification, unit, category, unit_price, stock_threshold, outer_diameter, inner_diameter, wall_thickness, length, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [code, name,
             (row['规格型号'] || '').toString().trim(),
@@ -164,6 +164,13 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
             outerDiameter, innerDiameter, wallThickness, length, supplierId
           ]
         );
+        const productId = insProd.lastInsertRowid;
+        if (productId && supplierId) {
+          await req.db.run(
+            `INSERT INTO product_suppliers (product_id, supplier_id) VALUES (?, ?)`,
+            [productId, supplierId]
+          );
+        }
         imported++;
       }
     });
@@ -458,6 +465,20 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
           productId = product.id;
           if (supplierId) {
             await req.db.run("UPDATE products SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL", [supplierId, productId]);
+          }
+        }
+
+        // 自动建立并同步绑定产品-供应商多对多关联表
+        if (productId && supplierId) {
+          const relation = await req.db.get(
+            "SELECT id FROM product_suppliers WHERE product_id = ? AND supplier_id = ?",
+            [productId, supplierId]
+          );
+          if (!relation) {
+            await req.db.run(
+              "INSERT INTO product_suppliers (product_id, supplier_id) VALUES (?, ?)",
+              [productId, supplierId]
+            );
           }
         }
 

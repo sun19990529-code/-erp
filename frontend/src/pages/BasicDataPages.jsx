@@ -797,6 +797,7 @@ const ProductManager = ({ category }) => {
           </form>
         )}
       </Modal>
+      <ConfirmDialog />
     </div>
   );
 };
