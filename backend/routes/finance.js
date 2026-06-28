@@ -24,7 +24,7 @@ router.get('/payables', requirePermission('finance_view'), async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination, summary: { ...summary, total_unpaid: summary.total_amount - summary.total_paid } });
   } catch (error) {
     console.error('[finance.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -46,7 +46,7 @@ router.get('/receivables', requirePermission('finance_view'), async (req, res) =
     res.json({ success: true, data: result.data, pagination: result.pagination, summary: { ...summary, total_unreceived: summary.total_amount - summary.total_received } });
   } catch (error) {
     console.error('[finance.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -71,7 +71,7 @@ router.post('/payables/:id/pay', validateId, requirePermission('finance_edit'), 
     res.json({ success: true });
   } catch (error) {
     console.error('[finance.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -96,7 +96,7 @@ router.post('/receivables/:id/receive', validateId, requirePermission('finance_e
     res.json({ success: true });
   } catch (error) {
     console.error('[finance.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -113,7 +113,7 @@ router.get('/payment-records', requirePermission('finance_view'), async (req, re
     res.json({ success: true, data: records });
   } catch (error) {
     console.error('[finance.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -136,7 +136,7 @@ router.get('/summary', requirePermission('finance_view'), async (req, res) => {
     });
   } catch (error) {
     console.error('[finance.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

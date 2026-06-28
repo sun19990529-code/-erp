@@ -56,7 +56,7 @@ router.get('/', requirePermission('dashboard_view'), async (req, res) => {
     });
   } catch (error) {
     console.error(`[dashboard.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -179,7 +179,7 @@ router.get('/workshop', requirePermission('dashboard_view'), async (req, res) =>
     res.json({ success: true, data: { liveOrders, todayRecords, processLoad } });
   } catch (error) {
     console.error('[dashboard.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -211,7 +211,7 @@ router.get('/purchase-suggestions', requirePermission('dashboard_view'), async (
     res.json({ success: true, data: needPurchase });
   } catch (error) {
     console.error(`[dashboard.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

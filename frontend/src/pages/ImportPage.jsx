@@ -11,7 +11,8 @@ const ImportPage = () => {
   const types = [
     { id: 'products', label: '产品档案', icon: 'fa-box', desc: '导入产品编码、名称、规格、分类等' },
     { id: 'suppliers', label: '供应商', icon: 'fa-truck', desc: '导入供应商名称、联系人、电话等' },
-    { id: 'customers', label: '客户', icon: 'fa-users', desc: '导入客户名称、联系人、电话等' }
+    { id: 'customers', label: '客户', icon: 'fa-users', desc: '导入客户名称、联系人、电话等' },
+    { id: 'wps-raw-materials', label: 'WPS原材料库存', icon: 'fa-file-excel', desc: '智能解析WPS格式规格与库存数量' }
   ];
 
   const downloadTemplate = async () => {
@@ -81,7 +82,7 @@ const ImportPage = () => {
       </div>
 
       {/* 类型选择 */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         {types.map(t => (
           <button key={t.id} onClick={() => { setActiveType(t.id); setResult(null); }}
             className={`p-4 rounded-xl border-2 transition-all text-left ${activeType === t.id
@@ -140,15 +141,25 @@ const ImportPage = () => {
             <i className="fas fa-info-circle text-amber-500 mt-0.5"></i>
             <div className="text-sm text-amber-800">
               <div className="font-medium mb-1">导入须知</div>
-              <ul className="list-disc list-inside space-y-0.5 text-xs text-amber-700">
-                <li>请先下载模板，按照模板格式填写数据</li>
-                <li>标记 * 的列为必填项</li>
-                <li>编码与已有数据重复时将自动跳过</li>
-                <li>产品分类填写：原材料、半成品、成品（也支持 raw/semi/finished）</li>
-                <li>产品尺寸（外径/内径/壁厚/长度）为选填，填写后自动生成规格名称</li>
-                <li>供应商名称须与系统中已有供应商完全一致，否则不会关联</li>
-                <li>客户信用等级填写：A / B / C</li>
-              </ul>
+              {activeType === 'wps-raw-materials' ? (
+                <ul className="list-disc list-inside space-y-0.5 text-xs text-amber-700">
+                  <li>本模块专用于智能导入金山文档/WPS 的【原材料库存管理】表格数据</li>
+                  <li><strong>原材料规格*</strong> 须符合格式规范，例如：<code>Φ4.77*0.23-316L</code>（Φ外径*壁厚-材质/钢种）</li>
+                  <li>系统将<strong>自动正则分拆尺寸和材质</strong>，若产品在档案库中未建，系统将<strong>自动新建物料编码建档</strong></li>
+                  <li>若<strong>供货单位</strong>在系统供应商库中未建，系统将<strong>全自动为您新建供应商建档</strong>并自动生成编码</li>
+                  <li><strong>现有库存*</strong> 对应的值将被强力对齐为系统内部的【原材料仓】结存数量，并自动记录期初导入日志</li>
+                </ul>
+              ) : (
+                <ul className="list-disc list-inside space-y-0.5 text-xs text-amber-700">
+                  <li>请先下载模板，按照模板格式填写数据</li>
+                  <li>标记 * 的列为必填项</li>
+                  <li>编码与已有数据重复时将自动跳过</li>
+                  <li>产品分类填写：原材料、半成品、成品（也支持 raw/semi/finished）</li>
+                  <li>产品尺寸（外径/内径/壁厚/长度）为选填，填写后自动生成规格名称</li>
+                  <li>供应商名称须与系统中已有供应商完全一致，否则不会关联</li>
+                  <li>客户信用等级填写：A / B / C</li>
+                </ul>
+              )}
             </div>
           </div>
         </div>
@@ -160,11 +171,23 @@ const ImportPage = () => {
           <h3 className="font-bold text-gray-700 mb-4">
             <i className="fas fa-clipboard-check mr-2 text-green-600"></i>导入结果
           </h3>
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className={`grid ${result.createdProducts !== undefined ? 'grid-cols-5' : 'grid-cols-3'} gap-4 mb-4`}>
             <div className="bg-green-50 rounded-lg p-4 text-center border border-green-100">
               <div className="text-2xl font-bold text-green-600">{result.imported}</div>
-              <div className="text-xs text-green-700 mt-1">成功导入</div>
+              <div className="text-xs text-green-700 mt-1">成功导入对齐</div>
             </div>
+            {result.createdProducts !== undefined && (
+              <div className="bg-blue-50 rounded-lg p-4 text-center border border-blue-100 animate-fade-in">
+                <div className="text-2xl font-bold text-blue-600">{result.createdProducts}</div>
+                <div className="text-xs text-blue-700 mt-1">自动新建物料</div>
+              </div>
+            )}
+            {result.createdSuppliers !== undefined && (
+              <div className="bg-indigo-50 rounded-lg p-4 text-center border border-indigo-100 animate-fade-in">
+                <div className="text-2xl font-bold text-indigo-600">{result.createdSuppliers}</div>
+                <div className="text-xs text-indigo-700 mt-1">自动新建供应商</div>
+              </div>
+            )}
             <div className="bg-yellow-50 rounded-lg p-4 text-center border border-yellow-100">
               <div className="text-2xl font-bold text-yellow-600">{result.skipped}</div>
               <div className="text-xs text-yellow-700 mt-1">跳过</div>

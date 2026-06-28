@@ -18,7 +18,7 @@ router.get('/', requirePermission('warehouse_view'), async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error('[stocktake.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -31,7 +31,7 @@ router.get('/:id', validateId, requirePermission('warehouse_view'), async (req, 
     res.json({ success: true, data: { ...order, items } });
   } catch (error) {
     console.error('[stocktake.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -56,7 +56,7 @@ router.post('/', requirePermission('warehouse_create'), async (req, res) => {
     res.json({ success: true, data: { id: stocktakeId, order_no: orderNo } });
   } catch (error) {
     console.error('[stocktake.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -88,7 +88,7 @@ router.put('/:id/items', validateId, requirePermission('warehouse_edit'), async 
     res.json({ success: true });
   } catch (error) {
     console.error('[stocktake.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -123,7 +123,7 @@ router.put('/:id/confirm', validateId, requirePermission('warehouse_edit'), asyn
     res.json({ success: true, message: '盘点已确认，库存已调整' });
   } catch (error) {
     console.error('[stocktake.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -140,7 +140,7 @@ router.delete('/:id', validateId, requirePermission('warehouse_delete'), async (
     res.json({ success: true });
   } catch (error) {
     console.error('[stocktake.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

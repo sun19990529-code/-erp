@@ -41,3 +41,18 @@ export const formatQuantity = (value, maxDecimals = 3) => {
 export const formatCurrency = (value, currencySymbol = '¥') => {
   return `${currencySymbol} ${formatAmount(value)}`;
 };
+
+/**
+ * 规范化搜索文本和被搜索文本，以便进行无符号模糊匹配
+ * @param {string} str - 待处理文本
+ * @returns {string} 规范化后的文本
+ */
+export const normalizeSearch = (str) => {
+  if (!str) return '';
+  return str
+    .toString()
+    .toLowerCase()
+    .replace(/[Φφδ\s]/g, '')
+    .replace(/[xX*]/g, '*');
+};
+

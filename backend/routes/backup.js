@@ -187,7 +187,7 @@ router.post('/execute', requireAdmin, async (req, res) => {
     const result = await performBackup(req.getDb(), req.saveDatabase, backupPath);
     res.json({ success: true, data: result, message: '备份成功' });
   } catch (error) {
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

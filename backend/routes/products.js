@@ -19,10 +19,11 @@ router.get('/', requirePermission('basic_data_view'), async (req, res) => {
   try {
     const { category, supplier_id, customer_id } = req.query;
     let sql = `
-      SELECT p.*, s.name as supplier_name,
+      SELECT p.*, s.name as supplier_name, mc.name as steel_type,
         (SELECT COUNT(*) FROM product_processes pp WHERE pp.product_id = p.id) as process_count
       FROM products p
       LEFT JOIN suppliers s ON p.supplier_id = s.id
+      LEFT JOIN material_categories mc ON p.material_category_id = mc.id
       WHERE (p.is_deleted IS NULL OR p.is_deleted = 0)
     `;
     const params = [];
@@ -90,7 +91,7 @@ router.get('/', requirePermission('basic_data_view'), async (req, res) => {
     res.json({ success: true, data: products });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -110,7 +111,7 @@ router.post('/', requirePermission('basic_data_create'), async (req, res) => {
     res.json({ success: true, data: { id: result.lastInsertRowid } });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -128,7 +129,7 @@ router.put('/:id', validateId, requirePermission('basic_data_edit'), async (req,
     res.json({ success: true });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -144,7 +145,7 @@ router.delete('/:id', validateId, requirePermission('basic_data_delete'), async 
     res.json({ success: true });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -163,7 +164,7 @@ router.get('/:id/processes', validateId, requirePermission('basic_data_view'), a
     res.json({ success: true, data: processes });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -211,7 +212,7 @@ router.post('/:id/processes', validateId, requirePermission('basic_data_edit'), 
     res.json({ success: true });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -227,7 +228,7 @@ router.get('/product-processes/:productProcessId/materials', requirePermission('
     res.json({ success: true, data: materials });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -250,7 +251,7 @@ router.get('/:id/process-materials', validateId, requirePermission('basic_data_v
     res.json({ success: true, data: materials });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -265,7 +266,7 @@ router.put('/:id/processes/:processId', validateId, requirePermission('basic_dat
     res.json({ success: true });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -275,7 +276,7 @@ router.delete('/:id/processes/:processId', validateId, requirePermission('basic_
     res.json({ success: true });
   } catch (error) {
     console.error(`[products.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -292,7 +293,7 @@ router.get('/:id/suppliers', validateId, requirePermission('basic_data_view'), a
     res.json({ success: true, data: suppliers });
   } catch (error) {
     console.error('[products.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -309,7 +310,7 @@ router.put('/:id/suppliers', validateId, requirePermission('basic_data_edit'), a
     res.json({ success: true });
   } catch (error) {
     console.error('[products.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -325,7 +326,7 @@ router.get('/:id/customers', validateId, requirePermission('basic_data_view'), a
     res.json({ success: true, data: customers });
   } catch (error) {
     console.error('[products.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -341,7 +342,7 @@ router.put('/:id/customers', validateId, requirePermission('basic_data_edit'), a
     res.json({ success: true });
   } catch (error) {
     console.error('[products.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -357,7 +358,7 @@ router.get('/:id/bound-materials', validateId, requirePermission('basic_data_vie
     res.json({ success: true, data: materials });
   } catch (error) {
     console.error('[products.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -376,7 +377,94 @@ router.put('/:id/bound-materials', validateId, requirePermission('basic_data_edi
     res.json({ success: true });
   } catch (error) {
     console.error('[products.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
+  }
+});
+
+// ==================== 相似规格匹配接口 ====================
+router.post('/match-similar', requirePermission('basic_data_view'), async (req, res) => {
+  try {
+    const { outer_diameter, inner_diameter, wall_thickness, length, category } = req.body;
+    if (!outer_diameter) {
+      return res.status(400).json({ success: false, message: '外径为匹配的必填项' });
+    }
+
+    const od = parseFloat(outer_diameter);
+    const idVal = inner_diameter ? parseFloat(inner_diameter) : null;
+    const wt = wall_thickness ? parseFloat(wall_thickness) : null;
+    const len = length ? parseFloat(length) : null;
+
+    let sql = `
+      SELECT p.*, s.name as supplier_name
+      FROM products p
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      WHERE (p.is_deleted IS NULL OR p.is_deleted = 0)
+        AND p.outer_diameter >= ? AND p.outer_diameter <= ?
+    `;
+    const params = [od - 0.5, od + 0.5];
+
+    if (category) {
+      sql += ' AND p.category = ?';
+      params.push(category);
+    }
+
+    const candidates = await req.db.all(sql, params);
+
+    const matches = candidates.map(p => {
+      let score = 50; // 基础分
+
+      // 1. 外径契合度
+      const odDiff = Math.abs(p.outer_diameter - od);
+      if (odDiff === 0) score += 20;
+      else if (odDiff <= 0.1) score += 15;
+      else if (odDiff <= 0.3) score += 10;
+      else score += 5;
+
+      // 2. 内径或壁厚契合度
+      if (wt !== null && p.wall_thickness !== null) {
+        const wtDiff = Math.abs(p.wall_thickness - wt);
+        if (wtDiff === 0) score += 20;
+        else if (wtDiff <= 0.05) score += 15;
+        else if (wtDiff <= 0.1) score += 10;
+      } else if (idVal !== null && p.inner_diameter !== null) {
+        const idDiff = Math.abs(p.inner_diameter - idVal);
+        if (idDiff === 0) score += 20;
+        else if (idDiff <= 0.1) score += 15;
+        else if (idDiff <= 0.3) score += 10;
+      } else {
+        score += 10;
+      }
+
+      // 3. 长度契合度
+      let lenMatch = false;
+      if (len !== null && p.length !== null) {
+        const lenDiff = Math.abs(p.length - len);
+        if (lenDiff === 0) {
+          score += 10;
+          lenMatch = true;
+        } else if (lenDiff <= 50) {
+          score += 5;
+        }
+      } else if (len === null && p.length === null) {
+        score += 10;
+        lenMatch = true;
+      }
+
+      return {
+        ...p,
+        similarity_score: Math.min(score, 100),
+        len_match: lenMatch
+      };
+    });
+
+    const filteredMatches = matches
+      .filter(m => m.similarity_score >= 60)
+      .sort((a, b) => b.similarity_score - a.similarity_score);
+
+    res.json({ success: true, data: filteredMatches });
+  } catch (error) {
+    console.error('[products.js match-similar]', error.message);
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

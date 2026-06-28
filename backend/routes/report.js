@@ -55,7 +55,7 @@ router.get('/daily', requirePermission('production_view'), async (req, res) => {
     });
   } catch (error) {
     console.error('[report/daily]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -99,7 +99,7 @@ router.get('/by-product', requirePermission('production_view'), async (req, res)
     res.json({ success: true, data: enriched });
   } catch (error) {
     console.error('[report/by-product]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -133,7 +133,7 @@ router.get('/material-consumption', requirePermission('production_view'), async 
     res.json({ success: true, data: enriched });
   } catch (error) {
     console.error('[report/material]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -188,7 +188,7 @@ router.get('/finance-trend', requirePermission('dashboard_view'), async (req, re
     res.json({ success: true, data: combined });
   } catch (error) {
     console.error('[report/finance-trend]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -251,7 +251,7 @@ router.get('/inventory-trend', requirePermission('dashboard_view'), async (req, 
     res.json({ success: true, data: combined });
   } catch (error) {
     console.error('[report/inventory-trend]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -308,7 +308,7 @@ router.get('/check-overdue', requirePermission('production_view'), async (req, r
     res.json({ success: true, data: { overdueOrders: overdueOrders.length, overduePurchases: overduePurchases.length, overdueOutsourcing: overdueOutsourcing.length, notifications } });
   } catch (error) {
     console.error('[report/check-overdue]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -379,7 +379,7 @@ router.get('/weight-ratio', requirePermission('warehouse_view'), async (req, res
     res.json({ success: true, data: enriched });
   } catch (error) {
     console.error('[report/weight-ratio]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

@@ -58,7 +58,7 @@ router.get('/', requirePermission('order_view'), async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -91,7 +91,7 @@ router.get('/:id', validateId, requirePermission('order_view'), async (req, res)
     res.json({ success: true, data: { ...order, items, productionOrders, outboundOrders } });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -118,7 +118,7 @@ router.post('/', requirePermission('order_create'), validate(orderCreate), async
     res.json({ success: true, data: { id: orderId, order_no: orderNo } });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -164,7 +164,7 @@ router.put('/:id/status', validateId, requirePermission('order_edit'), async (re
     res.json({ success: true });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -248,7 +248,7 @@ router.post('/:id/direct-ship', validateId, requirePermission('order_edit'), asy
     if (error instanceof BusinessError) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -276,7 +276,7 @@ router.put('/:id', validateId, requirePermission('order_edit'), async (req, res)
     res.json({ success: true });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -417,7 +417,7 @@ router.delete('/:id', validateId, requirePermission('order_delete'), async (req,
     if (error instanceof BusinessError) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -428,7 +428,7 @@ router.get('/:id/materials', validateId, requirePermission('order_view'), async 
     res.json({ success: true, data: materials });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -447,7 +447,7 @@ router.post('/:id/materials', validateId, requirePermission('order_edit'), async
     res.json({ success: true });
   } catch (error) {
     console.error(`[orders.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

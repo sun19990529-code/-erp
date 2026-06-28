@@ -44,7 +44,7 @@ function createCRUDRouter(config) {
       res.json({ success: true, data });
     } catch (error) {
       console.error(`[crud-${table}]`, error.message);
-      res.status(500).json({ success: false, message: '服务器错误' });
+      res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
     }
   });
 
@@ -63,7 +63,7 @@ function createCRUDRouter(config) {
       if (error.code === '23505') {
         return res.status(400).json({ success: false, message: '编码已存在' });
       }
-      res.status(500).json({ success: false, message: '服务器错误' });
+      res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
     }
   });
 
@@ -78,7 +78,7 @@ function createCRUDRouter(config) {
         res.json({ success: true, data: { status: newStatus } });
       } catch (error) {
         console.error(`[crud-${table}]`, error.message);
-        res.status(500).json({ success: false, message: '服务器错误' });
+        res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
       }
     });
   }
@@ -99,7 +99,7 @@ function createCRUDRouter(config) {
       if (error.code === '23505') {
         return res.status(400).json({ success: false, message: '编码已存在' });
       }
-      res.status(500).json({ success: false, message: '服务器错误' });
+      res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
     }
   });
 
@@ -125,7 +125,7 @@ function createCRUDRouter(config) {
       res.json({ success: true });
     } catch (error) {
       console.error(`[crud-${table}]`, error.message);
-      res.status(500).json({ success: false, message: '服务器错误' });
+      res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
     }
   });
 

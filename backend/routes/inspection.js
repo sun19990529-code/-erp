@@ -19,7 +19,7 @@ router.get('/inbound', requirePermission('inspection_view'), async (req, res) =>
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -93,7 +93,7 @@ router.post('/inbound', requirePermission('inspection_create'), async (req, res)
     res.json({ success: true });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -112,7 +112,7 @@ router.get('/patrol', requirePermission('inspection_view'), async (req, res) => 
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -143,7 +143,7 @@ router.post('/patrol', requirePermission('inspection_create'), async (req, res) 
     res.json({ success: true });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -162,7 +162,7 @@ router.get('/outsourcing', requirePermission('inspection_view'), async (req, res
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -195,7 +195,7 @@ router.post('/outsourcing', requirePermission('inspection_create'), async (req, 
     res.json({ success: true });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -213,7 +213,7 @@ router.get('/final', requirePermission('inspection_view'), async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -238,7 +238,7 @@ router.post('/final', requirePermission('inspection_create'), async (req, res) =
     res.json({ success: true });
   } catch (error) {
     console.error(`[inspection.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

@@ -21,7 +21,7 @@ router.get('/', requirePermission('purchase_view'), async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -48,7 +48,7 @@ router.post('/', requirePermission('purchase_create'), validate(purchaseCreate),
     res.json({ success: true, data: { id: purchaseId, order_no: orderNo } });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -102,7 +102,7 @@ router.put('/:id/status', validateId, requirePermission('purchase_edit'), async 
     res.json({ success: true });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -121,7 +121,7 @@ router.put('/:id', validateId, requirePermission('purchase_edit'), validate(purc
     res.json({ success: true });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -192,7 +192,7 @@ router.delete('/:id', validateId, requirePermission('purchase_delete'), async (r
     res.json({ success: true, message: isCompleted ? '已强制删除并回滚关联入库单和应付账款' : '删除成功' });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -375,7 +375,7 @@ router.get('/suggestions', requirePermission('purchase_view'), async (req, res) 
     });
   } catch (error) {
     console.error('[purchase/suggestions]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -413,7 +413,7 @@ router.post('/suggestions/create-order', requirePermission('purchase_create'), a
     res.json({ success: true, data: { id: purchaseId, order_no: orderNo } });
   } catch (error) {
     console.error('[purchase/suggestions]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -434,7 +434,7 @@ router.get('/:id', validateId, requirePermission('purchase_view'), async (req, r
     res.json({ success: true, data: { ...order, items } });
   } catch (error) {
     console.error(`[purchase.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

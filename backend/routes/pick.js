@@ -29,7 +29,7 @@ router.get('/', requirePermission('warehouse_view'), async (req, res) => {
     res.json({ success: true, data: orders });
   } catch (error) {
     console.error(`[pick.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -40,7 +40,7 @@ router.get('/:id', validateId, requirePermission('warehouse_view'), async (req, 
     res.json({ success: true, data: { ...order, items } });
   } catch (error) {
     console.error(`[pick.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -146,7 +146,7 @@ router.post('/', requirePermission('warehouse_create'), async (req, res) => {
     res.json({ success: true, data: { id: pickId, order_no: orderNo }, over_issue_warning: overIssueWarnings.length > 0 });
   } catch (error) {
     console.error(`[pick.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -286,7 +286,7 @@ router.put('/:id/status', validateId, requirePermission('warehouse_edit'), async
     if (error instanceof BusinessError) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -368,7 +368,7 @@ router.put('/:id', validateId, requirePermission('warehouse_edit'), async (req, 
     res.json({ success: true });
   } catch (error) {
     console.error(`[pick.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -413,7 +413,7 @@ router.delete('/:id', validateId, requirePermission('warehouse_delete'), async (
     res.json({ success: true });
   } catch (error) {
     console.error(`[pick.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

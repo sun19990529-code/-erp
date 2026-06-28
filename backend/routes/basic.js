@@ -87,7 +87,7 @@ router.get('/operators', async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[basic.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -98,7 +98,7 @@ router.get('/roles', adminOnly, async (req, res) => {
     res.json({ success: true, data: roles });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -109,7 +109,7 @@ router.post('/roles', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -120,7 +120,7 @@ router.put('/roles/:id', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -136,7 +136,7 @@ router.delete('/roles/:id', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -147,7 +147,7 @@ router.get('/permissions', adminOnly, async (req, res) => {
     res.json({ success: true, data: permissions });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -167,7 +167,7 @@ router.post('/permissions', adminOnly, async (req, res) => {
     if (error.code === '23505') {
       return res.status(400).json({ success: false, message: '权限编码已存在' });
     }
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -187,7 +187,7 @@ router.put('/permissions/:id', adminOnly, async (req, res) => {
     if (error.code === '23505') {
       return res.status(400).json({ success: false, message: '权限编码已存在' });
     }
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -201,7 +201,7 @@ router.delete('/permissions/:id', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -215,7 +215,7 @@ router.get('/roles/:id/permissions', adminOnly, async (req, res) => {
     res.json({ success: true, data: permissions });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -234,7 +234,7 @@ router.put('/roles/:id/permissions', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -266,7 +266,7 @@ router.get('/users', adminOnly, async (req, res) => {
     res.json({ success: true, data: users });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -328,7 +328,7 @@ router.post('/users/login', authLimiter, validate(userLogin), async (req, res) =
     res.json({ success: true, data: { ...user, permissions } });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -344,7 +344,7 @@ router.post('/users', adminOnly, validate(userCreate), async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -369,7 +369,7 @@ router.put('/users/:id', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -391,7 +391,7 @@ router.delete('/users/:id', adminOnly, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`[basic.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -462,7 +462,7 @@ router.get('/users/me/permissions', async (req, res) => {
     res.json({ success: true, data: { ...dbUser, permissions } });
   } catch (error) {
     console.error(`[basic.js] get me error:`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

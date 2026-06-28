@@ -10,6 +10,7 @@ import { useConfirm } from '../components/ConfirmModal';
 import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import PrintableQRCode from '../components/PrintableQRCode';
 import ProcessConfigPanel from '../components/ProcessConfigPanel';
+import { normalizeSearch } from '../utils/format';
 
 const SupplierManager = () => (
   <SimpleCRUDManager
@@ -240,10 +241,15 @@ const ProductManager = ({ category }) => {
   useEffect(() => { load(); }, [category]);
 
   const filteredData = data.filter(item => {
+    const search = normalizeSearch(searchText);
     const matchSearch = !searchText ||
       (item.code || '').toLowerCase().includes(searchText.toLowerCase()) ||
+      normalizeSearch(item.name).includes(search) ||
+      normalizeSearch(item.specification).includes(search) ||
+      normalizeSearch(item.steel_type).includes(search) ||
       (item.name || '').toLowerCase().includes(searchText.toLowerCase()) ||
-      (item.specification || '').toLowerCase().includes(searchText.toLowerCase());
+      (item.specification || '').toLowerCase().includes(searchText.toLowerCase()) ||
+      (item.steel_type || '').toLowerCase().includes(searchText.toLowerCase());
     const matchStatus = !statusFilter || item.status == statusFilter;
     return matchSearch && matchStatus;
   });
@@ -701,10 +707,15 @@ const ProductManager = ({ category }) => {
                       return `${prefix}${m.name}${m.specification ? ` (${m.specification})` : ''}`;
                     };
                     const search = (materialSearchText || '').toLowerCase();
+                    const nSearch = normalizeSearch(materialSearchText);
                     const filtered = search ? available.filter(m => 
                       m.name.toLowerCase().includes(search) || 
+                      normalizeSearch(m.name).includes(nSearch) ||
+                      normalizeSearch(m.specification).includes(nSearch) ||
+                      normalizeSearch(m.steel_type).includes(nSearch) ||
                       (m.specification || '').toLowerCase().includes(search) ||
                       (m.code || '').toLowerCase().includes(search) ||
+                      (m.steel_type || '').toLowerCase().includes(search) ||
                       (m.suppliers || []).some(s => s.supplier_name.toLowerCase().includes(search))
                     ) : available;
                     const raw = filtered.filter(m => m.category === '原材料');

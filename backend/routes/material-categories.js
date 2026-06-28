@@ -31,7 +31,7 @@ router.get('/', requirePermission('basic_data_view'), async (req, res) => {
     res.json({ success: true, data: buildTree(all) });
   } catch (error) {
     console.error('[material-categories]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -55,7 +55,7 @@ router.post('/', requirePermission('basic_data_create'), async (req, res) => {
     res.json({ success: true, data: { id: result.lastInsertRowid } });
   } catch (error) {
     console.error('[material-categories]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -88,7 +88,7 @@ router.post('/reorder', requirePermission('basic_data_edit'), async (req, res) =
     res.json({ success: true });
   } catch (error) {
     console.error('[material-categories]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -107,7 +107,7 @@ router.put('/:id', validateId, requirePermission('basic_data_edit'), async (req,
     res.json({ success: true });
   } catch (error) {
     console.error('[material-categories]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -128,7 +128,7 @@ router.delete('/:id', validateId, requirePermission('basic_data_delete'), async 
     res.json({ success: true });
   } catch (error) {
     console.error('[material-categories]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

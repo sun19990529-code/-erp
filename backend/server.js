@@ -379,7 +379,7 @@ app.use((err, req, res, next) => {
   console.error('[GlobalError]', err.stack || err.message);
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || '服务器内部错误，请联系管理员'
+    message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (err.message || '未知服务器错误，请联系管理员')
   });
 });
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
+import { normalizeSearch } from '../utils/format';
 
 const SearchSelect = ({ options, value: propValue, onChange, placeholder = '请选择', labelKey = 'name', valueKey = 'id', codeKey = 'code', disabled = false, name }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,10 +13,10 @@ const SearchSelect = ({ options, value: propValue, onChange, placeholder = '请�
   
   const filteredOptions = (options || []).filter(opt => {
     if (!searchText) return true;
-    const search = searchText.toLowerCase();
-    const label = (opt[labelKey] || '').toLowerCase();
+    const search = normalizeSearch(searchText);
+    const label = normalizeSearch(opt[labelKey]);
     const code = (opt[codeKey] || '').toLowerCase();
-    return label.includes(search) || code.includes(search);
+    return label.includes(search) || code.includes(search) || (opt[labelKey] || '').toLowerCase().includes(searchText.toLowerCase());
   });
   
   const selectedOption = (options || []).find(opt => opt[valueKey] == value);
@@ -106,7 +107,9 @@ const SimpleSearchSelect = ({ options, value: propValue, onChange, placeholder =
   
   const filteredOptions = (options || []).filter(opt => {
     if (!searchText) return true;
-    return (opt.label || opt).toLowerCase().includes(searchText.toLowerCase());
+    const search = normalizeSearch(searchText);
+    const label = normalizeSearch(opt.label || opt);
+    return label.includes(search) || (opt.label || opt).toLowerCase().includes(searchText.toLowerCase());
   });
   
   useEffect(() => {

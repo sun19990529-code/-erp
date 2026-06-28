@@ -33,7 +33,7 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[workstation.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -52,7 +52,7 @@ router.post('/', requirePermission('production_create'), async (req, res) => {
     res.json({ success: true, data: { id: result.lastInsertRowid } });
   } catch (error) {
     console.error('[workstation.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -67,7 +67,7 @@ router.put('/:id', validateId, requirePermission('production_edit'), async (req,
     res.json({ success: true });
   } catch (error) {
     console.error('[workstation.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -81,7 +81,7 @@ router.delete('/:id', validateId, requirePermission('production_delete'), async 
     if ((error.message || '').toLowerCase().includes('foreign key') || (error.message || '').includes('violates foreign key')) {
       return res.status(400).json({ success: false, message: '该机台已被应用到相关的生产记录或流转单中，为了保障追溯数据的完整性，系统已锁定无法强制删除！请考虑将其备注为“已停用”。' });
     }
-    res.status(500).json({ success: false, message: '服务器错误: ' + error.message });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + error.message });
   }
 });
 
@@ -119,7 +119,7 @@ router.get('/screen/:code', async (req, res) => {
     res.json({ success: true, data: { station, tasks } });
   } catch (error) {
     console.error('[workstation/screen]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -171,7 +171,7 @@ router.get('/screen/:code/:poId', async (req, res) => {
     res.json({ success: true, data: { ...order, processRecords, materials, recentInspections } });
   } catch (error) {
     console.error('[workstation/detail]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -341,7 +341,7 @@ router.post('/screen/:code/:poId/report', async (req, res) => {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('[workstation/report]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -379,7 +379,7 @@ router.post('/screen/:code/:poId/inspect', async (req, res) => {
     res.json({ success: true, message: inspResult === 'pass' ? '检验通过' : '检验不合格，工单已暂停' });
   } catch (error) {
     console.error('[workstation/inspect]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

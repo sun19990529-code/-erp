@@ -28,6 +28,7 @@ const menuConfig = [
       { key: 'process-hub', label: '车间报工大厅' },
       { key: 'cost-card', label: '工单成本卡' },
       { key: 'production-report', label: '生产报表' },
+      { key: 'smart-plan-entry', label: '智能计划录入' },
       { key: 'workstation-qr', label: '工位二维码' },
     ]
   },
@@ -103,6 +104,7 @@ const menuPermissions = {
   'process-hub': 'production_edit',
   'cost-card': 'production_view',
   'production-report': 'production_view',
+  'smart-plan-entry': 'production_view',
   'workstation-qr': 'production_view',
   // 质量检验
   'inspection-inbound': 'inspection_view', 'inspection-patrol': 'inspection_view',

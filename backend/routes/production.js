@@ -8,6 +8,7 @@ const { writeLog } = require('./logs');
 const { BusinessError } = require('../utils/BusinessError');
 const ProductionService = require('../services/ProductionService');
 const { processReportSchema, productionStatusSchema, createProductionSchema, updateProductionSchema, reworkSchema } = require('../validators/production');
+const { getOrCreateMaterialCategory } = require('../utils/specParser');
 
 
 // ==================== 工序 ====================
@@ -17,7 +18,7 @@ router.get('/processes', requirePermission('production_view'), async (req, res) 
     res.json({ success: true, data: processes });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -128,7 +129,7 @@ router.get('/', requirePermission('production_view'), async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -244,7 +245,7 @@ router.get('/:id', validateId, requirePermission('production_view'), async (req,
     } });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -265,7 +266,7 @@ router.get('/:id/materials', validateId, requirePermission('production_view'), a
     res.json({ success: true, data: materials });
   } catch (error) {
     console.error(`[production.js /materials]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -330,7 +331,7 @@ router.post('/', requirePermission('production_create'), validate(createProducti
     res.json({ success: true, data: { id: productionId, order_no: orderNo } });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -348,7 +349,7 @@ router.post('/:id/process', validateId, requirePermission('production_edit'), va
     if (error instanceof BusinessError) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -380,7 +381,7 @@ router.post('/:id/sync-processes', validateId, requirePermission('production_edi
     res.json({ success: true, message: '已成功同步最新工序' });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -398,7 +399,7 @@ router.put('/:id/status', validateId, requirePermission('production_edit'), vali
     res.json({ success: true });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -431,7 +432,7 @@ router.put('/:id', validateId, requirePermission('production_edit'), validate(up
     res.json({ success: true });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -462,7 +463,7 @@ router.delete('/:id', validateId, requirePermission('production_delete'), async 
     res.json({ success: true });
   } catch (error) {
     console.error(`[production.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -477,7 +478,7 @@ router.post('/:id/rework', validateId, requirePermission('production_edit'), val
     if (error instanceof BusinessError) {
       return res.status(400).json({ success: false, message: error.message });
     }
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -551,6 +552,239 @@ router.get('/:id/genealogy', validateId, requirePermission('production_view'), a
   } catch (error) {
     console.error('[production.js/genealogy]', error.message);
     res.status(500).json({ success: false, message: '获取血缘图谱失败' });
+  }
+});
+
+// ==================== 智能批量建档与计划工序录入接口 ====================
+router.post('/intelligent-entry', requirePermission('production_create'), async (req, res) => {
+  try {
+    const {
+      order_no,
+      customer_name,
+      steel_type,
+      heat_no,
+      raw_material,     // { id, code, name, specification, outer_diameter, wall_thickness, length, quantity_kg }
+      finished_product, // { id, code, name, specification, outer_diameter, inner_diameter, wall_thickness, length, quantity_kg }
+      processes         // [ { sequence, process_code, material_id, material_spec, consumption_qty, is_outsourced, remark } ]
+    } = req.body;
+
+    if (!finished_product || !raw_material || !processes || !Array.isArray(processes)) {
+      return res.status(400).json({ success: false, message: '请求参数不完整' });
+    }
+
+    // 定义编码生成助手
+    const getNextCode = async (prefix) => {
+      const row = await req.db.get(
+        "SELECT code FROM products WHERE code LIKE ? AND code NOT LIKE '%-%' ORDER BY code DESC LIMIT 1",
+        [`${prefix}%`]
+      );
+      if (!row || !row.code) {
+        return `${prefix}0001`;
+      }
+      const match = row.code.match(/\d+/);
+      if (!match) {
+        return `${prefix}0001`;
+      }
+      const numStr = match[0];
+      const nextNum = parseInt(numStr, 10) + 1;
+      const paddedNum = String(nextNum).padStart(numStr.length, '0');
+      return `${prefix}${paddedNum}`;
+    };
+
+    let materialCategoryId = null;
+
+    // 整个过程在数据库事务中进行，保证一致性
+    let finalResult = null;
+    await req.db.transaction(async () => {
+      if (steel_type) {
+        materialCategoryId = await getOrCreateMaterialCategory(req.db, steel_type);
+      }
+
+      // 1. 检查或新建原材料
+      let rawMaterialId = raw_material.id;
+      if (!rawMaterialId) {
+        const nextCode = await getNextCode('YC');
+        const insertRes = await req.db.run(`
+          INSERT INTO products (
+            code, name, specification, unit, category, outer_diameter, wall_thickness, length, 
+            tolerance_od, tolerance_od_lower, tolerance_wt, tolerance_wt_lower, tolerance_len, tolerance_len_lower,
+            material_category_id,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, '公斤', '原材料', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `, [
+          nextCode,
+          raw_material.name || `Φ${raw_material.raw_od?.raw || raw_material.outer_diameter}*δ${raw_material.raw_wt?.raw || raw_material.wall_thickness}*${raw_material.raw_len?.raw || raw_material.length || ''}`,
+          raw_material.specification || `${raw_material.raw_od?.raw || raw_material.outer_diameter}*${raw_material.raw_wt?.raw || raw_material.wall_thickness}`,
+          raw_material.raw_od ? raw_material.raw_od.base : (parseFloat(raw_material.outer_diameter) || null),
+          raw_material.raw_wt ? raw_material.raw_wt.base : (parseFloat(raw_material.wall_thickness) || null),
+          raw_material.raw_len ? raw_material.raw_len.base : (parseFloat(raw_material.length) || null),
+          raw_material.raw_od?.upper || null,
+          raw_material.raw_od?.lower || null,
+          raw_material.raw_wt?.upper || null,
+          raw_material.raw_wt?.lower || null,
+          raw_material.raw_len?.upper || null,
+          raw_material.raw_len?.lower || null,
+          materialCategoryId
+        ]);
+        rawMaterialId = insertRes.lastInsertRowid;
+      }
+
+      // 2. 检查或新建成品
+      let finishedProductId = finished_product.id;
+      if (!finishedProductId) {
+        const nextCode = await getNextCode('CP');
+        const insertRes = await req.db.run(`
+          INSERT INTO products (
+            code, name, specification, unit, category, outer_diameter, inner_diameter, wall_thickness, length, 
+            tolerance_od, tolerance_od_lower, tolerance_id, tolerance_id_lower, tolerance_wt, tolerance_wt_lower, tolerance_len, tolerance_len_lower,
+            material_category_id,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, '公斤', '成品', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `, [
+          nextCode,
+          finished_product.name || `Φ${finished_product.raw_od?.raw || finished_product.outer_diameter}*Φ${finished_product.raw_id?.raw || finished_product.inner_diameter}*${finished_product.raw_len?.raw || finished_product.length || ''}`,
+          finished_product.specification || `${finished_product.raw_od?.raw || finished_product.outer_diameter}*${finished_product.raw_id?.raw || finished_product.inner_diameter}`,
+          finished_product.raw_od ? finished_product.raw_od.base : (parseFloat(finished_product.outer_diameter) || null),
+          finished_product.raw_id ? finished_product.raw_id.base : (parseFloat(finished_product.inner_diameter) || null),
+          finished_product.raw_wt ? finished_product.raw_wt.base : (parseFloat(finished_product.wall_thickness) || null),
+          finished_product.raw_len ? finished_product.raw_len.base : (parseFloat(finished_product.length) || null),
+          finished_product.raw_od?.upper || null,
+          finished_product.raw_od?.lower || null,
+          finished_product.raw_id?.upper || null,
+          finished_product.raw_id?.lower || null,
+          finished_product.raw_wt?.upper || null,
+          finished_product.raw_wt?.lower || null,
+          finished_product.raw_len?.upper || null,
+          finished_product.raw_len?.lower || null,
+          materialCategoryId
+        ]);
+        finishedProductId = insertRes.lastInsertRowid;
+      }
+
+      // 3. 处理中间步骤的半成品，并将工序写入
+      const dbProcesses = await req.db.all('SELECT * FROM processes WHERE status = 1');
+      const processMap = new Map();
+      dbProcesses.forEach(p => processMap.set(p.code, p.id));
+
+      await req.db.run('DELETE FROM product_processes WHERE product_id = ?', [finishedProductId]);
+
+      // 按照 sequence 绝对顺序建立成品的工艺路径
+      for (const step of processes) {
+        const procId = processMap.get(step.process_code);
+        if (!procId) {
+          throw new Error(`系统未配置工序代码: [${step.process_code}]，请先在工序设置中添加`);
+        }
+
+        const procInsert = await req.db.run(`
+          INSERT INTO product_processes (product_id, process_id, sequence, is_outsourced, remark, created_at)
+          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `, [
+          finishedProductId,
+          procId,
+          step.sequence,
+          step.is_outsourced ? 1 : 0,
+          step.remark || ''
+        ]);
+        const productProcessId = procInsert.lastInsertRowid;
+
+        // 绑定消耗物料
+        let materialId = step.material_id;
+        if (step.sequence === 1 && !materialId) {
+          materialId = rawMaterialId;
+        }
+
+        // 若需要新建半成品物料
+        if (!materialId && step.material_spec) {
+            const nextCode = await getNextCode('YC');
+            const semInsert = await req.db.run(`
+              INSERT INTO products (
+                code, name, specification, unit, category, outer_diameter, wall_thickness, length, 
+                tolerance_od, tolerance_od_lower, tolerance_wt, tolerance_wt_lower, tolerance_len, tolerance_len_lower,
+                material_category_id,
+                status, created_at, updated_at
+              ) VALUES (?, ?, ?, '公斤', '半成品', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `, [
+              nextCode,
+              step.material_spec.name || `Φ${step.material_spec.raw_od?.raw || step.material_spec.outer_diameter}*δ${step.material_spec.raw_wt?.raw || step.material_spec.wall_thickness}*${step.material_spec.raw_len?.raw || step.material_spec.length || ''}`,
+              step.material_spec.specification || `${step.material_spec.raw_od?.raw || step.material_spec.outer_diameter}*${step.material_spec.raw_wt?.raw || step.material_spec.wall_thickness}`,
+              step.material_spec.raw_od ? step.material_spec.raw_od.base : (parseFloat(step.material_spec.outer_diameter) || null),
+              step.material_spec.raw_wt ? step.material_spec.raw_wt.base : (parseFloat(step.material_spec.wall_thickness) || null),
+              step.material_spec.raw_len ? step.material_spec.raw_len.base : (parseFloat(step.material_spec.length) || null),
+              step.material_spec.raw_od?.upper || null,
+              step.material_spec.raw_od?.lower || null,
+              step.material_spec.raw_wt?.upper || null,
+              step.material_spec.raw_wt?.lower || null,
+              step.material_spec.raw_len?.upper || null,
+              step.material_spec.raw_len?.lower || null,
+              materialCategoryId
+            ]);
+            materialId = semInsert.lastInsertRowid;
+          }
+
+        if (materialId) {
+          await req.db.run(`
+            INSERT INTO process_materials (product_process_id, material_id, quantity, unit, created_at)
+            VALUES (?, ?, ?, '公斤', CURRENT_TIMESTAMP)
+          `, [
+            productProcessId,
+            materialId,
+            step.consumption_qty || 1.0
+          ]);
+        }
+      }
+
+      // 4. 创建销售订单与生产工单
+      const finalOrderNo = order_no || generateOrderNo('JH');
+      let orderId = null;
+      if (customer_name) {
+        const existOrder = await req.db.get('SELECT id FROM orders WHERE order_no = ?', [finalOrderNo]);
+        if (existOrder) {
+          orderId = existOrder.id;
+        } else {
+          const insertOrder = await req.db.run(`
+            INSERT INTO orders (
+              order_no, customer_name, total_amount, priority, status, created_at, updated_at
+            ) VALUES (?, ?, 0, 1, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          `, [finalOrderNo, customer_name]);
+          orderId = insertOrder.lastInsertRowid;
+
+          await req.db.run(`
+            INSERT INTO order_items (order_id, product_id, quantity, unit_price)
+            VALUES (?, ?, ?, 0)
+          `, [orderId, finishedProductId, parseInt(finished_product.quantity_kg) || 1]);
+        }
+      }
+
+      const prodOrderNo = generateOrderNo('SC');
+      const prodInsert = await req.db.run(`
+        INSERT INTO production_orders (
+          order_no, order_id, product_id, batch_no, quantity, status, current_process, remark, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        prodOrderNo,
+        orderId,
+        finishedProductId,
+        heat_no || 'DEFAULT_BATCH',
+        parseInt(finished_product.quantity_kg) || 0,
+        processes[0].process_code,
+        `AI智能录入 - 炉号: ${heat_no || '无'}, 钢种: ${steel_type || '无'}`
+      ]);
+      const productionOrderId = prodInsert.lastInsertRowid;
+
+      await ProductionService.generatePlannedConsumption(req.db, productionOrderId, finishedProductId, finished_product.quantity_kg || 0);
+
+      finalResult = {
+        production_order_id: productionOrderId,
+        production_order_no: prodOrderNo,
+        product_id: finishedProductId,
+        order_id: orderId
+      };
+    });
+
+    res.json({ success: true, data: finalResult });
+  } catch (error) {
+    console.error('[production.js intelligent-entry]', error.message);
+    res.status(500).json({ success: false, message: error.message || '服务器错误' });
   }
 });
 

@@ -75,7 +75,7 @@ router.get('/pending', requirePermission('outsourcing_view'), async (req, res) =
     res.json({ success: true, data: pendingList });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -91,7 +91,7 @@ router.get('/', requirePermission('outsourcing_view'), async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -110,7 +110,7 @@ router.get('/:id', validateId, requirePermission('outsourcing_view'), async (req
     res.json({ success: true, data: { ...order, items } });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -180,7 +180,7 @@ router.post('/', requirePermission('outsourcing_create'), async (req, res) => {
     res.json({ success: true, data: { id: outsourcingId, order_no: orderNo } });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -377,7 +377,7 @@ router.put('/:id/receive', validateId, requirePermission('outsourcing_edit'), as
     res.json({ success: true });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -428,7 +428,7 @@ router.put('/:id/status', validateId, requirePermission('outsourcing_edit'), asy
     res.json({ success: true });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -489,7 +489,7 @@ router.put('/:id', validateId, requirePermission('outsourcing_edit'), async (req
     res.json({ success: true });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -508,7 +508,7 @@ router.delete('/:id', validateId, requirePermission('outsourcing_delete'), async
     res.json({ success: true });
   } catch (error) {
     console.error(`[outsourcing.js]`, error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

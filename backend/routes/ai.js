@@ -78,7 +78,7 @@ router.get('/configs', requirePermission('admin'), async (req, res) => {
     })) });
   } catch (error) {
     console.error('[AI Configs GET]', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -96,7 +96,7 @@ router.post('/configs', requirePermission('admin'), async (req, res) => {
     res.json({ success: true, message: '配置已添加' });
   } catch (error) {
     console.error('[AI Configs POST]', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -124,7 +124,7 @@ router.put('/configs/:id', requirePermission('admin'), async (req, res) => {
     res.json({ success: true, message: '配置已更新' });
   } catch (error) {
     console.error('[AI Configs PUT]', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -139,7 +139,7 @@ router.delete('/configs/:id', requirePermission('admin'), async (req, res) => {
     res.json({ success: true, message: '配置已删除' });
   } catch (error) {
     console.error('[AI Configs DELETE]', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -163,7 +163,7 @@ router.put('/configs/:id/toggle-status', requirePermission('admin'), async (req,
     res.json({ success: true, message: '状态已更新' });
   } catch (error) {
     console.error('[AI Configs TOGGLE]', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

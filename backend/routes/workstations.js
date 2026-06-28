@@ -24,7 +24,7 @@ router.get('/', requirePermission('basic_data_view'), async (req, res) => {
     res.json({ success: true, data: parsedData });
   } catch (error) {
     console.error('[workstations get]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 

@@ -13,6 +13,7 @@ import SimpleCRUDManager from '../components/SimpleCRUDManager';
 import { useConfirm } from '../components/ConfirmModal';
 import OperatorSelect from '../components/OperatorSelect';
 import { doPrint } from '../utils/printEngine';
+import { normalizeSearch } from '../utils/format';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { useScanner } from '../hooks/useScanner';
 import NumberKeypad from '../components/NumberKeypad';
@@ -42,10 +43,15 @@ const InventoryView = ({ defaultType = 'raw', title = '全局库存总账' }) =>
   const warehouses = [...new Set(data.map(i => i.warehouse_name))].filter(Boolean);
   
   const filteredData = data.filter(item => {
+    const search = normalizeSearch(searchText);
     const matchSearch = !searchText || 
       (item.code || '').toLowerCase().includes(searchText.toLowerCase()) ||
+      normalizeSearch(item.product_name).includes(search) ||
+      normalizeSearch(item.specification).includes(search) ||
+      normalizeSearch(item.steel_type).includes(search) ||
       (item.product_name || '').toLowerCase().includes(searchText.toLowerCase()) ||
-      (item.specification || '').toLowerCase().includes(searchText.toLowerCase());
+      (item.specification || '').toLowerCase().includes(searchText.toLowerCase()) ||
+      (item.steel_type || '').toLowerCase().includes(searchText.toLowerCase());
     const matchWarehouse = !warehouseFilter || item.warehouse_name === warehouseFilter;
     const matchAlert = !alertFilter || 
       (alertFilter === 'low' && item.alert_threshold > 0 && item.quantity <= item.alert_threshold) ||

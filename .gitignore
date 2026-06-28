@@ -45,3 +45,13 @@ backend/config/server.pem
 backend/config/server.key
 *.pem
 *.key
+
+# One-off scratch scripts (data migration, debug)
+backend/scratch/
+backend/query_db_materials.js
+backend/generate_import_data.js
+frontend/update_smart_plan.js
+测试文件/
+
+# Gemini IDE config
+.gemini/

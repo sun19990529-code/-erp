@@ -10,6 +10,7 @@ const OrderManager = React.lazy(() => import('./pages/Orders'));
 const ProductionScheduleGantt = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionScheduleGantt })));
 const ProductionOrderManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.ProductionOrderManager })));
 const PickMaterialManager = React.lazy(() => import('./pages/ProductionPages').then(m => ({ default: m.PickMaterialManager })));
+const SmartPlanEntryPage = React.lazy(() => import('./pages/SmartPlanEntryPage'));
 const ProcessConfigManager = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessConfigManager })));
 const ProcessManager = React.lazy(() => import('./pages/ProcessPages').then(m => ({ default: m.ProcessManager })));
 const InboundInspection = React.lazy(() => import('./pages/InspectionPages').then(m => ({ default: m.InboundInspection })));
@@ -70,6 +71,7 @@ export const ROUTE_CONFIG = [
   { menuKey: 'pick-material',        path: '/production/pick',         element: <PickMaterialManager /> },
   { menuKey: 'cost-card',            path: '/production/cost',         element: <CostCardPage /> },
   { menuKey: 'production-report',    path: '/production/report',       element: <ReportPage /> },
+  { menuKey: 'smart-plan-entry',     path: '/production/smart-entry',  element: <SmartPlanEntryPage /> },
   { menuKey: 'workstation-qr',       path: '/production/workstation-qr', element: <WorkstationQRPage /> },
   // ==================== 工艺 ====================
   { menuKey: 'process-config',       path: '/process/config',          element: <ProcessConfigManager /> },

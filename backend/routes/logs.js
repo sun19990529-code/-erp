@@ -40,7 +40,7 @@ router.get('/', requireAdmin, async (req, res) => {
     res.json({ success: true, ...result, stats: { total: stats.total, today: todayCount.count } });
   } catch (error) {
     console.error('[logs.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
@@ -54,7 +54,7 @@ router.get('/filters', requireAdmin, async (req, res) => {
     res.json({ success: true, data: { modules, users } });
   } catch (error) {
     console.error('[logs.js]', error.message);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
   }
 });
 
