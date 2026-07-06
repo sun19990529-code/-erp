@@ -61,7 +61,9 @@ const supplierRouter = createCRUDRouter({
   softDelete: true,
   checkRelations: [
     { table: 'purchase_orders', foreignKey: 'supplier_id', message: '该供应商有关联采购单，无法删除' },
-    { table: 'outsourcing_orders', foreignKey: 'supplier_id', message: '该供应商有关联委外单，无法删除' }
+    { table: 'outsourcing_orders', foreignKey: 'supplier_id', message: '该供应商有关联委外单，无法删除' },
+    { table: 'products', foreignKey: 'supplier_id', message: '该供应商有关联产品档案，无法删除' },
+    { table: 'product_suppliers', foreignKey: 'supplier_id', message: '该供应商有关联产品绑定关系，无法删除' }
   ]
 });
 router.use('/suppliers', supplierRouter);

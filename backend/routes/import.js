@@ -240,12 +240,52 @@ router.post('/suppliers', requirePermission('basic_data_create'), upload.single(
           code = await generateSupplierInitialsCode(req.db, name);
         }
 
-        const existing = await req.db.get('SELECT id FROM suppliers WHERE name = ?', [name]);
-        if (existing) { errors.push(`第 ${index + 2} 行：供应商「${name}」已存在，已跳过`); skipped++; continue; }
+        const existing = await req.db.get('SELECT id, is_deleted FROM suppliers WHERE name = ?', [name]);
+        if (existing) {
+          if (existing.is_deleted === 1) {
+            // 被软删除的供应商，直接更新并激活还原
+            await req.db.run(
+              `UPDATE suppliers SET code = ?, contact_person = ?, phone = ?, email = ?, address = ?, is_deleted = 0, status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [
+                code,
+                (row['联系人'] || '').toString().trim(),
+                (row['联系电话'] || '').toString().trim(),
+                (row['邮箱'] || '').toString().trim(),
+                (row['地址'] || '').toString().trim(),
+                existing.id
+              ]
+            );
+            imported++;
+            continue;
+          } else {
+            errors.push(`第 ${index + 2} 行：供应商「${name}」已存在，已跳过`);
+            skipped++;
+            continue;
+          }
+        }
 
-        const existingCode = await req.db.get('SELECT id FROM suppliers WHERE code = ?', [code]);
+        const existingCode = await req.db.get('SELECT id, is_deleted FROM suppliers WHERE code = ?', [code]);
         if (existingCode) {
-          errors.push(`第 ${index + 2} 行：生成编码「${code}」已存在，已跳过`); skipped++; continue;
+          if (existingCode.is_deleted === 1) {
+            // 同样如果编码对应的是已被软删除的供应商，更新并激活还原
+            await req.db.run(
+              `UPDATE suppliers SET name = ?, contact_person = ?, phone = ?, email = ?, address = ?, is_deleted = 0, status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [
+                name,
+                (row['联系人'] || '').toString().trim(),
+                (row['联系电话'] || '').toString().trim(),
+                (row['邮箱'] || '').toString().trim(),
+                (row['地址'] || '').toString().trim(),
+                existingCode.id
+              ]
+            );
+            imported++;
+            continue;
+          } else {
+            errors.push(`第 ${index + 2} 行：生成编码「${code}」已存在，已跳过`);
+            skipped++;
+            continue;
+          }
         }
 
         await req.db.run(
@@ -288,8 +328,31 @@ router.post('/customers', requirePermission('basic_data_create'), upload.single(
         const name = (row['客户名称*'] || row['客户名称'] || '').toString().trim();
         if (!code || !name) { errors.push(`第 ${index + 2} 行：编码或名称为空，已跳过`); skipped++; continue; }
 
-        const existing = await req.db.get('SELECT id FROM customers WHERE code = ? OR name = ?', [code, name]);
-        if (existing) { errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`); skipped++; continue; }
+        const existing = await req.db.get('SELECT id, is_deleted FROM customers WHERE code = ? OR name = ?', [code, name]);
+        if (existing) {
+          if (existing.is_deleted === 1) {
+            // 被软删除的客户，覆盖更新并激活还原
+            await req.db.run(
+              `UPDATE customers SET name = ?, code = ?, contact_person = ?, phone = ?, email = ?, address = ?, credit_level = ?, is_deleted = 0, status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [
+                name,
+                code,
+                (row['联系人'] || '').toString().trim(),
+                (row['联系电话'] || '').toString().trim(),
+                (row['邮箱'] || '').toString().trim(),
+                (row['地址'] || '').toString().trim(),
+                (row['信用等级(A/B/C)'] || row['信用等级'] || '').toString().trim() || null,
+                existing.id
+              ]
+            );
+            imported++;
+            continue;
+          } else {
+            errors.push(`第 ${index + 2} 行：「${code} ${name}」已存在，已跳过`);
+            skipped++;
+            continue;
+          }
+        }
 
         await req.db.run(
           `INSERT INTO customers (code, name, contact_person, phone, email, address, credit_level) VALUES (?, ?, ?, ?, ?, ?, ?)`,
