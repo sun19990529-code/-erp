@@ -129,28 +129,62 @@ router.post('/products', requirePermission('basic_data_create'), upload.single('
           continue;
         }
 
-        // 去重检查
-        const existing = await req.db.get('SELECT id FROM products WHERE code = ?', [code]);
-        if (existing) {
-          errors.push(`第 ${index + 2} 行：编码「${code}」已存在，已跳过`);
-          skipped++;
-          continue;
-        }
-
         const categoryDbMap = { raw: '原材料', semi: '半成品', finished: '成品' };
 
-        // 解析尺寸字段
+        // 解析尺寸与关联供应商（提前提取，供插入与更新使用）
         const outerDiameter = parseFloat(row['外径']) || null;
         const innerDiameter = parseFloat(row['内径']) || null;
         const wallThickness = parseFloat(row['壁厚']) || null;
         const length = parseFloat(row['长度']) || null;
 
-        // 解析供应商（按名称匹配）
         const supplierName = (row['供应商名称'] || '').toString().trim();
         let supplierId = null;
         if (supplierName) {
           const supplier = await req.db.get('SELECT id FROM suppliers WHERE name = ?', [supplierName]);
           if (supplier) supplierId = supplier.id;
+        }
+
+        // 去重检查与软删除激活
+        const existing = await req.db.get('SELECT id, is_deleted FROM products WHERE code = ?', [code]);
+        if (existing) {
+          if (existing.is_deleted === 1) {
+            // 被软删除的产品，直接在该位置覆盖更新并激活还原，不作为错误跳过
+            await req.db.run(`
+              UPDATE products SET
+                name = ?, specification = ?, unit = ?, category = ?, unit_price = ?, stock_threshold = ?,
+                outer_diameter = ?, inner_diameter = ?, wall_thickness = ?, length = ?, supplier_id = ?,
+                is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `, [
+              name,
+              (row['规格型号'] || '').toString().trim(),
+              (row['单位'] || 'kg').toString().trim(),
+              categoryDbMap[normalizedCategory],
+              parseFloat(row['单价']) || 0,
+              parseInt(row['安全库存']) || 0,
+              outerDiameter, innerDiameter, wallThickness, length, supplierId,
+              existing.id
+            ]);
+
+            if (existing.id && supplierId) {
+              const relation = await req.db.get(
+                "SELECT id FROM product_suppliers WHERE product_id = ? AND supplier_id = ?",
+                [existing.id, supplierId]
+              );
+              if (!relation) {
+                await req.db.run(
+                  "INSERT INTO product_suppliers (product_id, supplier_id) VALUES (?, ?)",
+                  [existing.id, supplierId]
+                );
+              }
+            }
+            imported++;
+            continue;
+          } else {
+            errors.push(`第 ${index + 2} 行：编码「${code}」已存在，已跳过`);
+            skipped++;
+            continue;
+          }
         }
 
         const insProd = await req.db.run(
@@ -463,6 +497,8 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
           createdProducts++;
         } else {
           productId = product.id;
+          // 若之前为软删除状态，自动将其还原激活
+          await req.db.run("UPDATE products SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [productId]);
           if (supplierId) {
             await req.db.run("UPDATE products SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL", [supplierId, productId]);
           }
@@ -623,6 +659,8 @@ router.post('/wps-webhook', async (req, res) => {
         productId = insProd.lastInsertRowid;
       } else {
         productId = product.id;
+        // 若之前为软删除状态，自动将其还原激活
+        await req.db.run("UPDATE products SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [productId]);
         if (supplierId) {
           await req.db.run("UPDATE products SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL", [supplierId, productId]);
         }

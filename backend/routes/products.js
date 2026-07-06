@@ -135,14 +135,41 @@ router.put('/:id', validateId, requirePermission('basic_data_edit'), async (req,
 
 router.delete('/:id', validateId, requirePermission('basic_data_delete'), async (req, res) => {
   try {
-    // 检查关联
-    const invCount = await req.db.get('SELECT COUNT(*) as count FROM inventory WHERE product_id = ?', [req.params.id]);
-    if (invCount && invCount.count > 0) {
-      return res.status(400).json({ success: false, message: '该产品有库存记录，无法删除' });
+    // 检查关联：遍历所有业务表判断是否有真实引用，如果没有引用，则执行物理删除，否则才进行软删除
+    const checks = [
+      { sql: 'SELECT COUNT(*) as count FROM inventory WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM order_items WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM production_orders WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM purchase_items WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM outsourcing_items WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM inbound_items WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM outbound_items WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM pick_items WHERE product_id = ?', params: [req.params.id] },
+      { sql: 'SELECT COUNT(*) as count FROM product_processes WHERE product_id = ? OR output_product_id = ?', params: [req.params.id, req.params.id] }
+    ];
+
+    let hasReference = false;
+    for (const check of checks) {
+      const resCount = await req.db.get(check.sql, check.params);
+      if (resCount && resCount.count > 0) {
+        hasReference = true;
+        break;
+      }
     }
-    // 软删除：仅标记为已删除，保留产品记录以供历史单据关联查询
-    await req.db.run('UPDATE products SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.params.id]);
-    res.json({ success: true });
+
+    if (!hasReference) {
+      // 没有任何关联，安全地执行物理删除，并清理关联的多对多关系表
+      await req.db.transaction(async () => {
+        await req.db.run('DELETE FROM product_suppliers WHERE product_id = ?', [req.params.id]);
+        await req.db.run('DELETE FROM product_customers WHERE product_id = ?', [req.params.id]);
+        await req.db.run('DELETE FROM products WHERE id = ?', [req.params.id]);
+      });
+      res.json({ success: true, message: '产品已从系统中完全清除' });
+    } else {
+      // 存在历史关联，进行软删除以保留关联数据一致性
+      await req.db.run('UPDATE products SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.params.id]);
+      res.json({ success: true, message: '产品已标记为已删除状态（已保留历史关联单据）' });
+    }
   } catch (error) {
     console.error(`[products.js]`, error.message);
     res.status(500).json({ success: false, message: '系统发生内部异常，无法继续执行该操作。失败原因: ' + (typeof err !== 'undefined' ? err.message : (typeof error !== 'undefined' ? error.message : (typeof e !== 'undefined' ? e.message : '未知服务器错误'))) });
