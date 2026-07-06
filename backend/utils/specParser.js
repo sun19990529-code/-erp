@@ -7,8 +7,8 @@ function parseSpecification(specStr) {
   if (!specStr) return null;
   let raw = specStr.toString().trim();
   
-  // 1. 预处理，剔除所有的 Φ/φ，替换中文括号为英文括号
-  raw = raw.replace(/[Φφ]/g, '').replace(/（/g, '(').replace(/）/g, ')');
+  // 1. 预处理，剔除所有的 Φ/φ/δ，替换中文括号为英文括号
+  raw = raw.replace(/[Φφδ]/g, '').replace(/（/g, '(').replace(/）/g, ')');
   
   // 2. 提取材质与无缝判定
   let steelType = '304'; // 默认值

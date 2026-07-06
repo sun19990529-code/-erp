@@ -273,7 +273,7 @@ const { JWT_SECRET } = require('./config/jwt');
 if (!process.env.JWT_SECRET) {
   console.warn('⚠️  [安全警告] JWT_SECRET 使用默认值，生产环境请设置环境变量 JWT_SECRET');
 }
-const whiteList = ['/api/users/login', '/api/users/refresh', '/api/users/logout'];
+const whiteList = ['/api/users/login', '/api/users/refresh', '/api/users/logout', '/api/import/wps-webhook'];
 const screenWhitePrefix = '/api/workstation/screen/';
 const botWhitePrefix = '/api/bot/';  // 机器人回调免鉴权
 

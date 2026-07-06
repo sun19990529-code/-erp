@@ -510,4 +510,171 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
   }
 });
 
+/**
+ * WPS 多维表格（轻维表）单条数据自动同步 Webhook 接口
+ * POST /wps-webhook
+ */
+router.post('/wps-webhook', async (req, res) => {
+  try {
+    const body = req.body;
+    console.log('[WPS Webhook] 收到数据:', body);
+
+    const specStr = (body.spec || body.specification || body['原材料规格'] || '').toString().trim();
+    const qtyStr = (body.qty || body.quantity || body['现有库存'] || '0').toString().trim();
+    const supplierName = (body.supplier || body.supplier_name || body['供货单位'] || '').toString().trim();
+
+    if (!specStr) {
+      return res.status(400).json({ success: false, message: '同步失败：原材料规格（spec）为必填字段且不能为空' });
+    }
+
+    // 1. 规格智能解析
+    const parsed = parseSpecification(specStr);
+    if (!parsed || parsed.outer_diameter === null) {
+      return res.status(400).json({ success: false, message: `同步失败：规格「${specStr}」格式不符合规范，无法解析` });
+    }
+
+    const qty = Math.round(parseFloat(qtyStr) || 0);
+
+    // 确保有“原材料仓”
+    let warehouse = await req.db.get("SELECT id FROM warehouses WHERE name LIKE '%原材料%' LIMIT 1");
+    let warehouseId;
+    if (warehouse) {
+      warehouseId = warehouse.id;
+    } else {
+      const insWh = await req.db.run(
+        "INSERT INTO warehouses (name, code, type, status) VALUES ('原材料仓', 'YCC01', 'raw', 1)"
+      );
+      warehouseId = insWh.lastInsertRowid;
+    }
+
+    let resultData = {};
+    await req.db.transaction(async () => {
+      // 2. 匹配或新建供应商
+      let supplierId = null;
+      if (supplierName) {
+        let sup = await req.db.get("SELECT id FROM suppliers WHERE name = ?", [supplierName]);
+        if (!sup) {
+          const nextCode = await generateSupplierInitialsCode(req.db, supplierName);
+          const insSup = await req.db.run(
+            "INSERT INTO suppliers (code, name, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            [nextCode, supplierName]
+          );
+          supplierId = insSup.lastInsertRowid;
+        } else {
+          supplierId = sup.id;
+        }
+      }
+
+      // 3. 智能获取或创建钢种分类（含大类级联判定）
+      const matCatId = await getOrCreateMaterialCategory(req.db, parsed.rawSteelType);
+
+      // 4. 匹配或自动建档产品档案 (products)
+      const queryParams = ['原材料', parsed.outer_diameter];
+      let querySql = `SELECT id FROM products WHERE category = ? AND outer_diameter = ?`;
+
+      if (parsed.inner_diameter !== null) {
+        querySql += ` AND inner_diameter = ?`;
+        queryParams.push(parsed.inner_diameter);
+      } else {
+        querySql += ` AND inner_diameter IS NULL`;
+      }
+
+      if (parsed.wall_thickness !== null) {
+        querySql += ` AND wall_thickness = ?`;
+        queryParams.push(parsed.wall_thickness);
+      } else {
+        querySql += ` AND wall_thickness IS NULL`;
+      }
+
+      if (parsed.length !== null) {
+        querySql += ` AND length = ?`;
+        queryParams.push(parsed.length);
+      } else {
+        querySql += ` AND length IS NULL`;
+      }
+
+      querySql += ` AND material_category_id = ?`;
+      queryParams.push(matCatId);
+
+      let product = await req.db.get(querySql, queryParams);
+
+      let productId;
+      if (!product) {
+        const nextCode = await getNextProductCode(req.db, 'YC');
+        const specName = parsed.specName;
+        const name = parsed.specName; // 统一命名体系：name 与 specification 保持一致，直接由尺寸特征组成
+
+        const insProd = await req.db.run(`
+          INSERT INTO products (
+            code, name, specification, unit, category, outer_diameter, inner_diameter, wall_thickness, length,
+            material_category_id, supplier_id, status, created_at, updated_at
+          ) VALUES (?, ?, ?, '公斤', '原材料', ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `, [
+          nextCode,
+          name,
+          specName,
+          parsed.outer_diameter,
+          parsed.inner_diameter,
+          parsed.wall_thickness,
+          parsed.length,
+          matCatId,
+          supplierId
+        ]);
+        productId = insProd.lastInsertRowid;
+      } else {
+        productId = product.id;
+        if (supplierId) {
+          await req.db.run("UPDATE products SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL", [supplierId, productId]);
+        }
+      }
+
+      // 自动建立并同步绑定产品-供应商多对多关联表
+      if (productId && supplierId) {
+        const relation = await req.db.get(
+          "SELECT id FROM product_suppliers WHERE product_id = ? AND supplier_id = ?",
+          [productId, supplierId]
+        );
+        if (!relation) {
+          await req.db.run(
+            "INSERT INTO product_suppliers (product_id, supplier_id) VALUES (?, ?)",
+            [productId, supplierId]
+          );
+        }
+      }
+
+      // 5. 更新或插入现有库存 (inventory)
+      const invRow = await req.db.get(
+        "SELECT id FROM inventory WHERE product_id = ? AND warehouse_id = ? AND batch_no = '期初导入'",
+        [productId, warehouseId]
+      );
+      if (invRow) {
+        await req.db.run(
+          "UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          [qty, invRow.id]
+        );
+      } else {
+        await req.db.run(
+          "INSERT INTO inventory (product_id, warehouse_id, quantity, batch_no, updated_at) VALUES (?, ?, ?, '期初导入', CURRENT_TIMESTAMP)",
+          [productId, warehouseId, qty]
+        );
+      }
+
+      resultData = {
+        productId,
+        warehouseId,
+        quantity: qty,
+        specName: parsed.specName,
+        steelType: parsed.rawSteelType,
+        supplierId
+      };
+    });
+
+    writeLog(req.db, null, 'WPS多维表格Webhook数据同步', 'warehouse', null, `成功同步库存条目: ${parsed.specName}, 数量: ${qty} kg`);
+    res.json({ success: true, message: 'WPS多维表格数据同步成功', data: resultData });
+  } catch (error) {
+    console.error('[import/wps-webhook] error:', error.message);
+    res.status(500).json({ success: false, message: '数据同步失败，错误: ' + error.message });
+  }
+});
+
 module.exports = router;
