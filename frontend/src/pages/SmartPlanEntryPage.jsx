@@ -246,6 +246,28 @@ const SmartPlanEntryPage = () => {
   // 前端工序拆解预览逻辑
   const chainPreview = (() => {
     const actions = [];
+    const rawOD = parseFloat(rawMaterial.outer_diameter) || 0;
+    const rawWT = parseFloat(rawMaterial.wall_thickness) || 0;
+    const isSteelStrip = rawOD > 0 && rawWT > 0 && rawOD < rawWT;
+
+    // 如果原材料是钢带，自动在首位追加“焊接”工序
+    if (isSteelStrip) {
+      const targetOD = rows[0]?.outer_diameter || finishedProduct.outer_diameter || '';
+      const targetWT = rows[0]?.wall_thickness || finishedProduct.wall_thickness || '';
+      const targetLen = rows[0]?.length || finishedProduct.length || '';
+      actions.push({
+        process_code: 'WELDING',
+        process_name: '焊接',
+        row_index: -1,
+        row_spec: {
+          outer_diameter: targetOD,
+          wall_thickness: targetWT,
+          length: targetLen,
+          name: `Φ${targetOD}*δ${targetWT}` + (targetLen ? `*${targetLen}` : '')
+        }
+      });
+    }
+
     rows.forEach((row, rowIndex) => {
       const spec = {
         outer_diameter: row.outer_diameter || '',
@@ -322,12 +344,14 @@ const SmartPlanEntryPage = () => {
       raw_od: parseDim(rawMaterial.outer_diameter),
       raw_wt: parseDim(rawMaterial.wall_thickness),
       raw_len: parseDim(rawMaterial.length),
-      name: `Φ${rawMaterial.outer_diameter || ''}*δ${rawMaterial.wall_thickness || ''}` + (rawMaterial.length ? `*${rawMaterial.length}` : '')
+      name: isSteelStrip 
+        ? `钢带${rawMaterial.outer_diameter}*${rawMaterial.wall_thickness}` + (rawMaterial.length ? `*${rawMaterial.length}` : '')
+        : `Φ${rawMaterial.outer_diameter || ''}*δ${rawMaterial.wall_thickness || ''}` + (rawMaterial.length ? `*${rawMaterial.length}` : '')
     };
 
     return actions.map((act, idx) => {
       const inputSpec = { ...currentSpec };
-      let isTransform = act.process_code === 'ROLLING' || act.process_code === 'DRAWING';
+      let isTransform = act.process_code === 'ROLLING' || act.process_code === 'DRAWING' || act.process_code === 'WELDING';
       if (isTransform && act.row_spec.outer_diameter) {
         currentSpec = {
           outer_diameter: parseDim(act.row_spec.outer_diameter).base,
@@ -388,7 +412,7 @@ const SmartPlanEntryPage = () => {
       // 2. 中间步骤半成品匹配
       const addedSpecs = new Set();
       for (const step of chainPreview) {
-        const isTransform = step.process_code === 'ROLLING' || step.process_code === 'DRAWING' || step.process_code === 'CUTTING';
+        const isTransform = step.process_code === 'ROLLING' || step.process_code === 'DRAWING' || step.process_code === 'CUTTING' || step.process_code === 'WELDING';
         if (isTransform) {
           const specStr = `${step.output_spec.outer_diameter}_${step.output_spec.wall_thickness}_${step.output_spec.length || 0}`;
           if (!addedSpecs.has(specStr)) {

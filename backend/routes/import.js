@@ -462,6 +462,9 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
     }
 
     await req.db.transaction(async () => {
+      const aggregatedItems = [];
+      const aggregatedMap = new Map();
+
       for (let index = 0; index < rows.length; index++) {
         const row = rows[index];
         const specStr = (row['原材料规格*'] || row['原材料规格'] || '').toString().trim();
@@ -482,7 +485,7 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
           continue;
         }
 
-        const qty = Math.round(parseFloat(qtyStr) || 0);
+        const qty = parseFloat(qtyStr) || 0;
 
         // 2. 匹配或新建供应商
         let supplierId = null;
@@ -501,10 +504,33 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
           }
         }
 
-        // 3. 智能获取或创建钢种分类（含大类级联判定）
+        // 3. 智能获取或创建钢种分类
         const matCatId = await getOrCreateMaterialCategory(req.db, parsed.rawSteelType);
 
-        // 4. 匹配或自动建档产品档案 (products)
+        // 使用唯一的聚合键：物理属性 + 钢种分类ID + 供应商ID
+        const key = `${parsed.outer_diameter}_${parsed.inner_diameter}_${parsed.wall_thickness}_${parsed.length}_${matCatId}_${supplierId || 0}`;
+
+        if (aggregatedMap.has(key)) {
+          const item = aggregatedMap.get(key);
+          item.qty += qty;
+        } else {
+          const item = {
+            parsed,
+            qty,
+            supplierId,
+            matCatId
+          };
+          aggregatedMap.set(key, item);
+          aggregatedItems.push(item);
+        }
+      }
+
+      // 4. 对合并处理后的记录进行存盘和库存更新
+      for (const item of aggregatedItems) {
+        const { parsed, qty, supplierId, matCatId } = item;
+
+        // 智能获取或创建产品档案 (products)
+        // 方案 A（独立建档）：不同供应商要单独建立。因此匹配时，还要匹配 supplier_id 是否相同
         const queryParams = ['原材料', parsed.outer_diameter];
         let querySql = `SELECT id FROM products WHERE category = ? AND outer_diameter = ?`;
 
@@ -532,13 +558,20 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
         querySql += ` AND material_category_id = ?`;
         queryParams.push(matCatId);
 
+        if (supplierId !== null) {
+          querySql += ` AND supplier_id = ?`;
+          queryParams.push(supplierId);
+        } else {
+          querySql += ` AND supplier_id IS NULL`;
+        }
+
         let product = await req.db.get(querySql, queryParams);
 
         let productId;
         if (!product) {
           const nextCode = await getNextProductCode(req.db, 'YC');
           const specName = parsed.specName;
-          const name = parsed.specName; // 统一命名体系：name 与 specification 保持一致，直接由尺寸特征组成
+          const name = parsed.specName;
 
           const insProd = await req.db.run(`
             INSERT INTO products (
@@ -562,9 +595,6 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
           productId = product.id;
           // 若之前为软删除状态，自动将其还原激活
           await req.db.run("UPDATE products SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [productId]);
-          if (supplierId) {
-            await req.db.run("UPDATE products SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL", [supplierId, productId]);
-          }
         }
 
         // 自动建立并同步绑定产品-供应商多对多关联表
@@ -581,7 +611,8 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
           }
         }
 
-        // 5. 更新或插入现有库存 (inventory)
+        // 覆盖系统内之前的库存值
+        const roundedQty = Math.round(qty);
         const invRow = await req.db.get(
           "SELECT id FROM inventory WHERE product_id = ? AND warehouse_id = ? AND batch_no = '期初导入'",
           [productId, warehouseId]
@@ -589,12 +620,12 @@ router.post('/wps-raw-materials', requirePermission('warehouse_inbound'), upload
         if (invRow) {
           await req.db.run(
             "UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            [qty, invRow.id]
+            [roundedQty, invRow.id]
           );
         } else {
           await req.db.run(
             "INSERT INTO inventory (product_id, warehouse_id, quantity, batch_no, updated_at) VALUES (?, ?, ?, '期初导入', CURRENT_TIMESTAMP)",
-            [productId, warehouseId, qty]
+            [productId, warehouseId, roundedQty]
           );
         }
         imported++;
@@ -695,6 +726,13 @@ router.post('/wps-webhook', async (req, res) => {
       querySql += ` AND material_category_id = ?`;
       queryParams.push(matCatId);
 
+      if (supplierId !== null) {
+        querySql += ` AND supplier_id = ?`;
+        queryParams.push(supplierId);
+      } else {
+        querySql += ` AND supplier_id IS NULL`;
+      }
+
       let product = await req.db.get(querySql, queryParams);
 
       let productId;
@@ -724,9 +762,6 @@ router.post('/wps-webhook', async (req, res) => {
         productId = product.id;
         // 若之前为软删除状态，自动将其还原激活
         await req.db.run("UPDATE products SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [productId]);
-        if (supplierId) {
-          await req.db.run("UPDATE products SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL", [supplierId, productId]);
-        }
       }
 
       // 自动建立并同步绑定产品-供应商多对多关联表

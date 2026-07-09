@@ -71,29 +71,46 @@ const Table = ({ columns, data, onEdit, onDelete, onView, editPermission, delete
   // 虚拟滚动模式
   if (useVirtual && virtualState) {
     const visibleRows = data.slice(virtualState.startIdx, virtualState.endIdx);
+    const topSpacerHeight = virtualState.startIdx * ROW_HEIGHT;
+    const bottomSpacerHeight = (data.length - virtualState.endIdx) * ROW_HEIGHT;
+
     return (
-      <div className="overflow-x-hidden md:overflow-x-auto">
-        <table className="w-full block md:table">
-          <thead className="bg-gray-50 sticky top-0 z-10 hidden md:table-header-group">
-            <tr>
-              {columns.map(col => <th key={col.key} className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap ${col.hideOnMobile ? 'hidden md:table-cell' : ''}`}>{col.title}</th>)}
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">操作</th>
-            </tr>
-          </thead>
-        </table>
+      <div className="overflow-x-hidden md:overflow-x-auto p-2 md:p-0">
         <div
           ref={scrollRef}
-          className="overflow-y-auto w-full custom-scrollbar"
-          style={{ maxHeight: virtualState.containerHeight, padding: '0.25rem' }}
+          className="overflow-y-auto w-full custom-scrollbar max-h-[600px] border border-gray-100 rounded-xl shadow-sm"
           onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
         >
-          <div style={{ height: virtualState.totalHeight, position: 'relative', width: '100%' }}>
-            <table className="w-full block md:table" style={{ position: 'absolute', top: virtualState.startIdx * ROW_HEIGHT, left: 0, right: 0 }}>
-              <tbody className="block md:table-row-group md:divide-y divide-gray-200">
-                {visibleRows.map((row, i) => renderRow(row, virtualState.startIdx + i))}
-              </tbody>
-            </table>
-          </div>
+          <table className="w-full block md:table md:table-fixed">
+            <thead className="bg-gray-50 sticky top-0 z-10 hidden md:table-header-group shadow-[0_1px_0_0_rgba(229,231,235,1)]">
+              <tr>
+                {columns.map(col => (
+                  <th
+                    key={col.key}
+                    className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap bg-gray-50 sticky top-0 z-10 ${col.hideOnMobile ? 'hidden md:table-cell' : ''}`}
+                  >
+                    {col.title}
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap bg-gray-50 sticky top-0 z-10">
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <tbody className="block md:table-row-group md:divide-y md:divide-gray-200">
+              {topSpacerHeight > 0 && (
+                <tr style={{ height: topSpacerHeight }} className="block md:table-row">
+                  <td colSpan={columns.length + 1}></td>
+                </tr>
+              )}
+              {visibleRows.map((row, i) => renderRow(row, virtualState.startIdx + i))}
+              {bottomSpacerHeight > 0 && (
+                <tr style={{ height: bottomSpacerHeight }} className="block md:table-row">
+                  <td colSpan={columns.length + 1}></td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
         <div className="px-4 py-2 text-xs text-gray-400 text-right">
           共 {data.length} 条 · 虚拟滚动已启用
